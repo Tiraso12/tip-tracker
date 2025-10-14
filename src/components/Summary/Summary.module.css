@@ -1,0 +1,27 @@
+.summary {
+  margin: 20px auto 0;
+  width: 380px;                  /* centered block like your comp */
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.title {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  margin: 4px 0 6px;
+  letter-spacing: 0.5px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: #374151;
+  font-size: 14px;
+}
+
+.row + .row { border-top: 1px dashed #ececec; }
