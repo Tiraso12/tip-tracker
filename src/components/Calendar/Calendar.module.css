@@ -1,43 +1,68 @@
 .calendar {
   margin: 0 auto;
-  max-width: 900px;                /* narrower */
+  max-width: 900px;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 8px;                        /* tighter */
+  gap: 8px;
   justify-content: center;
   align-items: start;
 }
 
 .card {
   height: 150px;
-  border-radius: 10px;
-  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  border: 1px solid #e5e5e5;
   background: #fff;
-  padding: 10px 12px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+  padding: 12px;
   font-size: 13px;
   line-height: 1.4;
 }
 
 .card h1 {
   font-size: 14px;
-  margin: 0 0 6px 0;
-  color: #374151;
+  margin: 0 0 8px 0;
+  color: #111827;
+  font-weight: 600;
 }
 
 .card span {
-  font-size: 12px;
-  color: #374151;
+  font-size: 11px;
+  color: #6b7280;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .row {
   display: flex;
   justify-content: space-between;
-  padding: 2px 0;
-  border-top: none;
+  padding: 3px 0;
+  align-items: center;
 }
 
-.row + .row {
-  border-top: 1px dashed #ececec; /* light separators like the wireframe */
+.row+.row {
+  border-top: 1px solid #f3f4f6;
   padding-top: 6px;
+  margin-top: 3px;
+}
+
+.input {
+  width: 60px;
+  text-align: right;
+  border: none;
+  border-bottom: 1px dotted transparent;
+  outline: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+.input:focus {
+  border-bottom: 1px solid #111827;
+}
+
+.input::placeholder {
+  color: #d1d5db;
 }

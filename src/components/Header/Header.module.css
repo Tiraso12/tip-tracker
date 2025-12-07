@@ -1,17 +1,14 @@
 .header {
   margin-top: 20px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.06);
   padding: 18px 16px;
-  display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
+  display: flex;
+  justify-content: center;
 }
 
 .title {
-  grid-column: 2;
-  justify-self: center;
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   margin: 0;
+  color: #111827;
+  letter-spacing: -0.02em;
 }
