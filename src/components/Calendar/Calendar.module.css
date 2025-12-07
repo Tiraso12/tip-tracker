@@ -5,11 +5,13 @@
   grid-template-columns: repeat(7, 1fr);
   gap: 8px;
   justify-content: center;
-  align-items: start;
+  /* align-items: start; Removed to allow stretch */
 }
 
 .card {
-  height: 150px;
+  min-height: 150px; /* Changed from height to min-height */
+  display: flex;
+  flex-direction: column;
   border-radius: 8px;
   border: 1px solid #e5e5e5;
   background: #fff;
