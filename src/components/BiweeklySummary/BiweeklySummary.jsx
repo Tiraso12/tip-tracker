@@ -1,6 +1,7 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import styles from "./BiweeklySummary.module.css";
 import { getBiweeklyPeriod, formatDate } from "../../utils/dateUtils";
+import DataService from "../../services/dataService";
 
 function BiweeklySummary({ currentWeekData, currentWeekStart }) {
     // We need to calculate the period based on the current week's start date
@@ -18,54 +19,64 @@ function BiweeklySummary({ currentWeekData, currentWeekStart }) {
         return getBiweeklyPeriod(currentWeekStart);
     }, [currentWeekStart]);
 
-    const totals = useMemo(() => {
-        if (!start || !currentWeekData) return { gratuity: 0, tip: 0, cash: 0, total: 0 };
+    const [totals, setTotals] = useState({ gratuity: 0, tip: 0, cash: 0, total: 0 });
 
-        // 1. Get all 14 date strings for the period
-        const dates = [];
-        for (let i = 0; i < 14; i++) {
-            const d = new Date(start);
-            d.setDate(start.getDate() + i);
-            dates.push(d.toISOString().split('T')[0]);
-        }
+    useEffect(() => {
+        if (!start) return;
 
-        // 2. Load all saved data once (synchronous read is okay for small data)
-        const savedJSON = localStorage.getItem("tip-tracker-data");
-        const savedData = savedJSON ? JSON.parse(savedJSON) : {};
-
-        // 3. Sum up
-        let totalGratuity = 0;
-        let totalTip = 0;
-        let totalCash = 0;
-
-        dates.forEach(dateKey => {
-            // Check if this date is in the currently edited weekData
-            // (currentWeekData is array of objects with .dateKey)
-            const liveDay = currentWeekData.find(d => d.dateKey === dateKey);
-
-            if (liveDay) {
-                totalGratuity += Number(liveDay.gratuity) || 0;
-                totalTip += Number(liveDay.tip) || 0;
-                totalCash += Number(liveDay.cash) || 0;
-            } else {
-                // Use saved data
-                const dayData = savedData[dateKey];
-                if (dayData) {
-                    totalGratuity += Number(dayData.gratuity) || 0;
-                    totalTip += Number(dayData.tip) || 0;
-                    totalCash += Number(dayData.cash) || 0;
-                }
+        const calculateTotals = async () => {
+            // 1. Get all 14 date strings for the period
+            const dates = [];
+            for (let i = 0; i < 14; i++) {
+                const d = new Date(start);
+                d.setDate(start.getDate() + i);
+                dates.push(d.toISOString().split('T')[0]);
             }
-        });
 
-        return {
-            gratuity: totalGratuity,
-            tip: totalTip,
-            cash: totalCash,
-            total: totalGratuity + totalTip + totalCash
+            // 2. Load all saved data asynchronously
+            // We fetch the latest from the service. 
+            // Note: This won't reflect unsaved changes in the App component immediately unless we lift state up or subscribe.
+            // For now, consistent with previous behavior (saved data), we fetch from service.
+            // Ideally, 'currentWeekData' passed as prop should override fetched data for the current view.
+
+            const serviceData = await DataService.getRange(dates);
+
+            // 3. Sum up
+            let totalGratuity = 0;
+            let totalTip = 0;
+            let totalCash = 0;
+
+            dates.forEach(dateKey => {
+                // Check if this date is in the currently edited weekData
+                // (currentWeekData is array of objects with .dateKey)
+                const liveDay = currentWeekData?.find(d => d.dateKey === dateKey);
+
+                if (liveDay) {
+                    totalGratuity += Number(liveDay.gratuity) || 0;
+                    totalTip += Number(liveDay.tip) || 0;
+                    totalCash += Number(liveDay.cash) || 0;
+                } else {
+                    // Use saved data
+                    const dayData = serviceData[dateKey];
+                    if (dayData) {
+                        totalGratuity += Number(dayData.gratuity) || 0;
+                        totalTip += Number(dayData.tip) || 0;
+                        totalCash += Number(dayData.cash) || 0;
+                    }
+                }
+            });
+
+            setTotals({
+                gratuity: totalGratuity,
+                tip: totalTip,
+                cash: totalCash,
+                total: totalGratuity + totalTip + totalCash
+            });
         };
 
-    }, [start, end, currentWeekData]);
+        calculateTotals();
+
+    }, [start, currentWeekData]);
 
 
     const fmt = (n) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });

@@ -4,9 +4,11 @@ import Calendar from "./components/Calendar/Calendar";
 import Summary from "./components/Summary/Summary";
 import layout from "./styles/AppLayout.module.css"
 import WeekHeader from "./components/WeekHeader/WeekHeader";
-import { getCurrentWeek, isSameDay } from "./utils/dateUtils";
+import { getCurrentWeek } from "./utils/dateUtils";
 
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
+import DataService from "./services/dataService";
+import { seedDatabase } from "./utils/seeder";
 
 function App() {
   const [baseDate, setBaseDate] = useState(new Date());
@@ -17,52 +19,82 @@ function App() {
     // Initialize the week based on baseDate
     const dates = getCurrentWeek(baseDate);
     setCurrentWeekDates(dates);
+    const dateKeys = dates.map(d => d.toISOString().split('T')[0]);
 
-    // Load saved data
-    const savedJSON = localStorage.getItem("tip-tracker-data");
-    const savedData = savedJSON ? JSON.parse(savedJSON) : {};
+    // Initialize with empty/loading structure to avoid flicker if desired, 
+    // or just let subscription fill it.
+    // We need to map the incoming data to our array index structure.
 
-    // Map dates to data structure
-    const initialData = dates.map(date => {
-      const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD as key
-      return {
+    // Initial structure map
+    const initialDataMap = {};
+    dates.forEach(date => {
+      const key = date.toISOString().split('T')[0];
+      initialDataMap[key] = {
         date: date,
-        dateKey: dateKey,
-        gratuity: savedData[dateKey]?.gratuity || "",
-        tip: savedData[dateKey]?.tip || "",
-        cash: savedData[dateKey]?.cash || ""
+        dateKey: key,
+        gratuity: "",
+        tip: "",
+        cash: ""
       };
     });
 
-    setWeekData(initialData);
+    // Sub function to update state safely
+    const handleRealTimeUpdate = (key, data) => {
+      setWeekData(prev => {
+        // prev might be null initially
+        const currentData = prev ? [...prev] : dates.map(d => {
+          const k = d.toISOString().split('T')[0];
+          return initialDataMap[k];
+        });
+
+        const index = currentData.findIndex(d => d.dateKey === key);
+        if (index !== -1) {
+          currentData[index] = {
+            ...currentData[index],
+            gratuity: data.gratuity || "",
+            tip: data.tip || "",
+            cash: data.cash || ""
+          };
+        }
+        return currentData;
+      });
+    };
+
+    // Subscribe
+    const unsubscribe = DataService.subscribeToWeek(dateKeys, handleRealTimeUpdate);
+
+    // Initial load (optional, subscription handles it but might be slightly delayed)
+    // Actually subscription emits immediately with current state if cached or fetched.
+    // But let's set initial state to avoid null.
+    setWeekData(dates.map(d => initialDataMap[d.toISOString().split('T')[0]]));
+
+    return () => {
+      unsubscribe();
+    };
   }, [baseDate]);
 
-  useEffect(() => {
-    if (!weekData) return;
-    // Persist to local storage whenever data changes
-    const savedJSON = localStorage.getItem("tip-tracker-data");
-    const existingData = savedJSON ? JSON.parse(savedJSON) : {};
-
-    // Merge current week changes into existing data
-    const persistenceObject = { ...existingData };
-    weekData.forEach(day => {
-      persistenceObject[day.dateKey] = {
-        gratuity: day.gratuity,
-        tip: day.tip,
-        cash: day.cash
-      };
-    });
-
-    localStorage.setItem("tip-tracker-data", JSON.stringify(persistenceObject));
-  }, [weekData]);
-
-
-  const handleUpdate = (index, field, value) => {
+  // Handle data updates
+  const handleUpdate = async (index, field, value) => {
+    // 1. Optimistic UI update (optional now with real-time, but makes it snappy)
+    // We can keep it to prevent input lag, but real-time will overwrite it shortly.
     setWeekData(prev => {
       const newData = [...prev];
       newData[index] = { ...newData[index], [field]: value };
       return newData;
     });
+
+    // 2. Persist to data service
+    const dayToUpdate = weekData[index];
+    const updatedDayData = {
+      gratuity: field === 'gratuity' ? value : dayToUpdate.gratuity,
+      tip: field === 'tip' ? value : dayToUpdate.tip,
+      cash: field === 'cash' ? value : dayToUpdate.cash
+    };
+
+    if (field !== 'gratuity' && field !== 'tip' && field !== 'cash') return; // Safety
+
+    // We can fire and forget, or handle error. 
+    await DataService.saveData(dayToUpdate.dateKey, updatedDayData);
   };
 
   const handleChangeWeek = (direction) => {
@@ -73,43 +105,28 @@ function App() {
     });
   };
 
-  // Seed Dummy Data for Testing
-  useEffect(() => {
-    const existing = localStorage.getItem("tip-tracker-data");
-    if (!existing) {
-      // Create some dummy data around the anchor date (Nov 21, 2025) and current date
-      const dummyData = {};
-      const anchor = new Date(); // Use today as reference for immediate visibility
-      // Seed past 7 days
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(anchor);
-        d.setDate(d.getDate() - i);
-        const k = d.toISOString().split('T')[0];
-        dummyData[k] = { gratuity: (100 + i * 10), tip: (20 + i), cash: (5 + i) };
-      }
-      // Seed next week
-      for (let i = 1; i <= 7; i++) {
-        const d = new Date(anchor);
-        d.setDate(d.getDate() + i);
-        const k = d.toISOString().split('T')[0];
-        dummyData[k] = { gratuity: 50, tip: 10, cash: 0 };
-      }
-
-      localStorage.setItem("tip-tracker-data", JSON.stringify(dummyData));
-      // Force reload by updating baseDate slightly or just let next render pick it up?
-      // Actually, the initial load happens on mount. If we seed here, we might need to update state if this effect runs after mount initialization.
-      // But since we write to LS, next reload will have it. 
-      // To make it instant, let's explicitly setWeekData if it's currently empty?
-      // Simpler: Just rely on the user navigating or reloading, OR just update the state directly if empty.
-      // Given this is for testing, a reload is acceptable, but let's try to be nice.
-      window.location.reload(); // Hard reload to ensure all state effects pick up the seeded data properly
-    }
-  }, []);
-
   if (!weekData) return null; // or loading spinner
 
   return (
     <main className={layout.app}>
+      {/* <header style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', alignItems: 'center' }}>
+        Temporary Seed Button
+        <button
+          onClick={seedDatabase}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: '#ff4444',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '0.8rem'
+          }}
+        >
+          DEBUG: Seed DB
+        </button>
+      </header> */}
+
       <div className={layout.section}><Header /></div>
       <WeekHeader
         startDate={currentWeekDates[0]}

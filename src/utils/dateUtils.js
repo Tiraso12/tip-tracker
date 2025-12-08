@@ -39,7 +39,7 @@ export function formatDate(date) {
  * Formats a date as "Day" (e.g., "Friday")
  */
 export function formatDayName(date) {
-    return new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(date);
+    return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date);
 }
 
 /**
