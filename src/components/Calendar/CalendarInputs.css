@@ -1,0 +1,21 @@
+/* Append this to usage */
+.input {
+    width: 60px;
+    text-align: right;
+    border: none;
+    border-bottom: 1px dotted transparent;
+    outline: none;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    background: transparent;
+    padding: 0;
+}
+
+.input:focus {
+    border-bottom: 1px solid #111827;
+}
+
+.input::placeholder {
+    color: #d1d5db;
+}
