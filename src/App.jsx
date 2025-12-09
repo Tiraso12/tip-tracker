@@ -3,75 +3,87 @@ import Header from "./components/Header/Header";
 import Calendar from "./components/Calendar/Calendar";
 import Summary from "./components/Summary/Summary";
 import layout from "./styles/AppLayout.module.css"
+import ViewSwitcher from "./components/ViewSwitcher/ViewSwitcher";
+import MonthCalendar from "./components/MonthCalendar/MonthCalendar";
 import WeekHeader from "./components/WeekHeader/WeekHeader";
-import { getCurrentWeek } from "./utils/dateUtils";
+import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
 
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import DataService from "./services/dataService";
 
 
 function App() {
+  const [currentView, setCurrentView] = useState('week'); // 'week' | 'month'
+  const [monthDate, setMonthDate] = useState(new Date());
+  const [monthData, setMonthData] = useState({});
   const [baseDate, setBaseDate] = useState(new Date());
   const [weekData, setWeekData] = useState(null);
   const [currentWeekDates, setCurrentWeekDates] = useState([]);
 
   useEffect(() => {
-    // Initialize the week based on baseDate
-    const dates = getCurrentWeek(baseDate);
-    setCurrentWeekDates(dates);
-    const dateKeys = dates.map(d => d.toISOString().split('T')[0]);
+    // Week Mode Logic
+    if (currentView === 'week') {
+      // Initialize the week based on baseDate
+      const dates = getCurrentWeek(baseDate);
+      setCurrentWeekDates(dates);
+      const dateKeys = dates.map(d => d.toISOString().split('T')[0]);
 
-    // Initialize with empty/loading structure to avoid flicker if desired, 
-    // or just let subscription fill it.
-    // We need to map the incoming data to our array index structure.
-
-    // Initial structure map
-    const initialDataMap = {};
-    dates.forEach(date => {
-      const key = date.toISOString().split('T')[0];
-      initialDataMap[key] = {
-        date: date,
-        dateKey: key,
-        gratuity: "",
-        tip: "",
-        cash: ""
-      };
-    });
-
-    // Sub function to update state safely
-    const handleRealTimeUpdate = (key, data) => {
-      setWeekData(prev => {
-        // prev might be null initially
-        const currentData = prev ? [...prev] : dates.map(d => {
-          const k = d.toISOString().split('T')[0];
-          return initialDataMap[k];
-        });
-
-        const index = currentData.findIndex(d => d.dateKey === key);
-        if (index !== -1) {
-          currentData[index] = {
-            ...currentData[index],
-            gratuity: data.gratuity || "",
-            tip: data.tip || "",
-            cash: data.cash || ""
-          };
-        }
-        return currentData;
+      // Initial structure map
+      const initialDataMap = {};
+      dates.forEach(date => {
+        const key = date.toISOString().split('T')[0];
+        initialDataMap[key] = {
+          date: date,
+          dateKey: key,
+          gratuity: "",
+          tip: "",
+          cash: ""
+        };
       });
-    };
 
-    // Subscribe
-    const unsubscribe = DataService.subscribeToWeek(dateKeys, handleRealTimeUpdate);
+      // Sub function to update state safely
+      const handleRealTimeUpdate = (key, data) => {
+        setWeekData(prev => {
+          // prev might be null initially
+          const currentData = prev ? [...prev] : dates.map(d => {
+            const k = d.toISOString().split('T')[0];
+            return initialDataMap[k];
+          });
 
-    // Initial load (optional, subscription handles it but might be slightly delayed)
-    // Actually subscription emits immediately with current state if cached or fetched.
-    // But let's set initial state to avoid null.
-    setWeekData(dates.map(d => initialDataMap[d.toISOString().split('T')[0]]));
+          const index = currentData.findIndex(d => d.dateKey === key);
+          if (index !== -1) {
+            currentData[index] = {
+              ...currentData[index],
+              gratuity: data.gratuity || "",
+              tip: data.tip || "",
+              cash: data.cash || ""
+            };
+          }
+          return currentData;
+        });
+      };
 
-    return () => {
-      unsubscribe();
-    };
-  }, [baseDate]);
+      // Subscribe
+      const unsubscribe = DataService.subscribeToWeek(dateKeys, handleRealTimeUpdate);
+
+      // Initial load 
+      setWeekData(dates.map(d => initialDataMap[d.toISOString().split('T')[0]]));
+
+      return () => {
+        unsubscribe();
+      };
+    } else {
+      // Month Mode Logic
+      // For month view, we just fetch once for now (no realtime needed strictly, or we can use getRange)
+      // We need 42 days for the grid
+      const dates = getCalendarMonth(monthDate);
+      const dateKeys = dates.map(d => d.toISOString().split('T')[0]);
+
+      DataService.getRange(dateKeys).then(dataMap => {
+        setMonthData(dataMap);
+      });
+    }
+  }, [baseDate, currentView, monthDate]);
 
   // Handle data updates
   const handleUpdate = async (index, field, value) => {
@@ -105,30 +117,48 @@ function App() {
     });
   };
 
-  if (!weekData) return null; // or loading spinner
+  const handleMonthChange = (newDate) => {
+    setMonthDate(newDate);
+  };
+
+  // Condition to show loading only if critical data is missing matching the view
+  if (currentView === 'week' && !weekData) return null;
 
   return (
     <main className={layout.app}>
-
-
       <div className={layout.section}><Header /></div>
-      <WeekHeader
-        startDate={currentWeekDates[0]}
-        endDate={currentWeekDates[6]}
-        onPrev={() => handleChangeWeek(-1)}
-        onNext={() => handleChangeWeek(1)}
-      />
-      <div className={layout.section}>
-        <Calendar weekData={weekData} onUpdate={handleUpdate} />
-      </div>
 
-      <div className={`${layout.section} ${layout.summaryContainer}`}>
-        <Summary weekData={weekData} />
-        <BiweeklySummary
-          currentWeekData={weekData}
-          currentWeekStart={currentWeekDates[0]}
-        />
-      </div>
+      <ViewSwitcher currentView={currentView} onViewChange={setCurrentView} />
+
+      {currentView === 'week' ? (
+        <>
+          <WeekHeader
+            startDate={currentWeekDates[0]}
+            endDate={currentWeekDates[6]}
+            onPrev={() => handleChangeWeek(-1)}
+            onNext={() => handleChangeWeek(1)}
+          />
+          <div className={layout.section}>
+            <Calendar weekData={weekData} onUpdate={handleUpdate} />
+          </div>
+
+          <div className={`${layout.section} ${layout.summaryContainer}`}>
+            <Summary weekData={weekData} />
+            <BiweeklySummary
+              currentWeekData={weekData}
+              currentWeekStart={currentWeekDates[0]}
+            />
+          </div>
+        </>
+      ) : (
+        <div className={layout.section}>
+          <MonthCalendar
+            monthDate={monthDate}
+            onMonthChange={handleMonthChange}
+            monthData={monthData}
+          />
+        </div>
+      )}
     </main>
   );
 }
