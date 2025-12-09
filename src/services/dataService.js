@@ -4,6 +4,22 @@ import { doc, getDoc, setDoc, collection, getDocs, writeBatch, onSnapshot } from
 const COLLECTION_NAME = "tips";
 
 const DataService = {
+    currentUserId: null,
+
+    setUserId: (id) => {
+        DataService.currentUserId = id;
+    },
+
+    /**
+     * Helper to get collection reference for current user
+     */
+    getCollection: () => {
+        if (!DataService.currentUserId) {
+            throw new Error("No user logged in");
+        }
+        return collection(db, "users", DataService.currentUserId, "tips");
+    },
+
     /**
      * Fetch data for a specific date key (YYYY-MM-DD)
      * @param {string} dateKey 
@@ -11,7 +27,8 @@ const DataService = {
      */
     getData: async (dateKey) => {
         try {
-            const docRef = doc(db, COLLECTION_NAME, dateKey);
+            if (!DataService.currentUserId) return { gratuity: "", tip: "", cash: "" };
+            const docRef = doc(db, "users", DataService.currentUserId, "tips", dateKey);
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
@@ -55,8 +72,11 @@ const DataService = {
         // Listen to individual documents.
 
         const unsubscribes = [];
+        if (!DataService.currentUserId) return () => { };
+
         dateKeys.forEach(key => {
-            const unsub = onSnapshot(doc(db, COLLECTION_NAME, key), (doc) => {
+            const docRef = doc(db, "users", DataService.currentUserId, "tips", key);
+            const unsub = onSnapshot(docRef, (doc) => {
                 if (doc.exists()) {
                     onUpdate(key, doc.data());
                 } else {
@@ -77,7 +97,8 @@ const DataService = {
      */
     getAllData: async () => {
         try {
-            const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
+            if (!DataService.currentUserId) return {};
+            const querySnapshot = await getDocs(DataService.getCollection());
             const result = {};
             querySnapshot.forEach((doc) => {
                 result[doc.id] = doc.data();
@@ -97,7 +118,8 @@ const DataService = {
      */
     saveData: async (dateKey, data) => {
         try {
-            await setDoc(doc(db, COLLECTION_NAME, dateKey), data);
+            if (!DataService.currentUserId) throw new Error("No user logged in");
+            await setDoc(doc(db, "users", DataService.currentUserId, "tips", dateKey), data);
             console.log(`Saved data for ${dateKey}:`, data);
         } catch (error) {
             console.error("Error saving document: ", error);

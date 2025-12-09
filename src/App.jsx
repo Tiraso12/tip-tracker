@@ -10,9 +10,15 @@ import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
 
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import DataService from "./services/dataService";
+import { useAuth } from "./context/AuthContext";
+import Login from "./components/Auth/Login";
+import Register from "./components/Auth/Register";
 
 
 function App() {
+  const { user, loading, logout } = useAuth();
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+
   const [currentView, setCurrentView] = useState('week'); // 'week' | 'month'
   const [monthDate, setMonthDate] = useState(new Date());
   const [monthData, setMonthData] = useState({});
@@ -20,7 +26,19 @@ function App() {
   const [weekData, setWeekData] = useState(null);
   const [currentWeekDates, setCurrentWeekDates] = useState([]);
 
+  // Sync DataService user
   useEffect(() => {
+    if (user) {
+      DataService.setUserId(user.uid);
+    } else {
+      DataService.setUserId(null);
+    }
+  }, [user]);
+
+  // Main Data Logic
+  useEffect(() => {
+    if (!user) return; // Don't fetch if not logged in
+
     // Week Mode Logic
     if (currentView === 'week') {
       // Initialize the week based on baseDate
@@ -83,7 +101,7 @@ function App() {
         setMonthData(dataMap);
       });
     }
-  }, [baseDate, currentView, monthDate]);
+  }, [baseDate, currentView, monthDate, user]);
 
   // Handle data updates
   const handleUpdate = async (index, field, value) => {
@@ -122,11 +140,37 @@ function App() {
   };
 
   // Condition to show loading only if critical data is missing matching the view
+  if (loading) return <div>Loading...</div>;
+
+  if (!user) {
+    return authMode === 'login'
+      ? <Login onSwitchToRegister={() => setAuthMode('register')} />
+      : <Register onSwitchToLogin={() => setAuthMode('login')} />;
+  }
+
+  // If logged in but data is loading (weekData null check for week view)
   if (currentView === 'week' && !weekData) return null;
 
   return (
     <main className={layout.app}>
-      <div className={layout.section}><Header /></div>
+      <div className={layout.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Header />
+          <button
+            onClick={logout}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border-color)',
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)'
+            }}
+          >
+            Logout ({user.username})
+          </button>
+        </div>
+      </div>
 
       <ViewSwitcher currentView={currentView} onViewChange={setCurrentView} />
 
