@@ -13,11 +13,12 @@ import DataService from "./services/dataService";
 import { useAuth } from "./context/AuthContext";
 import Login from "./components/Auth/Login";
 import Register from "./components/Auth/Register";
+import AuthForm from "./components/Auth/AuthForm";
 
 
 function App() {
   const { user, loading, logout } = useAuth();
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  // const [authMode, setAuthMode] = useState('login'); // Removed, using Firebase UI
 
   const [currentView, setCurrentView] = useState('week'); // 'week' | 'month'
   const [monthDate, setMonthDate] = useState(new Date());
@@ -140,12 +141,8 @@ function App() {
   };
 
   // Condition to show loading only if critical data is missing matching the view
-  if (loading) return <div>Loading...</div>;
-
   if (!user) {
-    return authMode === 'login'
-      ? <Login onSwitchToRegister={() => setAuthMode('register')} />
-      : <Register onSwitchToLogin={() => setAuthMode('login')} />;
+    return <AuthForm />;
   }
 
   // If logged in but data is loading (weekData null check for week view)

@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import AuthService from '../services/authService';
+import { auth } from '../config/firebase';
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 
 const AuthContext = createContext(null);
 
@@ -7,37 +8,65 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const DEV_USER = {
+        uid: 'dev-user',
+        username: 'Dev User',
+        email: 'dev@local',
+        photoURL: null
+    };
+
     useEffect(() => {
-        // Check local storage for persisted session
-        const storedUser = localStorage.getItem('tip_tracker_user');
-        if (storedUser) {
-            try {
-                setUser(JSON.parse(storedUser));
-            } catch (e) {
-                console.error("Failed to parse stored user", e);
-                localStorage.removeItem('tip_tracker_user');
+        // Listen to Firebase Auth state changes
+        const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+            console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Defaulting to Dev");
+            if (firebaseUser) {
+                // Map Firebase user to our app's user structure
+                // We use displayName or extract name from email for 'username'
+                const mappedUser = {
+                    uid: firebaseUser.uid,
+                    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+                    email: firebaseUser.email,
+                    photoURL: firebaseUser.photoURL
+                };
+                setUser(mappedUser);
+            } else {
+                // BYPASS: Default to Dev User instead of null
+                setUser(DEV_USER);
             }
-        }
-        setLoading(false);
+            setLoading(false);
+        });
+
+        // Cleanup subscription
+        return () => unsubscribe();
     }, []);
 
-    const login = async (username, password) => {
-        const loggedInUser = await AuthService.login(username, password);
-        setUser(loggedInUser);
-        localStorage.setItem('tip_tracker_user', JSON.stringify(loggedInUser));
-        return loggedInUser;
+    // These functions are less critical now if using FirebaseUI, 
+    // but useful if we want to add custom buttons later.
+    // We strictly only need logout for now.
+
+    const logout = async () => {
+        try {
+            await signOut(auth);
+            // State update handled by onAuthStateChanged (will revert to DEV_USER)
+        } catch (error) {
+            console.error("Logout failed", error);
+        }
     };
 
-    const register = async (username, password) => {
-        const newUser = await AuthService.register(username, password);
-        setUser(newUser);
-        localStorage.setItem('tip_tracker_user', JSON.stringify(newUser));
-        return newUser;
+    // Keep these empty or throw error if called, 
+    // as we are delegating login/register to the UI widget for now.
+    const login = async (email, password) => {
+        return await signInWithEmailAndPassword(auth, email, password);
     };
 
-    const logout = () => {
-        setUser(null);
-        localStorage.removeItem('tip_tracker_user');
+    const register = async (email, password, username) => {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, {
+            displayName: username
+        });
+        // Force update user state with new display name
+        setUser(prev => ({ ...prev, username: username }));
+        return userCredential.user;
     };
 
     return (
