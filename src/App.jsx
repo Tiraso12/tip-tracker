@@ -8,7 +8,7 @@ import { getCurrentWeek } from "./utils/dateUtils";
 
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import DataService from "./services/dataService";
-import { seedDatabase } from "./utils/seeder";
+
 
 function App() {
   const [baseDate, setBaseDate] = useState(new Date());
@@ -109,23 +109,7 @@ function App() {
 
   return (
     <main className={layout.app}>
-      {/* <header style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', alignItems: 'center' }}>
-        Temporary Seed Button
-        <button
-          onClick={seedDatabase}
-          style={{
-            padding: '0.5rem 1rem',
-            backgroundColor: '#ff4444',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '0.8rem'
-          }}
-        >
-          DEBUG: Seed DB
-        </button>
-      </header> */}
+
 
       <div className={layout.section}><Header /></div>
       <WeekHeader
