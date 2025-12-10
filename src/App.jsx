@@ -1,82 +1,21 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Header from "./components/Header/Header";
 import Calendar from "./components/Calendar/Calendar";
 import MonthView from "./components/Calendar/MonthView";
 import Charts from "./components/Charts/Charts";
 import layout from "./styles/AppLayout.module.css"
 import WeekHeader from "./components/WeekHeader/WeekHeader";
-import { getCurrentWeek } from "./utils/dateUtils";
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import Login from "./components/Auth/Login";
+import { useAuth } from "./hooks/useAuth";
+import { useTipData } from "./hooks/useTipData";
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { isAuthenticated, login } = useAuth();
   const [baseDate, setBaseDate] = useState(new Date());
-  const [weekData, setWeekData] = useState(null);
-  const [currentWeekDates, setCurrentWeekDates] = useState([]);
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'month'
-  const [allData, setAllData] = useState({});
 
-  useEffect(() => {
-    // Check if user was previously authenticated (simulated)
-    const storedAuth = localStorage.getItem("tip-tracker-auth");
-    if (storedAuth === "true") {
-      setIsAuthenticated(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Initialize the week based on baseDate
-    const dates = getCurrentWeek(baseDate);
-    setCurrentWeekDates(dates);
-
-    // Load saved data
-    const savedJSON = localStorage.getItem("tip-tracker-data");
-    const savedData = savedJSON ? JSON.parse(savedJSON) : {};
-    setAllData(savedData);
-
-    // Map dates to data structure
-    const initialData = dates.map(date => {
-      const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD as key
-      return {
-        date: date,
-        dateKey: dateKey,
-        gratuity: savedData[dateKey]?.gratuity || "",
-        tip: savedData[dateKey]?.tip || "",
-        cash: savedData[dateKey]?.cash || ""
-      };
-    });
-
-    setWeekData(initialData);
-  }, [baseDate]);
-
-  /* REMOVED useEffect [weekData] for persistence, moving logic to handleUpdate for robust multi-view support */
-
-  const handleUpdate = (dateKey, field, value) => {
-    // Update allData and Persist
-    setAllData(prev => {
-      const updated = { ...prev };
-      // Ensure object exists
-      if (!updated[dateKey]) updated[dateKey] = { gratuity: "", tip: "", cash: "" };
-
-      updated[dateKey] = { ...updated[dateKey], [field]: value };
-
-      localStorage.setItem("tip-tracker-data", JSON.stringify(updated));
-      return updated;
-    });
-
-    // Update weekData so currently visible WeekView updates instantly
-    setWeekData(prev => {
-      if (!prev) return prev;
-      return prev.map(day => {
-        if (day.dateKey === dateKey) {
-          return { ...day, [field]: value };
-        }
-        return day;
-      });
-    });
-  };
-
+  const { weekData, allData, currentWeekDates, handleUpdate } = useTipData(baseDate);
 
   const handleChangeWeek = (direction) => {
     setBaseDate(prev => {
@@ -86,45 +25,8 @@ function App() {
     });
   };
 
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem("tip-tracker-auth", "true");
-  };
-
-  const handleDayClick = (day) => {
-    setBaseDate(day);
-    setViewMode('week');
-  };
-
-  // Seed Dummy Data for Testing
-  useEffect(() => {
-    const existing = localStorage.getItem("tip-tracker-data");
-    if (!existing) {
-      // Create some dummy data around the anchor date (Nov 21, 2025) and current date
-      const dummyData = {};
-      const anchor = new Date(); // Use today as reference for immediate visibility
-      // Seed past 7 days
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(anchor);
-        d.setDate(d.getDate() - i);
-        const k = d.toISOString().split('T')[0];
-        dummyData[k] = { gratuity: (100 + i * 10), tip: (20 + i), cash: (5 + i) };
-      }
-      // Seed next week
-      for (let i = 1; i <= 7; i++) {
-        const d = new Date(anchor);
-        d.setDate(d.getDate() + i);
-        const k = d.toISOString().split('T')[0];
-        dummyData[k] = { gratuity: 50, tip: 10, cash: 0 };
-      }
-
-      localStorage.setItem("tip-tracker-data", JSON.stringify(dummyData));
-      window.location.reload();
-    }
-  }, []);
-
   if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
+    return <Login onLogin={login} />;
   }
 
   if (!weekData) return null; // or loading spinner
