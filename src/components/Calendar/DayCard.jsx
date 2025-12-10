@@ -62,13 +62,9 @@ function DayCard({ data, onUpdate, variant = "week" }) {
     ).toFixed(2);
 
     const getTitle = () => {
-        if (variant === "month") {
-            return data.date.getDate();
-        }
-        // Week view format: "wed 12/5"
-        const weekday = data.date.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase();
-        const dayMonth = `${data.date.getMonth() + 1}/${data.date.getDate()}`;
-        return `${weekday} ${dayMonth}`;
+        const d = new Date(data.date);
+        // Simplified view for both as per premium design requirements
+        return d.getDate();
     };
 
     return (

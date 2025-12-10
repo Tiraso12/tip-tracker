@@ -11,7 +11,7 @@
     background: var(--bg-secondary);
     padding: 4px;
     border-radius: 999px;
-    border: 1px solid var(--bg-tertiary);
+    border: 1px solid var(--border-color);
 }
 
 .toggleButton {
@@ -28,6 +28,7 @@
 
 .toggleButton:hover {
     color: var(--text-main);
+    background: var(--bg-tertiary);
 }
 
 .toggleButton.active {
@@ -54,14 +55,14 @@
 }
 
 .dateRange {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 0.875rem;
     margin: 0.25rem 0 0;
 }
 
 .navButton {
     background: var(--bg-secondary);
-    border: 1px solid var(--bg-tertiary);
+    border: 1px solid var(--border-color);
     color: var(--text-muted);
     width: 2.5rem;
     height: 2.5rem;

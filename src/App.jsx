@@ -152,23 +152,7 @@ function App() {
   return (
     <main className={layout.app}>
       <div className={layout.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Header />
-          <button
-            onClick={logout}
-            style={{
-              background: 'transparent',
-              border: '1px solid var(--text-muted)',
-              padding: '0.5rem 1rem',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              color: 'var(--text-muted)',
-              fontSize: '0.875rem'
-            }}
-          >
-            Logout ({user.username})
-          </button>
-        </div>
+        <Header user={user} onLogout={logout} />
       </div>
 
       <ViewSwitcher currentView={currentView} onViewChange={setCurrentView} />
