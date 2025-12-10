@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Header from "./components/Header/Header";
 import Calendar from "./components/Calendar/Calendar";
-import Summary from "./components/Summary/Summary";
+import Charts from "./components/Charts/Charts"; // Added Charts
 import layout from "./styles/AppLayout.module.css"
 import ViewSwitcher from "./components/ViewSwitcher/ViewSwitcher";
 import MonthCalendar from "./components/MonthCalendar/MonthCalendar";
@@ -12,13 +12,12 @@ import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import DataService from "./services/dataService";
 import { useAuth } from "./context/AuthContext";
 import Login from "./components/Auth/Login";
-import Register from "./components/Auth/Register";
+// import Register from "./components/Auth/Register"; // Using toggle in Login now
 import AuthForm from "./components/Auth/AuthForm";
 
 
 function App() {
   const { user, loading, logout } = useAuth();
-  // const [authMode, setAuthMode] = useState('login'); // Removed, using Firebase UI
 
   const [currentView, setCurrentView] = useState('week'); // 'week' | 'month'
   const [monthDate, setMonthDate] = useState(new Date());
@@ -107,15 +106,18 @@ function App() {
   // Handle data updates
   const handleUpdate = async (index, field, value) => {
     // 1. Optimistic UI update (optional now with real-time, but makes it snappy)
-    // We can keep it to prevent input lag, but real-time will overwrite it shortly.
     setWeekData(prev => {
       const newData = [...prev];
-      newData[index] = { ...newData[index], [field]: value };
+      if (newData[index]) {
+        newData[index] = { ...newData[index], [field]: value };
+      }
       return newData;
     });
 
     // 2. Persist to data service
     const dayToUpdate = weekData[index];
+    if (!dayToUpdate) return;
+
     const updatedDayData = {
       gratuity: field === 'gratuity' ? value : dayToUpdate.gratuity,
       tip: field === 'tip' ? value : dayToUpdate.tip,
@@ -124,7 +126,6 @@ function App() {
 
     if (field !== 'gratuity' && field !== 'tip' && field !== 'cash') return; // Safety
 
-    // We can fire and forget, or handle error. 
     await DataService.saveData(dayToUpdate.dateKey, updatedDayData);
   };
 
@@ -142,7 +143,7 @@ function App() {
 
   // Condition to show loading only if critical data is missing matching the view
   if (!user) {
-    return <AuthForm />;
+    return <Login />; // Using Login component directly
   }
 
   // If logged in but data is loading (weekData null check for week view)
@@ -157,11 +158,12 @@ function App() {
             onClick={logout}
             style={{
               background: 'transparent',
-              border: '1px solid var(--border-color)',
+              border: '1px solid var(--text-muted)',
               padding: '0.5rem 1rem',
               borderRadius: '6px',
               cursor: 'pointer',
-              color: 'var(--text-secondary)'
+              color: 'var(--text-muted)',
+              fontSize: '0.875rem'
             }}
           >
             Logout ({user.username})
@@ -184,11 +186,15 @@ function App() {
           </div>
 
           <div className={`${layout.section} ${layout.summaryContainer}`}>
-            <Summary weekData={weekData} />
+            {/* Removed Summary (old) if not needed, or keep it if it's different. 
+                BiweeklySummary is the main one requested. 
+                Keeping Charts as requested. 
+            */}
             <BiweeklySummary
               currentWeekData={weekData}
               currentWeekStart={currentWeekDates[0]}
             />
+            <Charts weekData={weekData} />
           </div>
         </>
       ) : (
