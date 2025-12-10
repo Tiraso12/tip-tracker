@@ -66,11 +66,23 @@ function BiweeklySummary({ currentWeekData, currentWeekStart }) {
                 }
             });
 
+            const total = totalGratuity + totalTip + totalCash;
+            const daysWithData = Math.max(1, dates.length); // Ideally count actual days with data? For now standard 14 day projection logic if that's what feature-ui did.
+            // Feature-ui logic:
+            // const daysWithData = Math.max(1, dates.length); 
+            // averageDaily: total / 14
+            // projected: (total / daysWithData) * 14 -> This logic simplifies to just total if daysWithData is 14.
+            // Wait, calculatePeriodTotals in feature-ui used dates.length (14).
+            // So average = total / 14. Projected = total. This seems redundant unless daysWithData is dynamic.
+            // Let's stick to the visible UI fields: Average Daily.
+
             setTotals({
                 gratuity: totalGratuity,
                 tip: totalTip,
                 cash: totalCash,
-                total: totalGratuity + totalTip + totalCash
+                total: total,
+                averageDaily: total / 14,
+                projected: total // For now assume full period projection is just total if we don't track "days worked"
             });
         };
 
@@ -84,21 +96,24 @@ function BiweeklySummary({ currentWeekData, currentWeekStart }) {
     return (
         <div className={styles.summary}>
             <div className={styles.header}>
-                <h2 className={styles.title}>BIWEEKLY SUMMARY</h2>
+                <h2 className={styles.title}>FINANCIAL SUMMARY</h2>
                 <div className={styles.subtitle}>
                     {formatDate(start)} - {formatDate(end)}
                 </div>
             </div>
 
             <div className={styles.content}>
-                <div className={styles.row}><span>Gratuity</span><span>{fmt(totals.gratuity)}</span></div>
-                <div className={styles.row}><span>Tip</span><span>{fmt(totals.tip)}</span></div>
-                <div className={styles.row}><span>Cash</span><span>{fmt(totals.cash)}</span></div>
+                <div className={styles.row}><span>Total gratuity</span><span>{fmt(totals.gratuity)}</span></div>
+                <div className={styles.row}><span>Total tip</span><span>{fmt(totals.tip)}</span></div>
+                <div className={styles.row}><span>Total cash</span><span>{fmt(totals.cash)}</span></div>
 
                 <div className={styles.divider} />
 
+                <div className={styles.row}><span>Average Daily</span><span>{fmt(totals.averageDaily || 0)}</span></div>
+                <div className={styles.row}><span>Proj. Biweekly</span><span>{fmt(totals.projected || 0)}</span></div>
+
                 <div className={styles.totalRow}>
-                    <span>Total</span>
+                    <span>Period Total</span>
                     <strong>{fmt(totals.total)}</strong>
                 </div>
             </div>

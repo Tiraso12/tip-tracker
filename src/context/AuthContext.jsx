@@ -8,20 +8,12 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    const DEV_USER = {
-        uid: 'dev-user',
-        username: 'Dev User',
-        email: 'dev@local',
-        photoURL: null
-    };
-
     useEffect(() => {
         // Listen to Firebase Auth state changes
         const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-            console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Defaulting to Dev");
+            console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Login needed");
             if (firebaseUser) {
                 // Map Firebase user to our app's user structure
-                // We use displayName or extract name from email for 'username'
                 const mappedUser = {
                     uid: firebaseUser.uid,
                     username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
@@ -30,8 +22,7 @@ export const AuthProvider = ({ children }) => {
                 };
                 setUser(mappedUser);
             } else {
-                // BYPASS: Default to Dev User instead of null
-                setUser(DEV_USER);
+                setUser(null);
             }
             setLoading(false);
         });

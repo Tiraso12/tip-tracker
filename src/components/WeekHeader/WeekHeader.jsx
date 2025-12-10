@@ -3,10 +3,12 @@ import styles from "./WeekHeader.module.css";
 import { formatDate } from "../../utils/dateUtils";
 
 function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange }) {
+  // Graceful fallback if dates aren't ready
   if (!startDate || !endDate) return null;
 
   return (
     <div className={styles.container}>
+      {/* View Toggle integrated into Header */}
       <div className={styles.toggle}>
         <button
           className={`${styles.toggleButton} ${viewMode === 'week' ? styles.active : ''}`}

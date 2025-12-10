@@ -47,6 +47,7 @@ function DayCard({ data, onUpdate, variant = "week" }) {
 
     const handleSave = (e) => {
         e.stopPropagation();
+        console.log("DayCard.handleSave:", data.dateKey, editValues); // DEBUG
         // Pass updates up
         // We pass the dateKey so parent knows which record to update
         onUpdate(data.dateKey, "gratuity", editValues.gratuity);

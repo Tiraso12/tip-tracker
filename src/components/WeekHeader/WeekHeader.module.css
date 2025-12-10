@@ -1,46 +1,73 @@
 .container {
     display: flex;
     flex-direction: column;
-    align-items: center;
     gap: 1.5rem;
-    margin: 2rem 0;
+    margin-bottom: 2rem;
 }
 
 .toggle {
     display: flex;
+    align-self: center;
     background: var(--bg-secondary);
-    padding: 4px;
-    border-radius: 999px;
-    border: 1px solid var(--border-color);
+    padding: 0.25rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--bg-tertiary);
 }
 
 .toggleButton {
     background: transparent;
     border: none;
     color: var(--text-muted);
-    padding: 0.5rem 1.5rem;
-    border-radius: 999px;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 0.875rem;
-    font-weight: 500;
+    font-weight: 600;
     transition: all var(--transition-fast);
 }
 
 .toggleButton:hover {
     color: var(--text-main);
-    background: var(--bg-tertiary);
 }
 
 .toggleButton.active {
-    background: var(--primary);
-    color: #fff;
+    background: var(--bg-primary);
+    color: var(--text-main);
     box-shadow: var(--shadow-sm);
 }
 
 .weekControl {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    justify-content: space-between;
+    background: var(--bg-secondary);
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--bg-tertiary);
+    /* Consistent border */
+    box-shadow: var(--shadow-sm);
+}
+
+.navButton {
+    background: transparent;
+    border: 1px solid var(--bg-tertiary);
+    color: var(--text-muted);
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: 1.25rem;
+    /* Adjust arrow size */
+}
+
+.navButton:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-main);
+    border-color: var(--primary);
 }
 
 .content {
@@ -48,35 +75,17 @@
 }
 
 .title {
-    font-size: 1.25rem;
-    font-weight: 600;
     margin: 0;
-    color: var(--text-main);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    font-weight: 700;
 }
 
 .dateRange {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin: 0.25rem 0 0;
-}
-
-.navButton {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    color: var(--text-muted);
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: var(--transition-fast);
-    font-size: 1rem;
-}
-
-.navButton:hover {
-    border-color: var(--primary);
+    margin: 0.25rem 0 0 0;
+    font-size: 1.125rem;
+    font-weight: 700;
     color: var(--text-main);
-    background: var(--bg-tertiary);
 }
