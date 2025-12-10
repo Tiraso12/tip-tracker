@@ -2,23 +2,43 @@ import React from "react";
 import styles from "./WeekHeader.module.css";
 import { formatDate } from "../../utils/dateUtils";
 
-function WeekHeader({ startDate, endDate, onPrev, onNext }) {
+function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange }) {
   if (!startDate || !endDate) return null;
 
   return (
-    <div className={styles.weekHeader}>
-      <button onClick={onPrev} className={styles.navButton} aria-label="Previous week">
-        &lsaquo;
-      </button>
-      <div className={styles.content}>
-        <h2 className={styles.title}>Week</h2>
-        <p className={styles.dateRange}>
-          Week of {formatDate(startDate)} to {formatDate(endDate)}
-        </p>
+    <div className={styles.container}>
+      <div className={styles.toggle}>
+        <button
+          className={`${styles.toggleButton} ${viewMode === 'week' ? styles.active : ''}`}
+          onClick={() => onViewChange('week')}
+        >
+          Week
+        </button>
+        <button
+          className={`${styles.toggleButton} ${viewMode === 'month' ? styles.active : ''}`}
+          onClick={() => onViewChange('month')}
+        >
+          Month
+        </button>
       </div>
-      <button onClick={onNext} className={styles.navButton} aria-label="Next week">
-        &rsaquo;
-      </button>
+
+      <div className={styles.weekControl}>
+        <button onClick={onPrev} className={styles.navButton} aria-label="Previous">
+          &lt;
+        </button>
+        <div className={styles.content}>
+          <h2 className={styles.title}>{viewMode === 'month' ? 'Month' : 'Week'}</h2>
+          <p className={styles.dateRange}>
+            {viewMode === 'month'
+              ? startDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+              : `${formatDate(startDate)} - ${formatDate(endDate)}`
+            }
+          </p>
+        </div>
+        <button onClick={onNext} className={styles.navButton} aria-label="Next">
+          &gt;
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,9 +1,45 @@
-.weekHeader {
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.toggle {
+    display: flex;
+    background: var(--bg-secondary);
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid var(--bg-tertiary);
+}
+
+.toggleButton {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 0.5rem 1.5rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+}
+
+.toggleButton:hover {
+    color: var(--text-main);
+}
+
+.toggleButton.active {
+    background: var(--primary);
+    color: #fff;
+    box-shadow: var(--shadow-sm);
+}
+
+.weekControl {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 20px;
-    margin: 16px 0;
+    gap: 1.5rem;
 }
 
 .content {
@@ -11,31 +47,35 @@
 }
 
 .title {
-    margin: 0;
-    font-size: 20px;
+    font-size: 1.25rem;
     font-weight: 600;
-    color: #111827;
+    margin: 0;
+    color: var(--text-main);
 }
 
 .dateRange {
-    margin: 4px 0 0 0;
-    color: #6b7280;
-    font-size: 14px;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin: 0.25rem 0 0;
 }
 
 .navButton {
-    background: none;
-    border: none;
-    font-size: 24px;
-    color: #9ca3af;
+    background: var(--bg-secondary);
+    border: 1px solid var(--bg-tertiary);
+    color: var(--text-muted);
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    padding: 4px 12px;
-    border-radius: 4px;
-    transition: color 0.2s, background 0.1s;
-    line-height: 1;
+    transition: var(--transition-fast);
+    font-size: 1rem;
 }
 
 .navButton:hover {
-    color: #111827;
-    background: #f3f4f6;
+    border-color: var(--primary);
+    color: var(--text-main);
+    background: var(--bg-tertiary);
 }
