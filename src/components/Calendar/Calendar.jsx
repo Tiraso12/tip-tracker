@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import styles from "./Calendar.module.css";
-import Card from "../Card/Card";
+import DayCard from "./DayCard";
 
 function Calendar({ weekData, onUpdate }) {
   if (!weekData) return null;
@@ -8,10 +8,9 @@ function Calendar({ weekData, onUpdate }) {
   return (
     <div className={styles.calendar}>
       {weekData.map((day, index) => (
-        <Card
+        <DayCard
           key={day.dateKey}
           data={day}
-          index={index}
           onUpdate={onUpdate}
         />
       ))}
@@ -19,3 +18,4 @@ function Calendar({ weekData, onUpdate }) {
   );
 }
 export default Calendar;
+

@@ -83,14 +83,25 @@ function BiweeklySummary({ currentWeekData, currentWeekStart }) {
 
     return (
         <div className={styles.summary}>
-            <h2 className={styles.title}>Biweekly Summary</h2>
-            <div className={styles.subtitle}>
-                {formatDate(start)} - {formatDate(end)}
+            <div className={styles.header}>
+                <h2 className={styles.title}>FINANCIAL SUMMARY</h2>
+                <div className={styles.subtitle}>
+                    {formatDate(start)} - {formatDate(end)}
+                </div>
             </div>
-            <div className={styles.row}><span>Total gratuity</span><span>{fmt(totals.gratuity)}</span></div>
-            <div className={styles.row}><span>Total tip</span><span>{fmt(totals.tip)}</span></div>
-            <div className={styles.row}><span>Total cash</span><span>{fmt(totals.cash)}</span></div>
-            <div className={styles.row}><span>Period Total</span><strong>{fmt(totals.total)}</strong></div>
+
+            <div className={styles.content}>
+                <div className={styles.row}><span>Total gratuity</span><span>{fmt(totals.gratuity)}</span></div>
+                <div className={styles.row}><span>Total tip</span><span>{fmt(totals.tip)}</span></div>
+                <div className={styles.row}><span>Total cash</span><span>{fmt(totals.cash)}</span></div>
+
+                <div className={styles.divider}></div>
+
+                <div className={styles.row}><span>Average Daily</span><span>{fmt(totals.averageDaily || 0)}</span></div>
+                <div className={styles.row}><span>Proj. Biweekly</span><span>{fmt(totals.projected || 0)}</span></div>
+
+                <div className={styles.totalRow}><span>Period Total</span><strong>{fmt(totals.total)}</strong></div>
+            </div>
         </div>
     );
 }
