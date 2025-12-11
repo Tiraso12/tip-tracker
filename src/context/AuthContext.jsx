@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { auth } from '../config/firebase';
+import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 const AuthContext = createContext(null);
 
@@ -46,18 +47,53 @@ export const AuthProvider = ({ children }) => {
 
     // Keep these empty or throw error if called, 
     // as we are delegating login/register to the UI widget for now.
-    const login = async (email, password) => {
-        return await signInWithEmailAndPassword(auth, email, password);
+    const login = async (identifier, password) => {
+        let emailToSignIn = identifier;
+
+        // If identifier is NOT an email, look it up
+        if (!identifier.includes('@')) {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where('username', '==', identifier));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                throw new Error("User not found");
+            }
+            // define emailToSignIn from the found document
+            emailToSignIn = querySnapshot.docs[0].data().email;
+        }
+
+        return await signInWithEmailAndPassword(auth, emailToSignIn, password);
     };
 
     const register = async (email, password, username) => {
+        // Validation: Check if username is taken
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('username', '==', username));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+            throw new Error("Username already taken");
+        }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, {
+        const firebaseUser = userCredential.user;
+
+        await updateProfile(firebaseUser, {
             displayName: username
         });
+
+        // Store user in Firestore 'users' collection
+        await setDoc(doc(db, 'users', firebaseUser.uid), {
+            uid: firebaseUser.uid,
+            username: username,
+            email: email,
+            createdAt: new Date().toISOString()
+        });
+
         // Force update user state with new display name
         setUser(prev => ({ ...prev, username: username }));
-        return userCredential.user;
+        return firebaseUser;
     };
 
     return (

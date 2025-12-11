@@ -50,13 +50,15 @@ const Login = () => {
                 )}
 
                 <div className={styles.inputGroup}>
-                    <label className={styles.label}>Email</label>
+                    <label className={styles.label}>
+                        {isLogin ? 'Username or Email' : 'Email'}
+                    </label>
                     <input
-                        type="email"
+                        type={isLogin ? "text" : "email"}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className={styles.input}
-                        placeholder="email@example.com"
+                        placeholder={isLogin ? "Username or email" : "email@example.com"}
                     />
                 </div>
 
