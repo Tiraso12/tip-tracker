@@ -110,7 +110,10 @@ function BiweeklySummary({ currentWeekData, currentWeekStart }) {
                 <div className={styles.divider} />
 
                 <div className={styles.row}><span>Average Daily</span><span>{fmt(totals.averageDaily || 0)}</span></div>
-                <div className={styles.row}><span>Proj. Biweekly</span><span>{fmt(totals.projected || 0)}</span></div>
+                <div className={styles.row}>
+                    <span>Proj. Biweekly ({formatDate(start)} - {formatDate(end)})</span>
+                    <span>{fmt(totals.projected || 0)}</span>
+                </div>
 
                 <div className={styles.totalRow}>
                     <span>Period Total</span>

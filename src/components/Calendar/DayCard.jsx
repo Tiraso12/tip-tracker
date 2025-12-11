@@ -1,23 +1,22 @@
 import React, { useState, useEffect } from "react";
 import styles from "./Calendar.module.css";
 
-function DayCard({ data, onUpdate, variant = "week" }) {
-    const [isEditing, setIsEditing] = useState(false);
+
+
+function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = 'week' }) {
     const [editValues, setEditValues] = useState({
         gratuity: data.gratuity || "",
         tip: data.tip || "",
         cash: data.cash || ""
     });
 
-    // Sync edits if props change externally (though less likely in edit mode)
+    // Reset values when entering edit mode or when data changes
     useEffect(() => {
-        if (!isEditing) {
-            setEditValues({
-                gratuity: data.gratuity || "",
-                tip: data.tip || "",
-                cash: data.cash || ""
-            });
-        }
+        setEditValues({
+            gratuity: data.gratuity || "",
+            tip: data.tip || "",
+            cash: data.cash || ""
+        });
     }, [data, isEditing]);
 
     const handleChange = (e) => {
@@ -28,32 +27,24 @@ function DayCard({ data, onUpdate, variant = "week" }) {
         }
     };
 
-    const handleCardClick = () => {
+    const handleCardClick = (e) => {
+        e.stopPropagation();
         if (!isEditing) {
-            setIsEditing(true);
+            onEditStart();
         }
     };
 
-    const handleCancel = (e) => {
+    const handleCancelClick = (e) => {
         e.stopPropagation();
-        // Reset values
-        setEditValues({
-            gratuity: data.gratuity || "",
-            tip: data.tip || "",
-            cash: data.cash || ""
-        });
-        setIsEditing(false);
+        onCancel();
     };
 
     const handleSave = (e) => {
         e.stopPropagation();
         console.log("DayCard.handleSave:", data.dateKey, editValues); // DEBUG
-        // Pass updates up
-        // We pass the dateKey so parent knows which record to update
-        onUpdate(data.dateKey, "gratuity", editValues.gratuity);
-        onUpdate(data.dateKey, "tip", editValues.tip);
-        onUpdate(data.dateKey, "cash", editValues.cash);
-        setIsEditing(false);
+        // Pass batch update
+        onUpdate(data.dateKey, editValues);
+        onCancel(); // Close edit mode after save
     };
 
     const currentTotal = (
@@ -64,7 +55,10 @@ function DayCard({ data, onUpdate, variant = "week" }) {
 
     const getTitle = () => {
         const d = new Date(data.date);
-        // Simplified view for both as per premium design requirements
+        if (variant === 'week') {
+            const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(d);
+            return `${dayName} ${d.getMonth() + 1}/${d.getDate()}`;
+        }
         return d.getDate();
     };
 
@@ -140,15 +134,15 @@ function DayCard({ data, onUpdate, variant = "week" }) {
             <div className={styles.footer}>
                 {isEditing && (
                     <div className={styles.actions}>
-                        <button className={styles.cancelBtn} onClick={handleCancel}>Cancel</button>
+                        <button className={styles.cancelBtn} onClick={handleCancelClick}>Cancel</button>
                         <button className={styles.saveBtn} onClick={handleSave}>Save</button>
                     </div>
                 )}
-
             </div>
         </div>
     );
 }
+
 
 export default DayCard;
 

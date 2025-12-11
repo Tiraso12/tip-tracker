@@ -1,16 +1,16 @@
 .container {
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 1.5rem;
-    margin-bottom: 2rem;
+    margin: 2rem 0;
 }
 
 .toggle {
     display: flex;
-    align-self: center;
     background: var(--bg-secondary);
-    padding: 0.25rem;
-    border-radius: var(--radius-lg);
+    padding: 4px;
+    border-radius: 999px;
     border: 1px solid var(--bg-tertiary);
 }
 
@@ -18,11 +18,11 @@
     background: transparent;
     border: none;
     color: var(--text-muted);
-    padding: 0.5rem 1.25rem;
-    border-radius: var(--radius-md);
+    padding: 0.5rem 1.5rem;
+    border-radius: 999px;
     cursor: pointer;
     font-size: 0.875rem;
-    font-weight: 600;
+    font-weight: 500;
     transition: all var(--transition-fast);
 }
 
@@ -31,43 +31,15 @@
 }
 
 .toggleButton.active {
-    background: var(--bg-primary);
-    color: var(--text-main);
+    background: var(--primary);
+    color: #fff;
     box-shadow: var(--shadow-sm);
 }
 
 .weekControl {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    background: var(--bg-secondary);
-    padding: 1rem;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--bg-tertiary);
-    /* Consistent border */
-    box-shadow: var(--shadow-sm);
-}
-
-.navButton {
-    background: transparent;
-    border: 1px solid var(--bg-tertiary);
-    color: var(--text-muted);
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: 1.25rem;
-    /* Adjust arrow size */
-}
-
-.navButton:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-main);
-    border-color: var(--primary);
+    gap: 1.5rem;
 }
 
 .content {
@@ -75,17 +47,35 @@
 }
 
 .title {
+    font-size: 1.25rem;
+    font-weight: 600;
     margin: 0;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
-    font-weight: 700;
+    color: var(--text-main);
 }
 
 .dateRange {
-    margin: 0.25rem 0 0 0;
-    font-size: 1.125rem;
-    font-weight: 700;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin: 0.25rem 0 0;
+}
+
+.navButton {
+    background: var(--bg-secondary);
+    border: 1px solid var(--bg-tertiary);
+    color: var(--text-muted);
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    font-size: 1rem;
+}
+
+.navButton:hover {
+    border-color: var(--primary);
     color: var(--text-main);
+    background: var(--bg-tertiary);
 }

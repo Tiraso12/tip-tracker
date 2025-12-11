@@ -1,8 +1,11 @@
 import React from "react";
 import styles from "./Header.module.css"
+import { useAuth } from "../../context/AuthContext";
 
 
-function Header({ user, onLogout }) {
+function Header() {
+    const { user, logout } = useAuth();
+
     return (
         <div className={styles.header}>
             <div className={styles.content}>
@@ -11,7 +14,7 @@ function Header({ user, onLogout }) {
             </div>
             {user && (
                 <div className={styles.actions}>
-                    <button onClick={onLogout} className={styles.logoutButton}>
+                    <button onClick={logout} className={styles.logoutButton}>
                         Logout ({user.username || 'User'})
                     </button>
                 </div>

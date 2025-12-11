@@ -13,8 +13,10 @@ import DataService from "./services/dataService";
 import Login from "./components/Auth/Login";
 
 
+import { useAuth } from "./context/AuthContext";
+
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { user, loading } = useAuth();
   const [baseDate, setBaseDate] = useState(new Date());
   const [weekData, setWeekData] = useState(null);
   const [currentWeekDates, setCurrentWeekDates] = useState([]);
@@ -22,12 +24,12 @@ function App() {
   const [allData, setAllData] = useState({});
 
   useEffect(() => {
-    // Check if user was previously authenticated (simulated)
-    const storedAuth = localStorage.getItem("tip-tracker-auth");
-    if (storedAuth === "true") {
-      setIsAuthenticated(true);
+    if (user) {
+      DataService.setUserId(user.uid);
+    } else {
+      DataService.setUserId(null);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     // Week Mode Logic
@@ -89,25 +91,20 @@ function App() {
     } else {
       // Feature-ui uses viewMode='month', develop uses currentView='month'
       // If we switch to viewMode, we need to adapt this block.
-      // We'll stick to 'viewMode' state but this block uses 'currentView'. 
-      // Note: I replaced conflict 1 state to use isAuthenticated. 
-      // I need to ensure viewMode vs currentView is consistent. 
-      // feature-ui uses 'viewMode'. HEAD used 'currentView'. 
-      // I should have replaced currentView usage in lines 45 too?
-      // Wait, line 45: if (currentView === 'week') {
-      // I need to fix that if I removed currentView state.
     }
   }, [baseDate, viewMode]);
   /* REMOVED useEffect [weekData] for persistence, moving logic to handleUpdate for robust multi-view support */
 
-  const handleUpdate = async (dateKey, field, value) => {
+  const handleUpdate = async (dateKey, updates) => {
+    // updates is an object { gratuity?, tip?, cash? }
+
     // Update allData and Persist (feature-ui way + DataService)
     setAllData(prev => {
       const updated = { ...prev };
       // Ensure object exists
       if (!updated[dateKey]) updated[dateKey] = { gratuity: "", tip: "", cash: "" };
 
-      updated[dateKey] = { ...updated[dateKey], [field]: value };
+      updated[dateKey] = { ...updated[dateKey], ...updates };
 
       localStorage.setItem("tip-tracker-data", JSON.stringify(updated));
       return updated;
@@ -118,24 +115,48 @@ function App() {
       if (!prev) return prev;
       return prev.map(day => {
         if (day.dateKey === dateKey) {
-          return { ...day, [field]: value };
+          return { ...day, ...updates };
         }
         return day;
       });
     });
 
     // 2. Persist to data service
-    const dayToUpdate = weekData?.find(d => d.dateKey === dateKey);
-    if (dayToUpdate) {
-      const updatedDayData = {
-        gratuity: field === 'gratuity' ? value : dayToUpdate.gratuity,
-        tip: field === 'tip' ? value : dayToUpdate.tip,
-        cash: field === 'cash' ? value : dayToUpdate.cash
-      };
-      if (field === 'gratuity' || field === 'tip' || field === 'cash') {
-        await DataService.saveData(dateKey, updatedDayData);
-      }
-    }
+    // We need the latest state. Since state updates are async, we use the 'updates' object
+    // combined with what we know.
+    // However, to be safe, we can fetch or just rely on what we have.
+    // Better: Construct the full object from 'allData' (but that's stale inside function).
+    // Safest: Use setAllData callback or just merge with prev weekData if available.
+
+    // Let's grab the current day data from weekData or allData to merge unchanged fields?
+    // Actually, 'updates' might be partial? 
+    // The requirement says "DayCard... send batch updates". 
+    // DayCard sends { gratuity, tip, cash }. So it's a full update of those fields.
+    // So we can often just overwrite or merge.
+
+    // We'll merge with existing to be safe.
+    // Note: weekData state might be stale here if we just use 'weekData' variable?
+    // No, 'weekData' variable is from render scope. 
+    // It's mostly fine if the user isn't clicking frantically on different days.
+
+    // Best approach: Re-read state in setWeekData? Hard to side-effect from there.
+    // We will assume 'updates' contains the fields that changed.
+
+    // We need to save to Firestore.
+    // Let's reconstruct the objects.
+    const currentDay = weekData?.find(d => d.dateKey === dateKey) || allData[dateKey] || { gratuity: "", tip: "", cash: "" };
+    const updatedDayData = {
+      ...currentDay,
+      ...updates
+    };
+
+    // Clean up purely for Firestore save if needed, but saving extra fields is fine.
+    // Just ensure we save gratuity/tip/cash.
+    await DataService.saveData(dateKey, {
+      gratuity: updatedDayData.gratuity,
+      tip: updatedDayData.tip,
+      cash: updatedDayData.cash
+    });
   };
 
   const handleChangeWeek = (direction) => {
@@ -144,11 +165,6 @@ function App() {
       newDate.setDate(prev.getDate() + (direction * 7));
       return newDate;
     });
-  };
-
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    localStorage.setItem("tip-tracker-auth", "true");
   };
 
   const handleDayClick = (day) => {
@@ -180,8 +196,12 @@ function App() {
     }
   }, []);
 
-  if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
+  if (loading) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'var(--text-primary)' }}>Loading...</div>;
+  }
+
+  if (!user) {
+    return <Login />;
   }
 
   // if (!weekData) return <div className="loading">Loading...</div>; // Optional loading state
