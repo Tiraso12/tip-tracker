@@ -4,8 +4,7 @@ import Calendar from "./components/Calendar/Calendar";
 import MonthView from "./components/Calendar/MonthView";
 import Charts from "./components/Charts/Charts";
 import layout from "./styles/AppLayout.module.css"
-import ViewSwitcher from "./components/ViewSwitcher/ViewSwitcher";
-import MonthCalendar from "./components/MonthCalendar/MonthCalendar";
+
 import WeekHeader from "./components/WeekHeader/WeekHeader";
 import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
 
