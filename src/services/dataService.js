@@ -1,5 +1,5 @@
 import { db } from "../config/firebase";
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, onSnapshot } from "firebase/firestore";
 
 const COLLECTION_NAME = "tips";
 

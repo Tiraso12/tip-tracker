@@ -24,7 +24,7 @@ function Calendar({ weekData, onUpdate }) {
 
   return (
     <div className={styles.calendar}>
-      {weekData.map((day, index) => (
+      {weekData.map((day) => (
         <DayCard
           key={day.dateKey}
           data={day}

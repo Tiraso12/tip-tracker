@@ -67,7 +67,7 @@ function BiweeklySummary({ currentWeekData, currentWeekStart }) {
             });
 
             const total = totalGratuity + totalTip + totalCash;
-            const daysWithData = Math.max(1, dates.length); // Ideally count actual days with data? For now standard 14 day projection logic if that's what feature-ui did.
+
             // Feature-ui logic:
             // const daysWithData = Math.max(1, dates.length); 
             // averageDaily: total / 14

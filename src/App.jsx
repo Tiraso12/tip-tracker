@@ -6,7 +6,7 @@ import Charts from "./components/Charts/Charts";
 import layout from "./styles/AppLayout.module.css"
 
 import WeekHeader from "./components/WeekHeader/WeekHeader";
-import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
+import { getCurrentWeek } from "./utils/dateUtils";
 
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import DataService from "./services/dataService";
@@ -167,10 +167,7 @@ function App() {
     });
   };
 
-  const handleDayClick = (day) => {
-    setBaseDate(day);
-    setViewMode('week');
-  };
+
 
   // Seed Dummy Data for Testing (kept from feature-ui)
   useEffect(() => {
