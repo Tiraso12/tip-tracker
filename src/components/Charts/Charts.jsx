@@ -29,7 +29,7 @@ function Charts({ weekData }) {
             totalCash += c;
 
             return {
-                name: new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' }),
+                name: day.name || new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' }),
                 total: g + t + c,
                 amt: g + t + c
             };
