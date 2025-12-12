@@ -282,6 +282,9 @@ function App() {
         <BiweeklySummary
           currentWeekData={weekData}
           currentWeekStart={currentWeekDates[0]}
+          viewMode={viewMode}
+          currentDate={baseDate}
+          allData={allData}
         />
         <Charts weekData={chartData} />
       </div>
