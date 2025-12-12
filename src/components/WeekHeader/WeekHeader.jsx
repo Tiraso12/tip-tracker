@@ -2,9 +2,10 @@ import React from "react";
 import styles from "./WeekHeader.module.css";
 import { formatDate } from "../../utils/dateUtils";
 
-function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange }) {
+function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange, currentDate }) {
   // Graceful fallback if dates aren't ready
-  if (!startDate || !endDate) return null;
+  if (viewMode === 'week' && (!startDate || !endDate)) return null;
+  if (viewMode === 'month' && !currentDate) return null;
 
   return (
     <div className={styles.container}>
@@ -32,7 +33,7 @@ function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange
           <h2 className={styles.title}>{viewMode === 'month' ? 'Month' : 'Week'}</h2>
           <p className={styles.dateRange}>
             {viewMode === 'month'
-              ? startDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+              ? currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })
               : `${formatDate(startDate)} - ${formatDate(endDate)}`
             }
           </p>

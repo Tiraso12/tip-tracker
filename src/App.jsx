@@ -207,10 +207,14 @@ function App() {
     });
   };
 
-  const handleChangeWeek = (direction) => {
+  const handleNavigation = (direction) => {
     setBaseDate(prev => {
       const newDate = new Date(prev);
-      newDate.setDate(prev.getDate() + (direction * 7));
+      if (viewMode === 'month') {
+        newDate.setMonth(prev.getMonth() + direction);
+      } else {
+        newDate.setDate(prev.getDate() + (direction * 7));
+      }
       return newDate;
     });
   };
@@ -258,10 +262,11 @@ function App() {
     <main className={layout.app}>
       <div className={layout.section}><Header /></div>
       <WeekHeader
+        currentDate={baseDate}
         startDate={currentWeekDates[0]}
         endDate={currentWeekDates[6]}
-        onPrev={() => handleChangeWeek(-1)}
-        onNext={() => handleChangeWeek(1)}
+        onPrev={() => handleNavigation(-1)}
+        onNext={() => handleNavigation(1)}
         viewMode={viewMode}
         onViewChange={setViewMode}
       />
