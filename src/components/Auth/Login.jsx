@@ -15,7 +15,7 @@ const Login = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        console.log("Login Submit:", { email, password, isLogin }); // DEBUG
+        // console.log("Login Submit:", { email, password, isLogin }); // DEBUG
         setError('');
         setLoading(true);
 

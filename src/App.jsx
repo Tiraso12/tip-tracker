@@ -23,6 +23,54 @@ function App() {
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'month'
   const [allData, setAllData] = useState({});
 
+  // Calculate Chart Data
+  const chartData = useMemo(() => {
+    if (viewMode === 'week') return weekData;
+
+    // Month Mode: Aggregate by week, strictly using days in current month
+    const calendarDays = getCalendarMonth(baseDate);
+    const currentMonth = baseDate.getMonth();
+    const currentYear = baseDate.getFullYear();
+
+    // Chunk into 6 weeks
+    const weeks = [];
+    for (let i = 0; i < calendarDays.length; i += 7) {
+      weeks.push(calendarDays.slice(i, i + 7));
+    }
+
+    return weeks.map(weekDays => {
+      // Filter days belonging to current month
+      const daysInMonth = weekDays.filter(d => d.getMonth() === currentMonth && d.getFullYear() === currentYear);
+
+      let grat = 0, tip = 0, cash = 0;
+
+      daysInMonth.forEach(day => {
+        const key = day.toISOString().split('T')[0];
+        const data = allData[key] || { gratuity: 0, tip: 0, cash: 0 };
+
+        grat += Number(data.gratuity) || 0;
+        tip += Number(data.tip) || 0;
+        cash += Number(data.cash) || 0;
+      });
+
+      // Label: Start and End of the WEEK
+      const start = weekDays[0];
+      const end = weekDays[6];
+      // simplified format MM/DD
+      const fmt = d => `${d.getMonth() + 1}/${d.getDate()}`;
+      const label = `${fmt(start)} - ${fmt(end)}`;
+
+      return {
+        name: label,
+        date: start,
+        gratuity: grat,
+        tip: tip,
+        cash: cash
+      };
+    }).filter(week => week.gratuity > 0 || week.tip > 0 || week.cash > 0 || true);
+
+  }, [viewMode, baseDate, allData, weekData]);
+
   useEffect(() => {
     if (user) {
       DataService.setUserId(user.uid);
@@ -204,55 +252,7 @@ function App() {
   // if (!weekData) return <div className="loading">Loading...</div>; // Optional loading state
 
 
-  // Calculate Chart Data
-  const chartData = useMemo(() => {
-    if (viewMode === 'week') return weekData;
 
-    // Month Mode: Aggregate by week, strictly using days in current month
-    const calendarDays = getCalendarMonth(baseDate);
-    const currentMonth = baseDate.getMonth();
-    const currentYear = baseDate.getFullYear();
-
-    // Chunk into 6 weeks
-    const weeks = [];
-    for (let i = 0; i < calendarDays.length; i += 7) {
-      weeks.push(calendarDays.slice(i, i + 7));
-    }
-
-    return weeks.map(weekDays => {
-      // Filter days belonging to current month
-      const daysInMonth = weekDays.filter(d => d.getMonth() === currentMonth && d.getFullYear() === currentYear);
-
-      let grat = 0, tip = 0, cash = 0;
-
-      daysInMonth.forEach(day => {
-        const key = day.toISOString().split('T')[0];
-        const data = allData[key] || { gratuity: 0, tip: 0, cash: 0 };
-
-        grat += Number(data.gratuity) || 0;
-        tip += Number(data.tip) || 0;
-        cash += Number(data.cash) || 0;
-      });
-
-      // Label: Start and End of the WEEK
-      const start = weekDays[0];
-      const end = weekDays[6];
-      // simplified format MM/DD
-      const fmt = d => `${d.getMonth() + 1}/${d.getDate()}`;
-      const label = `${fmt(start)} - ${fmt(end)}`;
-
-      return {
-        name: label,
-        date: start,
-        gratuity: grat,
-        tip: tip,
-        cash: cash
-      };
-    }).filter(week => week.gratuity > 0 || week.tip > 0 || week.cash > 0 || true); // keep all weeks for structure? 
-    // User wants "weekly trend should be the 4 week weekly trend". 
-    // Showing 4-6 bars (rows) is correct even if empty.
-
-  }, [viewMode, baseDate, allData, weekData]);
 
   return (
     <main className={layout.app}>
