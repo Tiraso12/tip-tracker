@@ -100,11 +100,6 @@ function App() {
         };
       });
 
-      // Load saved data to allData
-      const savedJSON = localStorage.getItem("tip-tracker-data");
-      const savedData = savedJSON ? JSON.parse(savedJSON) : {};
-      setAllData(savedData);
-
       // Sub function to update state safely
       const handleRealTimeUpdate = (key, data) => {
         setWeekData(prev => {
@@ -140,7 +135,7 @@ function App() {
       // Feature-ui uses viewMode='month', develop uses currentView='month'
       // If we switch to viewMode, we need to adapt this block.
     }
-  }, [baseDate, viewMode]);
+  }, [baseDate, viewMode, user]);
   /* REMOVED useEffect [weekData] for persistence, moving logic to handleUpdate for robust multi-view support */
 
   const handleUpdate = async (dateKey, updates) => {
@@ -154,7 +149,6 @@ function App() {
 
       updated[dateKey] = { ...updated[dateKey], ...updates };
 
-      localStorage.setItem("tip-tracker-data", JSON.stringify(updated));
       return updated;
     });
 
@@ -221,29 +215,23 @@ function App() {
 
 
 
-  // Seed Dummy Data for Testing (kept from feature-ui)
+  // Fetch all data on user login
   useEffect(() => {
-    const existing = localStorage.getItem("tip-tracker-data");
-    if (!existing) {
-      const dummyData = {};
-      const anchor = new Date();
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(anchor);
-        d.setDate(d.getDate() - i);
-        const k = d.toISOString().split('T')[0];
-        dummyData[k] = { gratuity: (100 + i * 10), tip: (20 + i), cash: (5 + i) };
+    const fetchAllData = async () => {
+      if (user) {
+        try {
+          const data = await DataService.getAllData();
+          setAllData(data);
+        } catch (error) {
+          console.error("Failed to fetch all data:", error);
+        }
+      } else {
+        setAllData({});
       }
-      for (let i = 1; i <= 7; i++) {
-        const d = new Date(anchor);
-        d.setDate(d.getDate() + i);
-        const k = d.toISOString().split('T')[0];
-        dummyData[k] = { gratuity: 50, tip: 10, cash: 0 };
-      }
+    };
 
-      localStorage.setItem("tip-tracker-data", JSON.stringify(dummyData));
-      window.location.reload();
-    }
-  }, []);
+    fetchAllData();
+  }, [user]);
 
   if (loading) {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'var(--text-primary)' }}>Loading...</div>;
