@@ -30,12 +30,14 @@ function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange
           &lt;
         </button>
         <div className={styles.content}>
-          <h2 className={styles.title}>{viewMode === 'month' ? 'Month' : 'Week'}</h2>
-          <p className={styles.dateRange}>
+          <h2 className={styles.title}>
             {viewMode === 'month'
               ? currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })
-              : `${formatDate(startDate)} - ${formatDate(endDate)}`
+              : startDate?.toLocaleString('default', { month: 'long', year: 'numeric' })
             }
+          </h2>
+          <p className={styles.dateRange}>
+            {viewMode === 'week' && `${formatDate(startDate)} - ${formatDate(endDate)}`}
           </p>
         </div>
         <button onClick={onNext} className={styles.navButton} aria-label="Next">
