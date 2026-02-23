@@ -11,8 +11,6 @@
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 0.5rem;
-    min-width: 700px;
-    /* Ensure space for full DayCards */
 }
 
 .dayHeader {
@@ -88,4 +86,35 @@
 .selected {
     background-color: var(--primary);
     color: white;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 0.5rem;
+    }
+
+    .grid {
+        gap: 0.35rem;
+    }
+
+    .dayHeader {
+        font-size: 0.7rem;
+        padding-bottom: 0.25rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 0.35rem;
+        border-radius: var(--radius-md);
+    }
+
+    .grid {
+        gap: 0.2rem;
+    }
+
+    .dayHeader {
+        font-size: 0.6rem;
+        padding-bottom: 0.2rem;
+    }
 }

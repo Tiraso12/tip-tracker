@@ -156,3 +156,77 @@
     gap: 0.75rem;
   }
 }
+
+@media (max-width: 768px) {
+  .calendar {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+  }
+
+  .card {
+    min-width: unset;
+    padding: 0.65rem;
+  }
+
+  .card h1 {
+    font-size: 0.75rem;
+  }
+
+  .row {
+    font-size: 0.8rem;
+  }
+
+  .input,
+  .value {
+    width: 50px;
+    font-size: 0.875rem;
+  }
+
+  .totalAmount {
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .calendar {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .card {
+    min-width: unset;
+    padding: 0.6rem;
+  }
+
+  .card h1 {
+    font-size: 0.7rem;
+    padding-bottom: 0.35rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .row {
+    font-size: 0.75rem;
+  }
+
+  .input,
+  .value {
+    width: 46px;
+    font-size: 0.8rem;
+    height: 24px;
+    line-height: 24px;
+  }
+
+  .totalLabel {
+    font-size: 0.75rem;
+  }
+
+  .totalAmount {
+    font-size: 0.875rem;
+  }
+
+  .saveBtn,
+  .cancelBtn {
+    font-size: 0.65rem;
+    padding: 0.35rem;
+  }
+}
