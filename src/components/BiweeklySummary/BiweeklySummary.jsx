@@ -1,115 +1,118 @@
-import React, { useMemo, useEffect, useState } from "react";
+import React, { useMemo } from "react";
 import styles from "./BiweeklySummary.module.css";
 import { getBiweeklyPeriod, formatDate } from "../../utils/dateUtils";
-import DataService from "../../services/dataService";
 
 function BiweeklySummary({ currentWeekData, currentWeekStart, viewMode, currentDate, allData }) {
-    // We need to calculate the period based on the current week's start date
-    // Assuming currentWeekStart is a Date object.
-    // Actually, getBiweeklyPeriod takes any date and finds the period it belongs to.
-    // But care: if we view a week that spans two periods?
-    // Current logic: the user is viewing a specific week. We should show the period THAT week belongs to.
-    // Or if the week splits across periods? 
-    // Our weeks are Fri-Thu. Periods are Fri-Thu (2 weeks).
-    // Since specific anchor is Nov 21 (Fri), and periods are 14 days, they always align with the Fri-Thu weeks.
-    // So a generic "Current Week" will always fall entirely within one Biweekly Period.
+    const fmt = (n) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
-    const { start, end } = useMemo(() => {
+    // Helper: sum gratuity/tip/cash from a list of date keys
+    const sumRange = (dateKeys) => {
+        let gratuity = 0, tip = 0, cash = 0;
+        dateKeys.forEach(dateKey => {
+            const liveDay = currentWeekData?.find(d => d.dateKey === dateKey);
+            const contextData = allData?.[dateKey];
+            const source = liveDay || contextData || { gratuity: 0, tip: 0, cash: 0 };
+            gratuity += Number(source.gratuity) || 0;
+            tip += Number(source.tip) || 0;
+            cash += Number(source.cash) || 0;
+        });
+        return { gratuity, tip, cash, total: gratuity + tip + cash };
+    };
+
+    // Generate date keys for a date range
+    const getDateKeys = (start, end) => {
+        const keys = [];
+        const dayCount = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        for (let i = 0; i < dayCount; i++) {
+            const d = new Date(start);
+            d.setDate(start.getDate() + i);
+            keys.push(d.toISOString().split('T')[0]);
+        }
+        return keys;
+    };
+
+    // WEEK VIEW: weekly totals for displayed week, biweekly totals for pay period
+    // MONTH VIEW: monthly totals for the displayed month
+    const { weekTotals, biweeklyTotals, weekStart, weekEnd, biStart, biEnd, displayStart, displayEnd } = useMemo(() => {
         if (viewMode === 'month' && currentDate) {
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
+            const monthStart = new Date(year, month, 1);
+            const monthEnd = new Date(year, month + 1, 0);
+            const monthKeys = getDateKeys(monthStart, monthEnd);
+            const monthSums = sumRange(monthKeys);
             return {
-                start: new Date(year, month, 1),
-                end: new Date(year, month + 1, 0)
+                weekTotals: monthSums,
+                biweeklyTotals: monthSums,
+                weekStart: monthStart,
+                weekEnd: monthEnd,
+                biStart: monthStart,
+                biEnd: monthEnd,
+                displayStart: monthStart,
+                displayEnd: monthEnd,
             };
         }
-        if (!currentWeekStart) return { start: new Date(), end: new Date() };
-        return getBiweeklyPeriod(currentWeekStart);
-    }, [currentWeekStart, viewMode, currentDate]);
 
-    const [totals, setTotals] = useState({ gratuity: 0, tip: 0, cash: 0, total: 0 });
+        // Week view
+        if (!currentWeekStart) {
+            const empty = { gratuity: 0, tip: 0, cash: 0, total: 0 };
+            const now = new Date();
+            return { weekTotals: empty, biweeklyTotals: empty, weekStart: now, weekEnd: now, biStart: now, biEnd: now, displayStart: now, displayEnd: now };
+        }
 
-    useEffect(() => {
-        if (!start) return;
+        // Current displayed week (7 days: Fri-Thu)
+        const wStart = new Date(currentWeekStart);
+        wStart.setHours(0, 0, 0, 0);
+        const wEnd = new Date(wStart);
+        wEnd.setDate(wStart.getDate() + 6);
+        const weekKeys = getDateKeys(wStart, wEnd);
+        const wTotals = sumRange(weekKeys);
 
-        const calculateTotals = async () => {
-            // Determine number of days in range
-            const dayCount = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        // Biweekly pay period (14 days)
+        const { start: bStart, end: bEnd } = getBiweeklyPeriod(currentWeekStart);
+        const biKeys = getDateKeys(bStart, bEnd);
+        const bTotals = sumRange(biKeys);
 
-            const dates = [];
-            for (let i = 0; i < dayCount; i++) {
-                const d = new Date(start);
-                d.setDate(start.getDate() + i);
-                dates.push(d.toISOString().split('T')[0]);
-            }
-
-            // Use allData if available (passed from App), otherwise fallback to service
-            // In Month view, App passes allData. In Week view, we might rely on service if old code did.
-            // But App now passes allData always.
-
-            let totalGratuity = 0;
-            let totalTip = 0;
-            let totalCash = 0;
-
-            dates.forEach(dateKey => {
-                // Priority: currentWeekData (if editing) -> allData (if loaded) -> service (fallback)
-                // Actually allData in App is the source of truth for Month View.
-                // currentWeekData is specifically for the active week being edited.
-
-                const liveDay = currentWeekData?.find(d => d.dateKey === dateKey); // Only relevant if this day is in current week
-                const contextData = allData?.[dateKey];
-
-                const source = liveDay || contextData || { gratuity: 0, tip: 0, cash: 0 };
-
-                totalGratuity += Number(source.gratuity) || 0;
-                totalTip += Number(source.tip) || 0;
-                totalCash += Number(source.cash) || 0;
-            });
-
-            const total = totalGratuity + totalTip + totalCash;
-
-            setTotals({
-                gratuity: totalGratuity,
-                tip: totalTip,
-                cash: totalCash,
-                total: total,
-                averageDaily: total / dayCount, // Average over the full period
-                projected: total // Projection logic is vague, sticking to actuals for now
-            });
+        return {
+            weekTotals: wTotals,
+            biweeklyTotals: bTotals,
+            weekStart: wStart,
+            weekEnd: wEnd,
+            biStart: bStart,
+            biEnd: bEnd,
+            displayStart: wStart,
+            displayEnd: wEnd,
         };
+    }, [currentWeekData, currentWeekStart, viewMode, currentDate, allData]);
 
-        calculateTotals();
-
-    }, [start, end, currentWeekData, allData]);
-
-
-    const fmt = (n) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+    const dayCount = Math.round((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) + 1;
+    const averageDaily = dayCount > 0 ? weekTotals.total / dayCount : 0;
 
     return (
         <div className={styles.summary}>
             <div className={styles.header}>
                 <h2 className={styles.title}>{viewMode === 'month' ? 'MONTHLY SUMMARY' : 'FINANCIAL SUMMARY'}</h2>
                 <div className={styles.subtitle}>
-                    {formatDate(start)} - {formatDate(end)}
+                    {formatDate(displayStart)} - {formatDate(displayEnd)}
                 </div>
             </div>
 
             <div className={styles.content}>
-                <div className={styles.row}><span>Total gratuity</span><span>{fmt(totals.gratuity)}</span></div>
-                <div className={styles.row}><span>Total tip</span><span>{fmt(totals.tip)}</span></div>
-                <div className={styles.row}><span>Total cash</span><span>{fmt(totals.cash)}</span></div>
+                <div className={styles.row}><span>Total gratuity</span><span>{fmt(weekTotals.gratuity)}</span></div>
+                <div className={styles.row}><span>Total tip</span><span>{fmt(weekTotals.tip)}</span></div>
+                <div className={styles.row}><span>Total cash</span><span>{fmt(weekTotals.cash)}</span></div>
 
                 <div className={styles.divider} />
 
-                <div className={styles.row}><span>Average Daily</span><span>{fmt(totals.averageDaily || 0)}</span></div>
+                <div className={styles.row}><span>Average Daily</span><span>{fmt(averageDaily)}</span></div>
                 <div className={styles.row}>
-                    <span>{viewMode === 'month' ? 'Proj. Month' : 'Proj. Biweekly'} ({formatDate(start)} - {formatDate(end)})</span>
-                    <span>{fmt(totals.projected || 0)}</span>
+                    <span>{viewMode === 'month' ? 'Proj. Month' : 'Proj. Biweekly'} ({formatDate(biStart)} - {formatDate(biEnd)})</span>
+                    <span>{fmt(biweeklyTotals.total)}</span>
                 </div>
 
                 <div className={styles.totalRow}>
-                    <span>Period Total</span>
-                    <strong>{fmt(totals.total)}</strong>
+                    <span>{viewMode === 'month' ? 'Month Total' : 'Week Total'}</span>
+                    <strong>{fmt(weekTotals.total)}</strong>
                 </div>
             </div>
         </div>
