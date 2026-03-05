@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { doc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 const AuthContext = createContext(null);
 
@@ -10,16 +10,26 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Listen to Firebase Auth state changes
-        const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Login needed");
             if (firebaseUser) {
-                // Map Firebase user to our app's user structure
+                // Fetch role from Firestore
+                let role = "employee"; // default
+                try {
+                    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+                    if (userDoc.exists()) {
+                        role = userDoc.data().role || "employee";
+                    }
+                } catch (e) {
+                    console.warn("Could not fetch user role:", e);
+                }
+
                 const mappedUser = {
                     uid: firebaseUser.uid,
                     username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
                     email: firebaseUser.email,
-                    photoURL: firebaseUser.photoURL
+                    photoURL: firebaseUser.photoURL,
+                    role,
                 };
                 setUser(mappedUser);
             } else {
@@ -28,29 +38,20 @@ export const AuthProvider = ({ children }) => {
             setLoading(false);
         });
 
-        // Cleanup subscription
         return () => unsubscribe();
     }, []);
-
-    // These functions are less critical now if using FirebaseUI, 
-    // but useful if we want to add custom buttons later.
-    // We strictly only need logout for now.
 
     const logout = async () => {
         try {
             await signOut(auth);
-            // State update handled by onAuthStateChanged (will revert to DEV_USER)
         } catch (error) {
             console.error("Logout failed", error);
         }
     };
 
-    // Keep these empty or throw error if called, 
-    // as we are delegating login/register to the UI widget for now.
     const login = async (identifier, password) => {
         let emailToSignIn = identifier;
 
-        // If identifier is NOT an email, look it up
         if (!identifier.includes('@')) {
             const usersRef = collection(db, 'users');
             const q = query(usersRef, where('username', '==', identifier));
@@ -59,7 +60,6 @@ export const AuthProvider = ({ children }) => {
             if (querySnapshot.empty) {
                 throw new Error("User not found");
             }
-            // define emailToSignIn from the found document
             emailToSignIn = querySnapshot.docs[0].data().email;
         }
 
@@ -67,7 +67,6 @@ export const AuthProvider = ({ children }) => {
     };
 
     const register = async (email, password, username) => {
-        // Validation: Check if username is taken
         const usersRef = collection(db, 'users');
         const q = query(usersRef, where('username', '==', username));
         const querySnapshot = await getDocs(q);
@@ -79,20 +78,18 @@ export const AuthProvider = ({ children }) => {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const firebaseUser = userCredential.user;
 
-        await updateProfile(firebaseUser, {
-            displayName: username
-        });
+        await updateProfile(firebaseUser, { displayName: username });
 
-        // Store user in Firestore 'users' collection
+        // New users default to "employee" role
         await setDoc(doc(db, 'users', firebaseUser.uid), {
             uid: firebaseUser.uid,
             username: username,
             email: email,
+            role: "employee",
             createdAt: new Date().toISOString()
         });
 
-        // Force update user state with new display name
-        setUser(prev => ({ ...prev, username: username }));
+        setUser(prev => ({ ...prev, username: username, role: "employee" }));
         return firebaseUser;
     };
 

@@ -11,12 +11,13 @@ import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import DataService from "./services/dataService";
 import Login from "./components/Auth/Login";
-
+import AdminDashboard from "./components/Admin/AdminDashboard";
 
 import { useAuth } from "./context/AuthContext";
 
 function App() {
   const { user, loading } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [baseDate, setBaseDate] = useState(new Date());
   const [weekData, setWeekData] = useState(null);
   const [currentWeekDates, setCurrentWeekDates] = useState([]);
@@ -243,14 +244,16 @@ function App() {
     return <Login />;
   }
 
-  // if (!weekData) return <div className="loading">Loading...</div>; // Optional loading state
-
-
-
+  // Admins go directly to their own central panel — no tracker
+  if (isAdmin) {
+    return <AdminDashboard />;
+  }
 
   return (
     <main className={layout.app}>
-      <div className={layout.section}><Header /></div>
+      <div className={layout.section}>
+        <Header />
+      </div>
       <WeekHeader
         currentDate={baseDate}
         startDate={currentWeekDates[0]}
@@ -262,7 +265,7 @@ function App() {
       />
       <div className={layout.section}>
         {viewMode === 'week' ? (
-          <Calendar weekData={weekData} onUpdate={handleUpdate} />
+          <Calendar weekData={weekData} onUpdate={handleUpdate} readOnly={!isAdmin} />
         ) : (
           <MonthView
             currentDate={baseDate}

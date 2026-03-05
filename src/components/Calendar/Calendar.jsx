@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import styles from "./Calendar.module.css";
 import DayCard from "./DayCard";
 
-function Calendar({ weekData, onUpdate }) {
+function Calendar({ weekData, onUpdate, readOnly = false }) {
   const [activeDateKey, setActiveDateKey] = useState(null);
 
   // Close active card when clicking outside
@@ -32,6 +32,7 @@ function Calendar({ weekData, onUpdate }) {
           isEditing={activeDateKey === day.dateKey}
           onEditStart={() => setActiveDateKey(day.dateKey)}
           onCancel={() => setActiveDateKey(null)}
+          readOnly={readOnly}
         />
       ))}
     </div>

@@ -3,7 +3,7 @@ import styles from "./Calendar.module.css";
 
 
 
-function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = 'week' }) {
+function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = 'week', readOnly = false }) {
     const [editValues, setEditValues] = useState({
         gratuity: data.gratuity || "",
         tip: data.tip || "",
@@ -29,7 +29,7 @@ function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = '
 
     const handleCardClick = (e) => {
         e.stopPropagation();
-        if (!isEditing) {
+        if (!isEditing && !readOnly) {
             onEditStart();
         }
     };
@@ -70,7 +70,7 @@ function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = '
             <h1>{getTitle()}</h1>
 
             <div className={styles.row}>
-                <span>gratuity</span>
+                <span>Gratuity</span>
                 {isEditing ? (
                     <input
                         type="text"
@@ -89,7 +89,7 @@ function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = '
             </div>
 
             <div className={styles.row}>
-                <span>tip</span>
+                <span>Tip</span>
                 {isEditing ? (
                     <input
                         type="text"
@@ -108,7 +108,7 @@ function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = '
             </div>
 
             <div className={styles.row}>
-                <span>cash</span>
+                <span>Cash</span>
                 {isEditing ? (
                     <input
                         type="text"
@@ -131,14 +131,16 @@ function DayCard({ data, onUpdate, isEditing, onEditStart, onCancel, variant = '
                 <span className={styles.totalAmount}>${currentTotal}</span>
             </div>
 
-            <div className={styles.footer}>
-                {isEditing && (
-                    <div className={styles.actions}>
-                        <button className={styles.cancelBtn} onClick={handleCancelClick}>Cancel</button>
-                        <button className={styles.saveBtn} onClick={handleSave}>Save</button>
-                    </div>
-                )}
-            </div>
+            {!readOnly && (
+                <div className={styles.footer}>
+                    {isEditing && (
+                        <div className={styles.actions}>
+                            <button className={styles.cancelBtn} onClick={handleCancelClick}>Cancel</button>
+                            <button className={styles.saveBtn} onClick={handleSave}>Save</button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
