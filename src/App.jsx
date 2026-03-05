@@ -74,6 +74,8 @@ function App() {
   useEffect(() => {
     if (user) {
       DataService.setUserId(user.uid);
+      // Reset to today's date on login so the calendar doesn't show a stale week/month
+      setBaseDate(new Date());
     } else {
       DataService.setUserId(null);
     }
