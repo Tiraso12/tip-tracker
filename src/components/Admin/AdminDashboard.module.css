@@ -60,19 +60,31 @@
     opacity: 0.75;
 }
 
-/* Center panel */
-.centerPanel {
+/* Two-column main content area */
+.mainContent {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1.5rem;
+    padding: 2rem 1.5rem;
     flex: 1;
+    align-items: start;
+}
+
+/* Left: control panel */
+.controlPanel {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    border: 1px solid var(--bg-tertiary);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 1.5rem;
     gap: 1rem;
+    position: sticky;
+    top: 1.5rem;
 }
 
 .panelTitle {
-    font-size: 2rem;
+    font-size: 1.25rem;
     font-weight: 700;
     margin: 0;
     color: var(--text-main);
@@ -80,10 +92,230 @@
 
 .panelSubtitle {
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: 0.8rem;
     margin: 0;
+    line-height: 1.5;
+}
+
+/* View Toggle */
+.viewToggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-primary);
+    padding: 0.35rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--bg-tertiary);
+}
+
+.toggleBtn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.toggleBtn:hover {
+    color: var(--text-main);
+}
+
+.toggleBtn.active {
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Day Payout Panel */
+.payoutPanel {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--bg-tertiary);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.payoutPanelHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.payoutPanelTitle {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-main);
+}
+
+.payoutPanelDate {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.exportBtn {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-sm);
+    padding: 0.35rem 0.8rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.exportBtn:hover {
+    background: var(--primary);
+    color: white;
+}
+
+/* Empty state */
+.payoutEmpty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
     text-align: center;
 }
+
+.payoutEmptyIcon {
+    font-size: 2rem;
+    margin-bottom: 0.25rem;
+}
+
+.payoutEmptyHint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    margin: 0;
+}
+
+/* Summary mini-bar */
+.daySummaryBar {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    padding: 0.6rem 1.5rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.daySummaryBar strong {
+    color: var(--text-main);
+}
+
+.contractBadge {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+/* Payout table wrapper */
+.payoutTableWrap {
+    overflow-x: auto;
+}
+
+/* Day payout table */
+.dayPayoutTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.dayPayoutTable thead th {
+    text-align: left;
+    padding: 0.6rem 1rem;
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--bg-tertiary);
+    white-space: nowrap;
+}
+
+/* Role section header rows */
+.roleHeaderRow td {
+    padding: 0.35rem 1rem;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--bg-tertiary);
+}
+
+.roleHeaderLabel {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--primary);
+}
+
+/* Data rows */
+.payoutRow td {
+    padding: 0.6rem 1rem;
+    color: var(--text-main);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.payoutRow:hover td {
+    background: var(--bg-primary);
+}
+
+.nameCell {
+    font-weight: 500;
+}
+
+.dash {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+/* Totals footer row */
+.totalsRow td {
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--bg-tertiary);
+    background: var(--bg-primary);
+    font-weight: 600;
+}
+
+.totalsLabel {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .mainContent {
+        grid-template-columns: 1fr;
+    }
+
+    .controlPanel {
+        position: static;
+    }
+}
+
 
 .dateRow {
     display: flex;
@@ -121,6 +353,30 @@
 .openBtn:hover {
     opacity: 0.85;
 }
+
+.dayNavBtn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 700;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.dayNavBtn:hover {
+    background: var(--primary);
+    color: #fff;
+    transform: scale(1.1);
+}
+
 
 /* Modal overlay */
 .modalOverlay {
@@ -307,6 +563,79 @@
     flex-wrap: wrap;
 }
 
+/* Points input in AddEmployeeRow */
+.ptsField {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.5rem;
+}
+
+.ptsLabel {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.ptsInput {
+    background: transparent;
+    border: none;
+    color: var(--primary);
+    font-size: 0.875rem;
+    font-weight: 700;
+    width: 48px;
+    outline: none;
+    text-align: center;
+}
+
+.ptsInput::-webkit-inner-spin-button,
+.ptsInput::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+.ptsInput[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+/* Points badge on member tags */
+.memberPts {
+    font-size: 0.7rem;
+    color: var(--primary);
+    font-weight: 700;
+    margin-left: 0.25rem;
+    opacity: 0.9;
+}
+
+/* "Include bar in pool" secondary checkbox label in contract row */
+.barPoolToggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px dashed var(--bg-tertiary);
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.barPoolToggle:has(input:checked) {
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+
 .select,
 .input {
     background: var(--bg-secondary);
@@ -321,6 +650,22 @@
 .select:focus,
 .input:focus {
     border-color: var(--primary);
+}
+
+/* Remove spin buttons from number inputs */
+.input::-webkit-outer-spin-button,
+.input::-webkit-inner-spin-button,
+.inlineInput::-webkit-outer-spin-button,
+.inlineInput::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+.input[type=number],
+.inlineInput[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
 }
 
 .addBtn {
@@ -508,5 +853,238 @@
 .saveRow {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+/* ── Pool Inputs card grid ──────────────────────────── */
+.poolGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    align-items: start;
+    margin-top: 0.5rem;
+}
+
+.poolCard {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.07));
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.poolCardHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.1rem;
+}
+
+.poolCardTitle {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.poolFieldGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.4rem;
+}
+
+/* Per-team contract collapsible inside pool cards */
+.teamContractDetails {
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 0.4rem;
+    margin-top: 0.1rem;
+}
+
+.teamContractSummary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    padding: 0.2rem 0;
+}
+
+.teamContractSummary::-webkit-details-marker {
+    display: none;
+}
+
+.teamContractSummary::before {
+    content: '▶';
+    font-size: 0.5rem;
+    transition: transform 0.15s;
+    flex-shrink: 0;
+}
+
+details[open]>.teamContractSummary::before {
+    transform: rotate(90deg);
+}
+
+.teamContractList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding-top: 0.35rem;
+}
+
+.addContractMini {
+    background: rgba(147, 51, 234, 0.12);
+    color: var(--primary);
+    border: 1px solid rgba(147, 51, 234, 0.25);
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.45rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.addContractMini:hover {
+    background: rgba(147, 51, 234, 0.25);
+}
+
+@media (max-width: 780px) {
+    .poolGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .poolFieldGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── Multi-contract UI ──────────────────────────────── */
+.contractsDetails {
+    background: var(--bg-primary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
+    overflow: hidden;
+}
+
+.contractsSummary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    list-style: none;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.contractsSummary::-webkit-details-marker {
+    display: none;
+}
+
+.contractsSummary::before {
+    content: '▶';
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+details[open]>.contractsSummary::before {
+    transform: rotate(90deg);
+}
+
+.contractsSummary:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.contractsBadge {
+    background: rgba(147, 51, 234, 0.15);
+    color: var(--primary);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.contractsList {
+    padding: 0.45rem 0.75rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.contractCard {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--bg-tertiary);
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    flex-wrap: wrap;
+}
+
+.contractLabel {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--primary);
+    min-width: 20px;
+}
+
+.removeContractBtn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.removeContractBtn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.addBtn {
+    background: rgba(147, 51, 234, 0.15);
+    color: var(--primary);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem 0.55rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.addBtn:hover {
+    background: rgba(147, 51, 234, 0.28);
 }

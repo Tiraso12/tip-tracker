@@ -11,6 +11,7 @@ import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
 import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
 import DataService from "./services/dataService";
 import Login from "./components/Auth/Login";
+import PendingApproval from "./components/Auth/PendingApproval";
 import AdminDashboard from "./components/Admin/AdminDashboard";
 
 import { useAuth } from "./context/AuthContext";
@@ -242,6 +243,11 @@ function App() {
 
   if (!user) {
     return <Login />;
+  }
+
+  // Pending users cannot access the app until approved
+  if (user.status === "pending") {
+    return <PendingApproval />;
   }
 
   // Admins go directly to their own central panel — no tracker

@@ -1,8 +1,11 @@
 import React, { useMemo } from "react";
 import styles from "./BiweeklySummary.module.css";
 import { getBiweeklyPeriod, formatDate } from "../../utils/dateUtils";
+import { generateWeeklyReport, generateMonthlyReport } from "../../utils/pdfExport";
+import { useAuth } from "../../context/AuthContext";
 
 function BiweeklySummary({ currentWeekData, currentWeekStart, viewMode, currentDate, allData }) {
+    const { isAdmin } = useAuth();
     const fmt = (n) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
     // Helper: sum gratuity/tip/cash from a list of date keys
@@ -88,10 +91,51 @@ function BiweeklySummary({ currentWeekData, currentWeekStart, viewMode, currentD
     const dayCount = Math.round((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) + 1;
     const averageDaily = dayCount > 0 ? weekTotals.total / dayCount : 0;
 
+    const handleExport = () => {
+        // Construct array of day data
+        const dayList = [];
+        const start = viewMode === "month" ? biStart : displayStart;
+        const end = viewMode === "month" ? biEnd : displayEnd;
+        const keys = getDateKeys(start, end);
+
+        keys.forEach(k => {
+            const liveDay = currentWeekData?.find(d => d.dateKey === k);
+            const ctx = allData?.[k];
+            const data = liveDay || ctx || { gratuity: 0, tip: 0, cash: 0 };
+
+            // Reconstruct the day object exactly as pdfExport expects
+            dayList.push({
+                date: k,
+                gratuity: Number(data.gratuity) || 0,
+                tip: Number(data.tip) || 0,
+                cash: Number(data.cash) || 0,
+                payouts: data.payouts || {}
+            });
+        });
+
+        if (viewMode === 'month') {
+            const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+            generateMonthlyReport(monthName, dayList);
+        } else {
+            const label = `${formatDate(displayStart)} - ${formatDate(displayEnd)}`;
+            generateWeeklyReport(dayList, label, allData);
+        }
+    };
+
     return (
         <div className={styles.summary}>
             <div className={styles.header}>
-                <h2 className={styles.title}>{viewMode === 'month' ? 'MONTHLY SUMMARY' : 'FINANCIAL SUMMARY'}</h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h2 className={styles.title}>{viewMode === 'month' ? 'MONTHLY SUMMARY' : 'FINANCIAL SUMMARY'}</h2>
+                    {isAdmin && (
+                        <button
+                            className={styles.exportBtn}
+                            onClick={handleExport}
+                        >
+                            Export PDF
+                        </button>
+                    )}
+                </div>
                 <div className={styles.subtitle}>
                     {formatDate(displayStart)} - {formatDate(displayEnd)}
                 </div>

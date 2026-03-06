@@ -13,15 +13,17 @@ export const AuthProvider = ({ children }) => {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Login needed");
             if (firebaseUser) {
-                // Fetch role from Firestore
-                let role = "employee"; // default
+                // Fetch role and status from Firestore
+                let role = "employee"; // default fallback
+                let status = "active"; // default fallback
                 try {
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
                         role = userDoc.data().role || "employee";
+                        status = userDoc.data().status || "active";
                     }
                 } catch (e) {
-                    console.warn("Could not fetch user role:", e);
+                    console.warn("Could not fetch user data:", e);
                 }
 
                 const mappedUser = {
@@ -30,6 +32,7 @@ export const AuthProvider = ({ children }) => {
                     email: firebaseUser.email,
                     photoURL: firebaseUser.photoURL,
                     role,
+                    status,
                 };
                 setUser(mappedUser);
             } else {
@@ -80,16 +83,17 @@ export const AuthProvider = ({ children }) => {
 
         await updateProfile(firebaseUser, { displayName: username });
 
-        // New users default to "employee" role
+        // New users default to pending status
         await setDoc(doc(db, 'users', firebaseUser.uid), {
             uid: firebaseUser.uid,
             username: username,
             email: email,
-            role: "employee",
+            role: "unassigned",
+            status: "pending",
             createdAt: new Date().toISOString()
         });
 
-        setUser(prev => ({ ...prev, username: username, role: "employee" }));
+        setUser(prev => ({ ...prev, username: username, role: "unassigned", status: "pending" }));
         return firebaseUser;
     };
 

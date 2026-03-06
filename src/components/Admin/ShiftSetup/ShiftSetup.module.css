@@ -1,0 +1,378 @@
+.container {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 1rem;
+    height: 58vh;
+    min-height: 420px;
+    align-items: stretch;
+}
+
+.poolPanel {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-lg);
+    padding: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    overflow-y: auto;
+}
+
+.assignmentPanel {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    overflow-y: auto;
+}
+
+.panelTitle {
+    font-size: 0.7rem;
+    font-weight: 700;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+}
+
+.searchInput {
+    width: 100%;
+    padding: 0.4rem 0.65rem;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    color: var(--text-main);
+    font-size: 0.8rem;
+    box-sizing: border-box;
+}
+
+.searchInput:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.employeeList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    overflow-y: auto;
+}
+
+.poolItem {
+    background: var(--bg-primary);
+    padding: 0.38rem 0.6rem;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    cursor: grab;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: border-color 0.15s;
+}
+
+.poolItem:hover {
+    border-color: var(--primary);
+}
+
+.poolItem:active {
+    cursor: grabbing;
+}
+
+.empName {
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.empRole {
+    font-size: 0.65rem;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+}
+
+.emptyMsg {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-align: center;
+    margin-top: 0.5rem;
+}
+
+/* Common drop zone styling */
+.dropZone {
+    background: var(--bg-primary);
+    border: 1.5px dashed rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    padding: 0.55rem 0.65rem;
+    min-height: 62px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.dropZone.isOver {
+    border-color: var(--primary);
+    background: rgba(147, 51, 234, 0.05);
+}
+
+.teamHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.2rem;
+}
+
+.teamName {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.teamCount {
+    font-size: 0.67rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.teamPlaceholder {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 0.5rem 0;
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* Assigned Row */
+.assignedRow {
+    background: var(--bg-tertiary);
+    padding: 0.28rem 0.45rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    cursor: grab;
+}
+
+.assignedRow:active {
+    cursor: grabbing;
+}
+
+.rowHandle {
+    color: var(--text-muted);
+    opacity: 0.35;
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
+.rowName {
+    flex-grow: 1;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+/* Points control */
+.pointsControl {
+    display: flex;
+    align-items: center;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ptsBtn {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: background 0.15s;
+}
+
+.ptsBtn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.ptsValue {
+    font-weight: 700;
+    color: var(--primary);
+    min-width: 26px;
+    text-align: center;
+    font-size: 0.8rem;
+}
+
+.flatPayLabel {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.18rem 0.4rem;
+    border-radius: var(--radius-sm);
+}
+
+/* Remove btn */
+.removeBtn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+}
+
+.removeBtn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+/* Team controls bar (restaurant count stepper) */
+.teamControls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-primary);
+    padding: 0.45rem 0.75rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
+}
+
+.tcLabel {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+
+.tcStepper {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.tcBtn {
+    background: var(--bg-tertiary);
+    border: none;
+    color: var(--text-main);
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    font-size: 1rem;
+}
+
+.tcBtn:hover {
+    opacity: 0.8;
+}
+
+.tcBtn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.tcValue {
+    font-weight: 700;
+    font-size: 0.9rem;
+    min-width: 18px;
+    text-align: center;
+}
+
+/* ── 2-column team card grid ────────────────────────── */
+.teamGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .container {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .teamGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── Click-to-select styles ─────────────────────────── */
+.dropZone.isSelected {
+    border-color: var(--primary);
+    border-style: solid;
+    box-shadow: 0 0 0 2px rgba(147, 51, 234, 0.25);
+}
+
+.teamHeaderClickable {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    transition: background 0.15s;
+}
+
+.teamHeaderClickable:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.selectedDot {
+    color: var(--primary);
+    font-size: 0.5rem;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.35;
+    }
+}
+
+.poolItemClickable {
+    cursor: pointer;
+}
+
+.poolItemClickable:hover {
+    border-color: var(--primary);
+    background: rgba(147, 51, 234, 0.08);
+}
+
+.clickHint {
+    background: rgba(147, 51, 234, 0.12);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    border-radius: var(--radius-sm);
+    padding: 0.28rem 0.55rem;
+    font-size: 0.7rem;
+    color: #c4b5fd;
+    font-weight: 600;
+    text-align: center;
+}

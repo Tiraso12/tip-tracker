@@ -18,7 +18,24 @@
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    margin: 0 0 0.5rem 0;
+    margin: 0;
+}
+
+.exportBtn {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--primary);
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.exportBtn:hover {
+    background: var(--primary);
+    color: white;
 }
 
 .subtitle {
