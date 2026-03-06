@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { auth, db } from '../config/firebase';
-import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail, setPersistence, browserSessionPersistence } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 const AuthContext = createContext(null);
@@ -10,38 +10,49 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-            console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Login needed");
-            if (firebaseUser) {
-                // Fetch role and status from Firestore
-                let role = "employee"; // default fallback
-                let status = "active"; // default fallback
-                try {
-                    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-                    if (userDoc.exists()) {
-                        role = userDoc.data().role || "employee";
-                        status = userDoc.data().status || "active";
+        let unsubscribe;
+
+        setPersistence(auth, browserSessionPersistence)
+            .then(() => {
+                unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+                    console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Login needed");
+                    if (firebaseUser) {
+                        // Fetch role and status from Firestore
+                        let role = "employee"; // default fallback
+                        let status = "active"; // default fallback
+                        try {
+                            const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+                            if (userDoc.exists()) {
+                                role = userDoc.data().role || "employee";
+                                status = userDoc.data().status || "active";
+                            }
+                        } catch (e) {
+                            console.warn("Could not fetch user data:", e);
+                        }
+
+                        const mappedUser = {
+                            uid: firebaseUser.uid,
+                            username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+                            email: firebaseUser.email,
+                            emailVerified: firebaseUser.emailVerified,
+                            role,
+                            status,
+                        };
+                        setUser(mappedUser);
+                    } else {
+                        setUser(null);
                     }
-                } catch (e) {
-                    console.warn("Could not fetch user data:", e);
-                }
+                    setLoading(false);
+                });
+            })
+            .catch((error) => {
+                console.error("Auth persistence error:", error);
+                setLoading(false);
+            });
 
-                const mappedUser = {
-                    uid: firebaseUser.uid,
-                    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-                    email: firebaseUser.email,
-                    photoURL: firebaseUser.photoURL,
-                    role,
-                    status,
-                };
-                setUser(mappedUser);
-            } else {
-                setUser(null);
-            }
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
     }, []);
 
     const logout = async () => {
@@ -66,6 +77,7 @@ export const AuthProvider = ({ children }) => {
             emailToSignIn = querySnapshot.docs[0].data().email;
         }
 
+        await setPersistence(auth, browserSessionPersistence);
         return await signInWithEmailAndPassword(auth, emailToSignIn, password);
     };
 
@@ -78,6 +90,7 @@ export const AuthProvider = ({ children }) => {
             throw new Error("Username already taken");
         }
 
+        await setPersistence(auth, browserSessionPersistence);
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const firebaseUser = userCredential.user;
 
@@ -93,12 +106,25 @@ export const AuthProvider = ({ children }) => {
             createdAt: new Date().toISOString()
         });
 
-        setUser(prev => ({ ...prev, username: username, role: "unassigned", status: "pending" }));
+        // Send Email Verification
+        await sendEmailVerification(firebaseUser);
+
+        setUser(prev => ({ ...prev, username: username, role: "unassigned", status: "pending", emailVerified: false }));
         return firebaseUser;
     };
 
+    const resetPassword = async (email) => {
+        await sendPasswordResetEmail(auth, email);
+    };
+
+    const resendVerificationEmail = async () => {
+        if (auth.currentUser) {
+            await sendEmailVerification(auth.currentUser);
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, loading, resetPassword, resendVerificationEmail }}>
             {!loading && children}
         </AuthContext.Provider>
     );

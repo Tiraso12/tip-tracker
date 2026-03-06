@@ -8,19 +8,25 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [username, setUsername] = useState(''); // Only for register
+    const [isForgotPassword, setIsForgotPassword] = useState(false);
+    const [resetSent, setResetSent] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const { login, register } = useAuth();
+    const { login, register, resetPassword } = useAuth();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        // console.log("Login Submit:", { email, password, isLogin }); // DEBUG
         setError('');
         setLoading(true);
+        setResetSent(false);
 
         try {
-            if (isLogin) {
+            if (isForgotPassword) {
+                if (!email) throw new Error("Please enter your email address");
+                await resetPassword(email);
+                setResetSent(true);
+            } else if (isLogin) {
                 if (!email || !password) throw new Error("Please fill in fields");
                 await login(email, password);
             } else {
@@ -40,12 +46,18 @@ const Login = () => {
         <div className={styles.container}>
             <form className={styles.card} onSubmit={handleSubmit}>
                 <h2 className={styles.title}>
-                    {isLogin ? 'Welcome Back' : 'Create Account'}
+                    {isForgotPassword ? 'Reset Password' : (isLogin ? 'Welcome Back' : 'Create Account')}
                 </h2>
 
                 {error && (
-                    <div style={{ color: 'var(--danger)', fontSize: '0.875rem', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--danger)', fontSize: '0.875rem', textAlign: 'center', marginBottom: '1rem' }}>
                         {error}
+                    </div>
+                )}
+
+                {resetSent && (
+                    <div style={{ color: 'var(--success)', fontSize: '0.875rem', textAlign: 'center', marginBottom: '1rem' }}>
+                        Password reset link sent! Please check your email.
                     </div>
                 )}
 
@@ -75,18 +87,20 @@ const Login = () => {
                     </div>
                 )}
 
-                <div className={styles.inputGroup}>
-                    <label className={styles.label}>Password</label>
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className={styles.input}
-                        placeholder="******"
-                    />
-                </div>
+                {!isForgotPassword && (
+                    <div className={styles.inputGroup}>
+                        <label className={styles.label}>Password</label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className={styles.input}
+                            placeholder="******"
+                        />
+                    </div>
+                )}
 
-                {!isLogin && (
+                {(!isLogin && !isForgotPassword) && (
                     <div className={styles.inputGroup}>
                         <label className={styles.label}>Confirm Password</label>
                         <input
@@ -99,26 +113,50 @@ const Login = () => {
                     </div>
                 )}
 
+                {isLogin && !isForgotPassword && (
+                    <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
+                        <button
+                            type="button"
+                            onClick={() => { setIsForgotPassword(true); setError(''); setResetSent(false); }}
+                            style={{ background: 'none', border: 'none', color: 'var(--primary-light)', cursor: 'pointer', fontSize: '0.875rem', padding: 0 }}
+                        >
+                            Forgot Password?
+                        </button>
+                    </div>
+                )}
+
                 <button type="submit" className={styles.button} disabled={loading}>
-                    {loading ? 'Processing...' : (isLogin ? 'Log In' : 'Sign Up')}
+                    {loading ? 'Processing...' : (isForgotPassword ? 'Send Reset Link' : (isLogin ? 'Log In' : 'Sign Up'))}
                 </button>
 
                 <div style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                    {isLogin ? "Don't have an account? " : "Already have an account? "}
-                    <button
-                        type="button"
-                        onClick={() => setIsLogin(!isLogin)}
-                        style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--primary-light)',
-                            cursor: 'pointer',
-                            fontWeight: '600',
-                            padding: 0
-                        }}
-                    >
-                        {isLogin ? 'Sign Up' : 'Log In'}
-                    </button>
+                    {isForgotPassword ? (
+                        <button
+                            type="button"
+                            onClick={() => { setIsForgotPassword(false); setError(''); setResetSent(false); }}
+                            style={{ background: 'none', border: 'none', color: 'var(--primary-light)', cursor: 'pointer', fontWeight: '600', padding: 0 }}
+                        >
+                            Back to Login
+                        </button>
+                    ) : (
+                        <>
+                            {isLogin ? "Don't have an account? " : "Already have an account? "}
+                            <button
+                                type="button"
+                                onClick={() => { setIsLogin(!isLogin); setError(''); }}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--primary-light)',
+                                    cursor: 'pointer',
+                                    fontWeight: '600',
+                                    padding: 0
+                                }}
+                            >
+                                {isLogin ? 'Sign Up' : 'Log In'}
+                            </button>
+                        </>
+                    )}
                 </div>
             </form>
         </div>
