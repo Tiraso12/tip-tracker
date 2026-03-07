@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import styles from './ShiftSetup.module.css';
 
-export default function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId }) {
+function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId }) {
     const [searchTerm, setSearchTerm] = useState('');
 
     const unassigned = employees.filter(emp => !assignedUids.includes(emp.uid));
@@ -21,6 +21,7 @@ export default function EmployeePool({ employees, assignedUids, onDragStart, onE
                 className={styles.searchInput}
                 placeholder="Search employee..."
                 value={searchTerm}
+                aria-label="Search available employees"
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
 
@@ -51,3 +52,5 @@ export default function EmployeePool({ employees, assignedUids, onDragStart, onE
         </div>
     );
 }
+
+export default React.memo(EmployeePool);

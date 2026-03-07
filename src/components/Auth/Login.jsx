@@ -37,7 +37,7 @@ const Login = () => {
     };
 
     return (
-        <div className={styles.container}>
+        <main className={styles.container}>
             <form className={styles.card} onSubmit={handleSubmit}>
                 <h2 className={styles.title}>
                     {isLogin ? 'Welcome Back' : 'Create Account'}
@@ -50,10 +50,11 @@ const Login = () => {
                 )}
 
                 <div className={styles.inputGroup}>
-                    <label className={styles.label}>
+                    <label htmlFor="login-email" className={styles.label}>
                         {isLogin ? 'Username or Email' : 'Email'}
                     </label>
                     <input
+                        id="login-email"
                         type={isLogin ? "text" : "email"}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -64,8 +65,9 @@ const Login = () => {
 
                 {!isLogin && (
                     <div className={styles.inputGroup}>
-                        <label className={styles.label}>Username</label>
+                        <label htmlFor="login-username" className={styles.label}>Username</label>
                         <input
+                            id="login-username"
                             type="text"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
@@ -76,8 +78,9 @@ const Login = () => {
                 )}
 
                 <div className={styles.inputGroup}>
-                    <label className={styles.label}>Password</label>
+                    <label htmlFor="login-password" className={styles.label}>Password</label>
                     <input
+                        id="login-password"
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -88,8 +91,9 @@ const Login = () => {
 
                 {!isLogin && (
                     <div className={styles.inputGroup}>
-                        <label className={styles.label}>Confirm Password</label>
+                        <label htmlFor="login-confirm" className={styles.label}>Confirm Password</label>
                         <input
+                            id="login-confirm"
                             type="password"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
@@ -121,7 +125,7 @@ const Login = () => {
                     </button>
                 </div>
             </form>
-        </div>
+        </main>
     );
 };
 

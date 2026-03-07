@@ -31,10 +31,9 @@ function AdminDashboard() {
 
     // Selected date for viewing/editing a shift
     const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
-    const [modalOpen, setModalOpen] = useState(false);
 
     // Tab switching (Shifts or Users)
-    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users"
+    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor" | "reports"
 
     // Day payout panel state
     const [dayPayouts, setDayPayouts] = useState(null);
@@ -85,14 +84,14 @@ function AdminDashboard() {
         setSelectedDate(d.toISOString().split("T")[0]);
     };
 
-    // Re-fetch after modal closes (shift may have been saved)
-    const handleModalClose = () => {
-        setModalOpen(false);
+    // Re-fetch after editor closes (shift may have been saved)
+    const handleEditorClose = () => {
+        setActiveTab("shifts");
         fetchDayPayouts(selectedDate);
     };
 
     return (
-        <div className={styles.dashboard}>
+        <main className={styles.dashboard}>
             {/* Top bar */}
             <div className={styles.topBar}>
                 <div className={styles.topBarLeft}>
@@ -138,12 +137,21 @@ function AdminDashboard() {
                                     type="date"
                                     className={styles.dateInput}
                                     value={selectedDate}
+                                    aria-label="Select Shift Date"
                                     onChange={(e) => setSelectedDate(e.target.value)}
                                 />
                                 <button className={styles.dayNavBtn} onClick={() => changeDate(1)} title="Next day">→</button>
                             </div>
-                            <button className={styles.openBtn} onClick={() => setModalOpen(true)}>
-                                Open Shift →
+                            <button className={styles.openBtn} onClick={() => setActiveTab("editor")}>
+                                Edit Shift →
+                            </button>
+                        </>
+                    ) : activeTab === "editor" ? (
+                        <>
+                            <h2 className={styles.panelTitle}>Shift Editor</h2>
+                            <p className={styles.panelSubtitle}>Input cash, credit tips, and adjust team composition for {selectedDate}.</p>
+                            <button className={styles.openBtn} style={{ marginTop: '1rem', background: 'var(--bg-tertiary)', color: 'var(--text-main)' }} onClick={handleEditorClose}>
+                                ← Back to Shifts
                             </button>
                         </>
                     ) : activeTab === "users" ? (
@@ -159,7 +167,6 @@ function AdminDashboard() {
                     )}
                 </div>
 
-                {/* Right: Panel Content */}
                 {activeTab === "shifts" ? (
                     <DayPayoutPanel
                         date={selectedDate}
@@ -167,22 +174,19 @@ function AdminDashboard() {
                         summary={daySummary}
                         loading={dayLoading}
                     />
+                ) : activeTab === "editor" ? (
+                    <ShiftEditorPanel
+                        date={selectedDate}
+                        allEmployees={allEmployees.filter(emp => emp.status === "active")}
+                        onClose={handleEditorClose}
+                    />
                 ) : activeTab === "users" ? (
                     <TeamManagement allEmployees={allEmployees} refreshEmployees={fetchEmployees} />
                 ) : (
                     <AdminReportsPanel />
                 )}
             </div>
-
-            {/* Shift Modal */}
-            {modalOpen && (
-                <ShiftModal
-                    date={selectedDate}
-                    allEmployees={allEmployees.filter(emp => emp.status === "active")}
-                    onClose={handleModalClose}
-                />
-            )}
-        </div>
+        </main>
     );
 }
 
@@ -317,8 +321,8 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
     );
 }
 
-// ─── Shift Modal ─────────────────────────────────────────────────────────────
-function ShiftModal({ date, allEmployees, onClose }) {
+// ─── Shift Editor Panel ────────────────────────────────────────────────────────
+function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [activeTab, setActiveTab] = useState("setup");
 
     // Teams & runners
@@ -331,7 +335,7 @@ function ShiftModal({ date, allEmployees, onClose }) {
     // Per-team contract helpers
     const addContractToTeam = (ti) => setTeams(prev => {
         const updated = [...prev];
-        updated[ti] = { ...updated[ti], contracts: [...(updated[ti].contracts || []), { id: Date.now().toString(), gratAmount: '', includeBarInPool: false }] };
+        updated[ti] = { ...updated[ti], contracts: [...(updated[ti].contracts || []), { id: Date.now().toString(), gratAmount: '', includeBarInPool: false, poolPercent: 18 }] };
         return updated;
     });
     const removeContractFromTeam = (ti, cid) => setTeams(prev => {
@@ -423,7 +427,11 @@ function ShiftModal({ date, allEmployees, onClose }) {
         setSaveStatus("Calculating...");
         // Flatten all per-team contracts for distribution engine
         const allContracts = teams.flatMap(t =>
-            (t.contracts || []).map(c => ({ ...c, gratAmount: Number(c.gratAmount) || 0 }))
+            (t.contracts || []).map(c => ({
+                ...c,
+                gratAmount: Number(c.gratAmount) || 0,
+                poolPercent: Number(c.poolPercent ?? 18)
+            }))
         );
         // Sum wine and liquor across all restaurant teams
         const totalWine = teams.reduce((s, t) => s + (Number(t.pools.wine) || 0), 0);
@@ -481,164 +489,179 @@ function ShiftModal({ date, allEmployees, onClose }) {
     const totalPoolCash = teams.reduce((s, t) => s + (Number(t.pools.cash) || 0), 0) + (Number(barTeam.pools.cash) || 0);
 
     return (
-        <div className={styles.modalOverlay} onClick={onClose}>
-            <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-                {/* Modal header */}
-                <div className={styles.modalHeader}>
-                    <div>
-                        <h2 className={styles.modalTitle}>Shift — {date}</h2>
-                        {saveStatus && <span className={styles.saveStatus}>{saveStatus}</span>}
-                    </div>
-                    <button className={styles.closeBtn} onClick={onClose}>✕</button>
+        <div className={styles.editorPanel}>
+            {/* Header */}
+            <div className={styles.editorHeader}>
+                <div>
+                    <h2 className={styles.editorTitle}>Shift — {date}</h2>
+                    {saveStatus && <span className={styles.saveStatus}>{saveStatus}</span>}
                 </div>
+            </div>
 
-                {/* Tabs */}
-                <div className={styles.tabs}>
-                    {["setup", "pools"].map((t) => (
-                        <button
-                            key={t}
-                            className={`${styles.tab} ${activeTab === t ? styles.tabActive : ""}`}
-                            onClick={() => setActiveTab(t)}
-                        >
-                            {t === "setup" ? "1. Team Setup" : "2. Pool Inputs"}
-                        </button>
-                    ))}
-                </div>
+            {/* Tabs */}
+            <div className={styles.tabs}>
+                {["setup", "pools"].map((t) => (
+                    <button
+                        key={t}
+                        className={`${styles.tab} ${activeTab === t ? styles.tabActive : ""}`}
+                        onClick={() => setActiveTab(t)}
+                    >
+                        {t === "setup" ? "1. Team Setup" : "2. Pool Inputs"}
+                    </button>
+                ))}
+            </div>
 
-                {loading ? (
-                    <div className={styles.loadingMsg}>Loading shift data...</div>
-                ) : (
-                    <div className={styles.modalBody}>
+            {loading ? (
+                <div className={styles.loadingMsg}>Loading shift data...</div>
+            ) : (
+                <div className={styles.modalBody}>
 
-                        {/* ── Tab 1: Team Setup ── */}
-                        {activeTab === "setup" && (
-                            <div>
-                                <ShiftSetupDnd
-                                    allEmployees={allEmployees}
-                                    teams={teams} setTeams={setTeams}
-                                    barTeam={barTeam} setBarTeam={setBarTeam}
-                                    runners={runners} setRunners={setRunners}
-                                />
+                    {/* ── Tab 1: Team Setup ── */}
+                    {activeTab === "setup" && (
+                        <div>
+                            <ShiftSetupDnd
+                                allEmployees={allEmployees}
+                                teams={teams} setTeams={setTeams}
+                                barTeam={barTeam} setBarTeam={setBarTeam}
+                                runners={runners} setRunners={setRunners}
+                            />
 
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
-                                    <button className={styles.nextBtn} onClick={() => setActiveTab("pools")}>
-                                        Next: Pool Inputs →
-                                    </button>
-                                </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                                <button className={styles.nextBtn} onClick={() => setActiveTab("pools")}>
+                                    Next: Pool Inputs →
+                                </button>
                             </div>
-                        )}
+                        </div>
+                    )}
 
-                        {/* ── Tab 2: Pool Inputs — card grid ── */}
-                        {activeTab === "pools" && (
-                            <div>
-                                {/* Contract summaries banner */}
-                                {teams.some(t => (t.contracts || []).length > 0) && (
-                                    <div className={styles.contractInfo}>
-                                        {teams.flatMap((t, ti) =>
-                                            (t.contracts || []).filter(c => Number(c.gratAmount) > 0).map((c, ci) => (
+                    {/* ── Tab 2: Pool Inputs — card grid ── */}
+                    {activeTab === "pools" && (
+                        <div>
+                            {/* Contract summaries banner */}
+                            {teams.some(t => (t.contracts || []).length > 0) && (
+                                <div className={styles.contractInfo}>
+                                    {teams.flatMap((t, ti) =>
+                                        (t.contracts || []).filter(c => Number(c.gratAmount) > 0).map((c, ci) => {
+                                            const pPct = Number(c.poolPercent ?? 18);
+                                            const poolVal = Number(c.gratAmount) * (pPct / 26);
+                                            const sepVal = Number(c.gratAmount) * ((26 - pPct) / 26);
+                                            return (
                                                 <span key={c.id}>
-                                                    T{ti + 1} Contract {ci + 1} — Pool: <strong>{fmt(Number(c.gratAmount) * 0.18)}</strong> | Rem: <strong>{fmt(Number(c.gratAmount) * 0.82)}</strong>
+                                                    T{ti + 1} Contract {ci + 1} — Pool {pPct}%: <strong>${Math.round(poolVal)}</strong> | Separate {26 - pPct}%: <strong>${Math.round(sepVal)}</strong>
                                                     {c.includeBarInPool && <em> (bar)</em>}
                                                 </span>
-                                            ))
-                                        )}
-                                    </div>
-                                )}
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            )}
 
-                                {/* Restaurant team cards — 2 column grid */}
-                                <div className={styles.poolGrid}>
-                                    {teams.map((team, ti) => (
-                                        <div key={team.teamId} className={styles.poolCard}>
-                                            <div className={styles.poolCardHeader}>
-                                                <span className={styles.poolCardTitle}>Team {ti + 1}</span>
-                                                <span className={styles.memberCount}>{team.members.length} members</span>
-                                            </div>
+                            {/* Restaurant team cards — 2 column grid */}
+                            <div className={styles.poolGrid}>
+                                {teams.map((team, ti) => (
+                                    <div key={team.teamId} className={styles.poolCard}>
+                                        <div className={styles.poolCardHeader}>
+                                            <span className={styles.poolCardTitle}>Team {ti + 1}</span>
+                                            <span className={styles.memberCount}>{team.members.length} members</span>
+                                        </div>
 
-                                            <div className={styles.poolFieldGrid}>
-                                                <PoolField label="Sales ($)" value={team.pools.sales} onChange={(v) => updateTeamPool(ti, "sales", v)} />
-                                                <PoolField label="Tips" value={team.pools.tips} onChange={(v) => updateTeamPool(ti, "tips", v)} />
-                                                <PoolField label="Gratuity" value={team.pools.gratuity} onChange={(v) => updateTeamPool(ti, "gratuity", v)} />
-                                                <PoolField label="Cash" value={team.pools.cash} onChange={(v) => updateTeamPool(ti, "cash", v)} />
-                                                <PoolField label="Wine Sales ($)" value={team.pools.wine} onChange={(v) => updateTeamPool(ti, "wine", v)} />
-                                                <PoolField label="Liquor Sales ($)" value={team.pools.liquor} onChange={(v) => updateTeamPool(ti, "liquor", v)} />
-                                            </div>
+                                        <div className={styles.poolFieldGrid}>
+                                            <PoolField label="Sales ($)" value={team.pools.sales} onChange={(v) => updateTeamPool(ti, "sales", v)} />
+                                            <PoolField label="Tips" value={team.pools.tips} onChange={(v) => updateTeamPool(ti, "tips", v)} />
+                                            <PoolField label="Gratuity" value={team.pools.gratuity} onChange={(v) => updateTeamPool(ti, "gratuity", v)} />
+                                            <PoolField label="Cash" value={team.pools.cash} onChange={(v) => updateTeamPool(ti, "cash", v)} />
+                                            <PoolField label="Wine Sales ($)" value={team.pools.wine} onChange={(v) => updateTeamPool(ti, "wine", v)} />
+                                            <PoolField label="Liquor Sales ($)" value={team.pools.liquor} onChange={(v) => updateTeamPool(ti, "liquor", v)} />
+                                        </div>
 
-                                            {/* Per-team contracts */}
-                                            <details className={styles.teamContractDetails}>
-                                                <summary className={styles.teamContractSummary}>
-                                                    <span>Contracts</span>
-                                                    <span className={styles.contractsBadge}>
-                                                        {(team.contracts || []).length === 0 ? 'None' : `${team.contracts.length}`}
-                                                    </span>
-                                                    <button
-                                                        className={styles.addContractMini}
-                                                        onClick={(e) => { e.preventDefault(); addContractToTeam(ti); }}
-                                                    >+ Add</button>
-                                                </summary>
-                                                <div className={styles.teamContractList}>
-                                                    {(team.contracts || []).length === 0 && (
-                                                        <p className={styles.emptyMsg} style={{ margin: 0, fontSize: '0.72rem' }}>No contracts.</p>
-                                                    )}
-                                                    {(team.contracts || []).map((c, ci) => (
-                                                        <div key={c.id} className={styles.contractCard}>
-                                                            <span className={styles.contractLabel}>#{ci + 1}</span>
+                                        {/* Per-team contracts */}
+                                        <details className={styles.teamContractDetails}>
+                                            <summary className={styles.teamContractSummary}>
+                                                <span>Contracts</span>
+                                                <span className={styles.contractsBadge}>
+                                                    {(team.contracts || []).length === 0 ? 'None' : `${team.contracts.length}`}
+                                                </span>
+                                                <button
+                                                    className={styles.addContractMini}
+                                                    onClick={(e) => { e.preventDefault(); addContractToTeam(ti); }}
+                                                >+ Add</button>
+                                            </summary>
+                                            <div className={styles.teamContractList}>
+                                                {(team.contracts || []).length === 0 && (
+                                                    <p className={styles.emptyMsg} style={{ margin: 0, fontSize: '0.72rem' }}>No contracts.</p>
+                                                )}
+                                                {(team.contracts || []).map((c, ci) => (
+                                                    <div key={c.id} className={styles.contractCard}>
+                                                        <span className={styles.contractLabel}>#{ci + 1}</span>
+                                                        <input
+                                                            type="number"
+                                                            className={styles.inlineInput}
+                                                            placeholder="Amount ($)"
+                                                            value={c.gratAmount}
+                                                            aria-label={`Gratuity amount for contract ${ci + 1}`}
+                                                            onChange={(e) => updateContractInTeam(ti, c.id, 'gratAmount', e.target.value)}
+                                                        />
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
                                                             <input
                                                                 type="number"
                                                                 className={styles.inlineInput}
-                                                                placeholder="Grat ($)"
-                                                                value={c.gratAmount}
-                                                                onChange={(e) => updateContractInTeam(ti, c.id, 'gratAmount', e.target.value)}
+                                                                style={{ width: '60px' }}
+                                                                placeholder="%"
+                                                                value={c.poolPercent ?? 18}
+                                                                aria-label="Pool Percentage"
+                                                                onChange={(e) => updateContractInTeam(ti, c.id, 'poolPercent', e.target.value)}
                                                             />
-                                                            <label className={styles.barPoolToggle}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={c.includeBarInPool}
-                                                                    onChange={(e) => updateContractInTeam(ti, c.id, 'includeBarInPool', e.target.checked)}
-                                                                />
-                                                                Bar
-                                                            </label>
-                                                            <button className={styles.removeContractBtn} onClick={() => removeContractFromTeam(ti, c.id)}>✕</button>
+                                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>/ 26</span>
                                                         </div>
-                                                    ))}
-                                                </div>
-                                            </details>
-                                        </div>
-                                    ))}
-
-                                    {/* Bar card */}
-                                    <div className={styles.poolCard}>
-                                        <div className={styles.poolCardHeader}>
-                                            <span className={styles.poolCardTitle}>Bar Team</span>
-                                            <span className={styles.memberCount}>{barTeam.members.length} members</span>
-                                        </div>
-                                        <div className={styles.poolFieldGrid}>
-                                            <PoolField label="Tips" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
-                                            <PoolField label="Gratuity" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
-                                            <PoolField label="Cash" value={barTeam.pools.cash} onChange={(v) => updateBarPool("cash", v)} />
-                                        </div>
+                                                        <label className={styles.barPoolToggle}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={c.includeBarInPool}
+                                                                onChange={(e) => updateContractInTeam(ti, c.id, 'includeBarInPool', e.target.checked)}
+                                                            />
+                                                            Bar
+                                                        </label>
+                                                        <button className={styles.removeContractBtn} onClick={() => removeContractFromTeam(ti, c.id)}>✕</button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </details>
                                     </div>
+                                ))}
 
+                                {/* Bar card */}
+                                <div className={styles.poolCard}>
+                                    <div className={styles.poolCardHeader}>
+                                        <span className={styles.poolCardTitle}>Bar Team</span>
+                                        <span className={styles.memberCount}>{barTeam.members.length} members</span>
+                                    </div>
+                                    <div className={styles.poolFieldGrid}>
+                                        <PoolField label="Tips" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
+                                        <PoolField label="Gratuity" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
+                                        <PoolField label="Cash" value={barTeam.pools.cash} onChange={(v) => updateBarPool("cash", v)} />
+                                    </div>
                                 </div>
 
-                                {/* Totals bar */}
-                                <div className={styles.totalSummary}>
-                                    <span>Total Tips: <strong>{fmt(totalPoolTips)}</strong></span>
-                                    <span>Total Grat: <strong>{fmt(totalPoolGrat)}</strong></span>
-                                    <span>Total Cash: <strong>{fmt(totalPoolCash)}</strong></span>
-                                </div>
-
-                                <div className={styles.saveRow}>
-                                    {saveStatus && <span className={styles.saveStatus}>{saveStatus}</span>}
-                                    <button className={styles.saveBtn} onClick={handleCalculateAndSave}>
-                                        Calculate &amp; Save Shift ✓
-                                    </button>
-                                </div>
                             </div>
-                        )}
 
-                    </div>
-                )}
-            </div>
+                            {/* Totals bar */}
+                            <div className={styles.totalSummary}>
+                                <span>Total Tips: <strong>{fmt(totalPoolTips)}</strong></span>
+                                <span>Total Grat: <strong>{fmt(totalPoolGrat)}</strong></span>
+                                <span>Total Cash: <strong>{fmt(totalPoolCash)}</strong></span>
+                            </div>
+
+                            <div className={styles.saveRow}>
+                                {saveStatus && <span className={styles.saveStatus}>{saveStatus}</span>}
+                                <button className={styles.saveBtn} onClick={handleCalculateAndSave}>
+                                    Calculate &amp; Save Shift ✓
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            )}
         </div>
     );
 }
@@ -650,6 +673,7 @@ function PoolField({ label, value, onChange, hint }) {
             <label className={styles.label}>{label}</label>
             {hint && <span className={styles.hint}>{hint}</span>}
             <input
+                id={`pool-field-${label.replace(/\s+/g, '-').toLowerCase()}`}
                 type="number"
                 min="0"
                 step="0.01"
@@ -657,6 +681,7 @@ function PoolField({ label, value, onChange, hint }) {
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="0.00"
+                aria-label={label}
             />
         </div>
     );
