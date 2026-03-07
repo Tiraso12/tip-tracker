@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import styles from './ShiftSetup.module.css';
 import EmployeePool from './EmployeePool';
 import TeamAssignmentPanel from './TeamAssignmentPanel';
 import { ROLE_POINTS } from '../../../utils/distributionUtils';
 
-export default function ShiftSetupDnd({
+function ShiftSetupDnd({
     allEmployees,
     teams, setTeams,
     barTeam, setBarTeam,
@@ -15,40 +15,45 @@ export default function ShiftSetupDnd({
     const [selectedTeamId, setSelectedTeamId] = useState(null); // click-to-assign target
 
     // Get assigned UIDs to hide them from the pool
-    const getAssignedUids = () => {
+    // OPTIMIZATION: Memoize to prevent recalculating on every render
+    const assignedUids = useMemo(() => {
         const uids = new Set();
         teams.forEach(t => t.members.forEach(m => uids.add(m.uid)));
         barTeam.members.forEach(m => uids.add(m.uid));
         runners.forEach(m => uids.add(m.uid));
         return Array.from(uids);
-    };
+    }, [teams, barTeam.members, runners]);
 
     // ── Drag handlers ────────────────────────────────────
-    const handleDragStart = (e, uid, sourceTeamId) => {
+    const handleDragStart = useCallback((e, uid, sourceTeamId) => {
         setDraggedData({ uid, sourceTeamId });
         setTimeout(() => { }, 0);
-    };
+    }, []);
 
-    const handleDragOver = (e, targetTeamId) => {
+    const handleDragOver = useCallback((e, targetTeamId) => {
         e.preventDefault();
-        setDragOverId(targetTeamId);
-    };
+        // OPTIMIZATION: Only update state if the ID actually changes
+        // This stops hundreds of re-renders per second while dragging
+        if (dragOverId !== targetTeamId) {
+            setDragOverId(targetTeamId);
+        }
+    }, [dragOverId]);
 
-    const handleDragLeave = (e) => {
+    const handleDragLeave = useCallback((e) => {
         e.preventDefault();
         setDragOverId(null);
-    };
+    }, []);
 
-    const handleDropPool = (e) => {
+    const handleDropPool = useCallback((e) => {
         e.preventDefault();
         setDragOverId(null);
         if (!draggedData) return;
         const { uid, sourceTeamId } = draggedData;
         if (sourceTeamId !== 'pool') removeEmployee(uid, sourceTeamId);
         setDraggedData(null);
-    };
+    }, [draggedData]);
 
-    const handleDropTeam = (e, targetTeamId) => {
+    const handleDropTeam = useCallback((e, targetTeamId) => {
         e.preventDefault();
         setDragOverId(null);
         if (!draggedData) return;
@@ -67,15 +72,15 @@ export default function ShiftSetupDnd({
 
         addEmployee(emp, targetTeamId, pts);
         setDraggedData(null);
-    };
+    }, [draggedData, allEmployees]);
 
     // ── Click-to-assign ──────────────────────────────────
-    const handleTeamClick = (teamId) => {
+    const handleTeamClick = useCallback((teamId) => {
         // toggle: clicking the same team deselects it
         setSelectedTeamId(prev => prev === teamId ? null : teamId);
-    };
+    }, []);
 
-    const handlePoolEmployeeClick = (emp) => {
+    const handlePoolEmployeeClick = useCallback((emp) => {
         if (!selectedTeamId) return; // no team selected — nothing to do
 
         const pts = (selectedTeamId !== 'runner' && selectedTeamId !== 'bar')
@@ -84,7 +89,7 @@ export default function ShiftSetupDnd({
 
         addEmployee(emp, selectedTeamId, pts);
         // keep team selected so user can keep clicking more employees
-    };
+    }, [selectedTeamId]);
 
     // ── Core helpers ─────────────────────────────────────
     const removeEmployee = (uid, teamId) => {
@@ -113,21 +118,21 @@ export default function ShiftSetupDnd({
         }
     };
 
-    const handleUpdatePoints = (teamId, uid, newPts) => {
+    const handleUpdatePoints = useCallback((teamId, uid, newPts) => {
         setTeams(prev => prev.map(t =>
             t.teamId === teamId
                 ? { ...t, members: t.members.map(m => m.uid === uid ? { ...m, points: newPts } : m) }
                 : t
         ));
-    };
+    }, [setTeams]);
 
-    const handleAddTeam = () => {
+    const handleAddTeam = useCallback(() => {
         if (teams.length >= 6) return;
         const newId = `team-${Date.now()}`;
         setTeams(prev => [...prev, { teamId: newId, members: [], pools: { tips: "", gratuity: "", cash: "", sales: "" } }]);
-    };
+    }, [teams.length, setTeams]);
 
-    const handleRemoveTeam = () => {
+    const handleRemoveTeam = useCallback(() => {
         if (teams.length <= 1) return;
         const lastTeam = teams[teams.length - 1];
         if (lastTeam.members.length > 0) {
@@ -135,20 +140,29 @@ export default function ShiftSetupDnd({
         }
         if (selectedTeamId === lastTeam.teamId) setSelectedTeamId(null);
         setTeams(prev => prev.slice(0, -1));
-    };
+    }, [teams, selectedTeamId, setTeams]);
+
+    const handlers = useMemo(() => ({
+        onDragOver: handleDragOver,
+        onDragLeave: handleDragLeave,
+        onDrop: handleDropTeam,
+        onDragStart: handleDragStart,
+        onRemove: removeEmployee,
+        onUpdatePoints: handleUpdatePoints
+    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, handleUpdatePoints]);
 
     return (
         <div className={styles.container}>
             <div
                 className={styles.poolWrapper}
-                onDragOver={(e) => { e.preventDefault(); setDragOverId('pool'); }}
+                onDragOver={(e) => { e.preventDefault(); if (dragOverId !== 'pool') setDragOverId('pool'); }}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDropPool}
                 style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
             >
                 <EmployeePool
                     employees={allEmployees}
-                    assignedUids={getAssignedUids()}
+                    assignedUids={assignedUids}
                     onDragStart={handleDragStart}
                     onEmployeeClick={handlePoolEmployeeClick}
                     selectedTeamId={selectedTeamId}
@@ -164,15 +178,36 @@ export default function ShiftSetupDnd({
                 dragOverId={dragOverId}
                 selectedTeamId={selectedTeamId}
                 onTeamClick={handleTeamClick}
-                handlers={{
-                    onDragOver: handleDragOver,
-                    onDragLeave: handleDragLeave,
-                    onDrop: handleDropTeam,
-                    onDragStart: handleDragStart,
-                    onRemove: removeEmployee,
-                    onUpdatePoints: handleUpdatePoints
-                }}
+                handlers={handlers}
             />
         </div>
     );
 }
+
+// OPTIMIZATION: Memoize the entire setup component to ignore rapid typing state updates from Parent (ShiftModal)
+// We deeply compare the MEMBERS array length/content of teams, but ignore the `pools` typing data
+// so that typing Tip/Cash numbers doesn't force this massive component to recalculate its lists.
+export default React.memo(ShiftSetupDnd, (prevProps, nextProps) => {
+    // If employees changed, re-render
+    if (prevProps.allEmployees !== nextProps.allEmployees) return false;
+    // If runners or barTeam length changed, re-render
+    if (prevProps.runners.length !== nextProps.runners.length) return false;
+    if (prevProps.barTeam.members.length !== nextProps.barTeam.members.length) return false;
+    // If number of teams changed, re-render
+    if (prevProps.teams.length !== nextProps.teams.length) return false;
+
+    // Check if team members changed deep structure (ignoring pools which change repeatedly on typing)
+    for (let i = 0; i < prevProps.teams.length; i++) {
+        const prevT = prevProps.teams[i];
+        const nextT = nextProps.teams[i];
+        if (prevT.teamId !== nextT.teamId) return false;
+        if (prevT.members.length !== nextT.members.length) return false;
+        // Check exact member configuration
+        for (let j = 0; j < prevT.members.length; j++) {
+            if (prevT.members[j].uid !== nextT.members[j].uid) return false;
+            if (prevT.members[j].points !== nextT.members[j].points) return false;
+        }
+    }
+
+    return true; // Members are identical, ignore `pools` changes safely.
+});

@@ -1,24 +1,9 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo } from "react";
 import styles from "./MonthView.module.css";
 import { isSameDay } from "../../utils/dateUtils";
 import DayCard from "./DayCard";
 
-function MonthView({ currentDate, allData, onUpdate }) {
-    const [activeDateKey, setActiveDateKey] = useState(null);
-
-    // Close active card when clicking outside
-    useEffect(() => {
-        const handleGlobalClick = () => {
-            setActiveDateKey(null);
-        };
-
-        window.addEventListener('click', handleGlobalClick);
-
-        return () => {
-            window.removeEventListener('click', handleGlobalClick);
-        };
-    }, []);
-
+function MonthView({ currentDate, allData }) {
     const days = useMemo(() => {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
@@ -60,7 +45,7 @@ function MonthView({ currentDate, allData, onUpdate }) {
                     const isToday = isSameDay(day, new Date());
                     const isCurrentMonth = day.getMonth() === currentDate.getMonth();
 
-                    // Construct data object expected by DayCard
+                    // Using memoization in DayCard itself to prevent re-renders
                     const dayData = {
                         date: day,
                         dateKey: dateKey,
@@ -80,11 +65,7 @@ function MonthView({ currentDate, allData, onUpdate }) {
                         >
                             <DayCard
                                 data={dayData}
-                                onUpdate={onUpdate}
                                 variant="month"
-                                isEditing={activeDateKey === dateKey}
-                                onEditStart={() => setActiveDateKey(dateKey)}
-                                onCancel={() => setActiveDateKey(null)}
                             />
                         </div>
                     );

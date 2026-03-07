@@ -2,7 +2,7 @@ import React from 'react';
 import styles from './ShiftSetup.module.css';
 import AssignedEmployeeRow from './AssignedEmployeeRow';
 
-export default function TeamDropZone({
+function TeamDropZone({
     teamId,
     title,
     members,
@@ -57,3 +57,18 @@ export default function TeamDropZone({
         </div>
     );
 }
+
+export default React.memo(TeamDropZone, (prevProps, nextProps) => {
+    // Re-render if selection or hover state changes
+    if (prevProps.isOver !== nextProps.isOver) return false;
+    if (prevProps.isSelected !== nextProps.isSelected) return false;
+    // Re-render if name/title changes
+    if (prevProps.title !== nextProps.title) return false;
+    // Re-render if members list changes length or deep content
+    if (prevProps.members.length !== nextProps.members.length) return false;
+    for (let i = 0; i < prevProps.members.length; i++) {
+        if (prevProps.members[i].uid !== nextProps.members[i].uid) return false;
+        if (prevProps.members[i].points !== nextProps.members[i].points) return false;
+    }
+    return true;
+});

@@ -2,7 +2,7 @@ import React from 'react';
 import styles from './ShiftSetup.module.css';
 import TeamDropZone from './TeamDropZone';
 
-export default function TeamAssignmentPanel({
+function TeamAssignmentPanel({
     teams,
     barTeam,
     runners,
@@ -77,3 +77,28 @@ export default function TeamAssignmentPanel({
         </div>
     );
 }
+
+export default React.memo(TeamAssignmentPanel, (prevProps, nextProps) => {
+    // If teams length, bar members, or runners change, re-render
+    if (prevProps.teams.length !== nextProps.teams.length) return false;
+    if (prevProps.barTeam.members.length !== nextProps.barTeam.members.length) return false;
+    if (prevProps.runners.length !== nextProps.runners.length) return false;
+
+    // Selection or Over state change
+    if (prevProps.dragOverId !== nextProps.dragOverId) return false;
+    if (prevProps.selectedTeamId !== nextProps.selectedTeamId) return false;
+
+    // Deep exact member comparison for restaurant teams
+    for (let i = 0; i < prevProps.teams.length; i++) {
+        const prevT = prevProps.teams[i];
+        const nextT = nextProps.teams[i];
+        if (prevT.teamId !== nextT.teamId) return false;
+        if (prevT.members.length !== nextT.members.length) return false;
+        for (let j = 0; j < prevT.members.length; j++) {
+            if (prevT.members[j].uid !== nextT.members[j].uid) return false;
+            if (prevT.members[j].points !== nextT.members[j].points) return false;
+        }
+    }
+
+    return true; // Assume harmless properties haven't changed
+});

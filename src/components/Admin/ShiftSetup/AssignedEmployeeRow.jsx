@@ -1,7 +1,7 @@
 import React from 'react';
 import styles from './ShiftSetup.module.css';
 
-export default function AssignedEmployeeRow({ member, onDragStart, onRemove, onUpdatePoints, isRunner }) {
+function AssignedEmployeeRow({ member, onDragStart, onRemove, onUpdatePoints, isRunner }) {
     return (
         <div
             className={styles.assignedRow}
@@ -31,3 +31,10 @@ export default function AssignedEmployeeRow({ member, onDragStart, onRemove, onU
         </div>
     );
 }
+
+export default React.memo(AssignedEmployeeRow, (prevProps, nextProps) => {
+    // Only re-render if the points changed or runner status changed
+    return prevProps.member.points === nextProps.member.points &&
+        prevProps.member.uid === nextProps.member.uid &&
+        prevProps.isRunner === nextProps.isRunner;
+});

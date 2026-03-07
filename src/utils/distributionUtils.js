@@ -23,7 +23,9 @@ export const ROLE_POINTS = {
 
 export const RUNNER_FLAT_RATE = 80;
 export const WINE_CAPTAIN_PERCENT = 0.01;   // 1% of wine sales → Captains
-export const CONTRACT_POOL_PERCENT = 0.18;  // 18% of contract grat enters the pool
+
+// By default, a contract represents a 26% service charge total.
+// A variable portion (default 18) goes to the pool; the rest remains separate.
 
 /**
  * Main distribution function.
@@ -65,9 +67,11 @@ export function calculateDistribution({
     let contractRemainder = 0;
     let anyBarIncluded = includeBarInPool; // legacy fallback
     allContracts.forEach(c => {
-        const share = (Number(c.gratAmount) || 0) * CONTRACT_POOL_PERCENT;
+        const amount = Number(c.gratAmount) || 0;
+        const poolFraction = (Number(c.poolPercent ?? 18)) / 26;
+        const share = amount * poolFraction;
         contractPoolShare += share;
-        contractRemainder += (Number(c.gratAmount) || 0) - share;
+        contractRemainder += amount - share; // this is the remaining portion (e.g. 8/26)
         if (c.includeBarInPool) anyBarIncluded = true;
     });
     const effectiveIncludeBar = anyBarIncluded;

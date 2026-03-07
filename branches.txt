@@ -1,0 +1,13 @@
+  database
+  develop
+  feature-admin
+  feature-ui
+* main
+  users
+  remotes/origin/database
+  remotes/origin/develop
+  remotes/origin/feature-admin
+  remotes/origin/feature-ui
+  remotes/origin/main
+  remotes/origin/monthlyCalendar
+  remotes/origin/users
