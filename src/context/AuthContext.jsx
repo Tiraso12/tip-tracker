@@ -21,6 +21,13 @@ export const AuthProvider = ({ children }) => {
                     if (userDoc.exists()) {
                         role = userDoc.data().role || "employee";
                         status = userDoc.data().status || "active";
+                    } else {
+                        // User was deleted from Firestore by an Admin
+                        console.warn("User document not found. Auto-logging out.");
+                        await signOut(auth);
+                        setUser(null);
+                        setLoading(false);
+                        return;
                     }
                 } catch (e) {
                     console.warn("Could not fetch user data:", e);

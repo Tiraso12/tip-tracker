@@ -35,7 +35,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     };
 
     const handleDeleteUser = async (uid) => {
-        if (!window.confirm("Are you sure you want to permanently delete this pending request?")) return;
+        if (!window.confirm("Are you sure you want to permanently delete this user?")) return;
         setLoadingId(uid);
         try {
             await deleteDoc(doc(db, 'users', uid));
@@ -89,13 +89,24 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                         </button>
                     </>
                 ) : (
-                    <button
-                        className={`${styles.actionBtn} ${user.status === 'active' ? styles.denyBtn : styles.approveBtn}`}
-                        onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'inactive' : 'active' })}
-                        disabled={loadingId === user.uid}
-                    >
-                        {user.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                    </button>
+                    <>
+                        <button
+                            className={`${styles.actionBtn} ${user.status === 'active' ? styles.denyBtn : styles.approveBtn}`}
+                            onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'inactive' : 'active' })}
+                            disabled={loadingId === user.uid}
+                        >
+                            {user.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                        <button
+                            className={`${styles.actionBtn} ${styles.denyBtn}`}
+                            onClick={() => handleDeleteUser(user.uid)}
+                            disabled={loadingId === user.uid}
+                            style={{ marginLeft: '0.5rem' }}
+                            title="Permanently remove user"
+                        >
+                            Delete
+                        </button>
+                    </>
                 )}
             </div>
         </div>
