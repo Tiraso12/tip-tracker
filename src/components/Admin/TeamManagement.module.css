@@ -142,3 +142,17 @@
 .denyBtn:hover:not(:disabled) {
     background: rgba(239, 68, 68, 0.1);
 }
+
+.userRoleBadge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    background: rgba(147, 51, 234, 0.15);
+    color: var(--primary);
+    border: 1px solid rgba(147, 51, 234, 0.3);
+    border-radius: var(--radius-sm);
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    width: max-content;
+}

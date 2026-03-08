@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import styles from './ShiftSetup.module.css';
 
-function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId }) {
+function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId, onAddUnregistered }) {
     const [searchTerm, setSearchTerm] = useState('');
+    const [showUnregForm, setShowUnregForm] = useState(false);
+    const [unregForm, setUnregForm] = useState({ name: '', role: 'server' });
 
     const unassigned = employees.filter(emp => !assignedUids.includes(emp.uid));
 
@@ -12,6 +14,15 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
     });
 
     const clickable = !!selectedTeamId;
+
+    const handleCreateUnregistered = () => {
+        if (!unregForm.name.trim()) return;
+        if (onAddUnregistered) {
+            onAddUnregistered(unregForm.name.trim(), unregForm.role);
+        }
+        setShowUnregForm(false);
+        setUnregForm({ name: '', role: 'server' });
+    };
 
     return (
         <div className={styles.poolPanel}>
@@ -45,10 +56,40 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
                         <span className={styles.empRole}>{emp.role}</span>
                     </div>
                 ))}
-                {filtered.length === 0 && (
-                    <p className={styles.emptyMsg}>No employees found.</p>
-                )}
             </div>
+
+            {showUnregForm ? (
+                <div className={styles.addUnregForm}>
+                    <label>Temp Staff Name</label>
+                    <input
+                        type="text"
+                        placeholder="E.g., Guest Server"
+                        value={unregForm.name}
+                        onChange={(e) => setUnregForm(prev => ({ ...prev, name: e.target.value }))}
+                        autoFocus
+                    />
+                    <label>Role</label>
+                    <select
+                        value={unregForm.role}
+                        onChange={(e) => setUnregForm(prev => ({ ...prev, role: e.target.value }))}
+                    >
+                        <option value="captain">Captain</option>
+                        <option value="server">Server</option>
+                        <option value="back">Back</option>
+                        <option value="assistant">Assistant</option>
+                        <option value="bartender">Bartender</option>
+                        <option value="runner">Runner</option>
+                    </select>
+                    <div className={styles.unregFormActions}>
+                        <button className={styles.unregFormCancel} onClick={() => setShowUnregForm(false)}>Cancel</button>
+                        <button className={styles.unregFormSave} onClick={handleCreateUnregistered}>Create</button>
+                    </div>
+                </div>
+            ) : (
+                <button className={styles.addUnregBtn} onClick={() => setShowUnregForm(true)}>
+                    + Add Unregistered Staff
+                </button>
+            )}
         </div>
     );
 }

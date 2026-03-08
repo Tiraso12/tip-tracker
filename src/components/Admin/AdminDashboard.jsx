@@ -177,7 +177,7 @@ function AdminDashboard() {
                 ) : activeTab === "editor" ? (
                     <ShiftEditorPanel
                         date={selectedDate}
-                        allEmployees={allEmployees.filter(emp => emp.status === "active")}
+                        allEmployees={allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin")}
                         onClose={handleEditorClose}
                     />
                 ) : activeTab === "users" ? (
