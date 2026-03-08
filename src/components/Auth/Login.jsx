@@ -8,6 +8,7 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [username, setUsername] = useState(''); // Only for register
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -79,27 +80,47 @@ const Login = () => {
 
                 <div className={styles.inputGroup}>
                     <label htmlFor="login-password" className={styles.label}>Password</label>
-                    <input
-                        id="login-password"
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className={styles.input}
-                        placeholder="******"
-                    />
+                    <div className={styles.passwordWrapper}>
+                        <input
+                            id="login-password"
+                            type={showPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className={styles.input}
+                            placeholder="******"
+                        />
+                        <button
+                            type="button"
+                            className={styles.passwordToggleBtn}
+                            onClick={() => setShowPassword(!showPassword)}
+                            title={showPassword ? "Hide password" : "Show password"}
+                        >
+                            {showPassword ? "🙈" : "👁️"}
+                        </button>
+                    </div>
                 </div>
 
                 {!isLogin && (
                     <div className={styles.inputGroup}>
                         <label htmlFor="login-confirm" className={styles.label}>Confirm Password</label>
-                        <input
-                            id="login-confirm"
-                            type="password"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            className={styles.input}
-                            placeholder="******"
-                        />
+                        <div className={styles.passwordWrapper}>
+                            <input
+                                id="login-confirm"
+                                type={showPassword ? "text" : "password"}
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className={styles.input}
+                                placeholder="******"
+                            />
+                            <button
+                                type="button"
+                                className={styles.passwordToggleBtn}
+                                onClick={() => setShowPassword(!showPassword)}
+                                title={showPassword ? "Hide password" : "Show password"}
+                            >
+                                {showPassword ? "🙈" : "👁️"}
+                            </button>
+                        </div>
                     </div>
                 )}
 

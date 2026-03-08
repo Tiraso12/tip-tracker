@@ -1,6 +1,7 @@
 import React from 'react';
 import styles from './ShiftSetup.module.css';
 import TeamDropZone from './TeamDropZone';
+import { RUNNER_FLAT_RATE } from '../../../utils/distributionUtils';
 
 function TeamAssignmentPanel({
     teams,
@@ -65,7 +66,7 @@ function TeamAssignmentPanel({
                 {/* Runners */}
                 <TeamDropZone
                     teamId="runner"
-                    title="Runners ($80 flat each)"
+                    title={`Runners ($${RUNNER_FLAT_RATE} flat each)`}
                     members={runners}
                     isRunner={true}
                     isOver={dragOverId === 'runner'}

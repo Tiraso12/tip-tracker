@@ -21,7 +21,7 @@ export const ROLE_POINTS = {
     runner: null,     // flat rate
 };
 
-export const RUNNER_FLAT_RATE = 80;
+export const RUNNER_FLAT_RATE = 102;
 export const WINE_CAPTAIN_PERCENT = 0.01;   // 1% of wine sales → Captains
 
 // By default, a contract represents a 26% service charge total.
