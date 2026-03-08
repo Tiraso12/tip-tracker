@@ -113,7 +113,7 @@ function ShiftSetupDnd({
 
         const pts = (targetTeamId !== 'runner' && targetTeamId !== 'bar')
             ? (ROLE_POINTS[emp.role] != null ? ROLE_POINTS[emp.role] : 4)
-            : undefined;
+            : null;
 
         addEmployee(emp, targetTeamId, pts);
         setDraggedData(null);
@@ -130,7 +130,7 @@ function ShiftSetupDnd({
 
         const pts = (selectedTeamId !== 'runner' && selectedTeamId !== 'bar')
             ? (ROLE_POINTS[emp.role] != null ? ROLE_POINTS[emp.role] : 4)
-            : undefined;
+            : null;
 
         addEmployee(emp, selectedTeamId, pts);
         // keep team selected so user can keep clicking more employees
@@ -151,11 +151,11 @@ function ShiftSetupDnd({
     };
 
     const addEmployee = (emp, targetTeamId, pts) => {
-        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: emp.role, points: pts };
+        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: emp.role || null, points: pts };
         if (targetTeamId === 'bar') {
-            setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: undefined }] }));
+            setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
         } else if (targetTeamId === 'runner') {
-            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: undefined }]);
+            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null }]);
         } else {
             setTeams(prev => prev.map(t =>
                 t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t
