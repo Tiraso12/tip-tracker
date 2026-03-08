@@ -15,7 +15,7 @@ function TeamDropZone({
     onDrop,
     onDragStart,
     onRemove,
-    onUpdatePoints
+    onUpdateField
 }) {
     return (
         <div
@@ -50,7 +50,7 @@ function TeamDropZone({
                         isRunner={isRunner}
                         onDragStart={(e) => onDragStart(e, member.uid, teamId)}
                         onRemove={() => onRemove(member.uid, teamId)}
-                        onUpdatePoints={(pts) => onUpdatePoints(teamId, member.uid, pts)}
+                        onUpdateField={(field, val) => onUpdateField(teamId, member.uid, field, val)}
                     />
                 ))
             )}
@@ -69,6 +69,13 @@ export default React.memo(TeamDropZone, (prevProps, nextProps) => {
     for (let i = 0; i < prevProps.members.length; i++) {
         if (prevProps.members[i].uid !== nextProps.members[i].uid) return false;
         if (prevProps.members[i].points !== nextProps.members[i].points) return false;
+        if (prevProps.members[i].isCaptainActive !== nextProps.members[i].isCaptainActive) return false;
+        if (prevProps.members[i].payoutAmount !== nextProps.members[i].payoutAmount) return false;
+        if (prevProps.members[i].fundingSourceMode !== nextProps.members[i].fundingSourceMode) return false;
+        if (prevProps.members[i].sourceA !== nextProps.members[i].sourceA) return false;
+        if (prevProps.members[i].sourceB !== nextProps.members[i].sourceB) return false;
+        if (prevProps.members[i].amountFromSourceA !== nextProps.members[i].amountFromSourceA) return false;
+        if (prevProps.members[i].percentFromSourceA !== nextProps.members[i].percentFromSourceA) return false;
     }
     return true;
 });

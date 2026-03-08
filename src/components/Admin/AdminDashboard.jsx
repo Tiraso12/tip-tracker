@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import styles from "./AdminDashboard.module.css";
-import { calculateDistribution, ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/distributionUtils";
+import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/distributionUtils";
+import { calculateShift } from "../../utils/engine";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, setDoc, getDoc, query, where } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
@@ -202,36 +203,11 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
         });
     })();
 
-    // Group payouts by role in a defined order
-    const grouped = payouts
-        ? ROLE_ORDER.reduce((acc, role) => {
-            const members = Object.entries(payouts)
-                .filter(([, p]) => p.role === role)
-                .map(([uid, p]) => ({ uid, ...p }));
-            if (members.length) acc.push({ role, members });
-            return acc;
-        }, [])
-        : [];
-
-    // Compute column totals
-    const totals = payouts
-        ? Object.values(payouts).reduce(
-            (acc, p) => ({
-                tips: acc.tips + (Number(p.tips) || 0),
-                gratuity: acc.gratuity + (Number(p.gratuity) || 0),
-                cash: acc.cash + (Number(p.cash) || 0),
-                wineBonus: acc.wineBonus + (Number(p.wineBonus) || 0),
-                total: acc.total + (Number(p.total) || 0),
-            }),
-            { tips: 0, gratuity: 0, cash: 0, wineBonus: 0, total: 0 }
-        )
-        : null;
-
     return (
         <div className={styles.payoutPanel}>
             <div className={styles.payoutPanelHeader}>
                 <h3 className={styles.payoutPanelTitle}>Day Payouts <span className={styles.payoutPanelDate}>• {displayDate}</span></h3>
-                {payouts && Object.keys(payouts).length > 0 && (
+                {summary && (
                     <button
                         className={styles.exportBtn}
                         onClick={() => generateShiftReport(date, summary, payouts)}
@@ -243,7 +219,7 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
 
             {loading ? (
                 <div className={styles.payoutEmpty}>Loading...</div>
-            ) : !payouts ? (
+            ) : !summary ? (
                 <div className={styles.payoutEmpty}>
                     <span className={styles.payoutEmptyIcon}>📋</span>
                     <p>No shift saved for this date.</p>
@@ -251,68 +227,242 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
                 </div>
             ) : (
                 <>
-                    {/* Summary mini-bar */}
-                    {summary && (
-                        <div className={styles.daySummaryBar}>
-                            <span>Revenue: <strong>{fmt(summary.totalRevenue)}</strong></span>
-                            {summary.runnerCostTotal > 0 && <span>Runners: <strong>{fmt(summary.runnerCostTotal)}</strong></span>}
-                            {summary.wineBonusTotal > 0 && <span>Wine bonus: <strong>{fmt(summary.wineBonusTotal)}</strong></span>}
-                            {summary.isContract && <span className={styles.contractBadge}>Contract</span>}
+                    {/* Shift Audit Summary */}
+                    <div className={styles.daySummaryBar} style={{ background: 'var(--bg-card)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: '1rem' }}>
+                            <div>
+                                <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>INPUTS</div>
+                                <div style={{ fontWeight: 600 }}>Team Sales: {fmt(summary.derivedValues?.totalTeamSales)}</div>
+                                <div>Contract Grat: {fmt(summary.derivedValues?.grtContractTotal)}</div>
+                                <div>CTP Total: {fmt(summary.derivedValues?.ctpTotal)}</div>
+                                <div>Cash Total: {fmt(summary.derivedValues?.baseTeamCash)}</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>ALLOCATIONS (HOUSE & BAR)</div>
+                                <div>Door: {fmt((summary.allocations?.doorCTPAllocation || 0) + (summary.allocations?.doorGRTAllocation || 0))}</div>
+                                <div>Bar Cut: {fmt((summary.allocations?.barCTPAllocation || 0) + (summary.allocations?.barGRTAllocation || 0))}</div>
+                                <div>House: {fmt(summary.allocations?.houseAllocation || 0)}</div>
+                                <div>Coordinator: {fmt(summary.allocations?.peCoordinatorGRT || 0)}</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>BALANCES</div>
+                                <div style={{ fontWeight: 600, color: summary.balances?.overallBalance === 0 ? 'var(--success)' : 'var(--danger)' }}>
+                                    Overall Balance: {fmt(summary.balances?.overallBalance)}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Available: {fmt(summary.balances?.totalAvailable)}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Distributed: {fmt(summary.balances?.totalDistributed)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Validations */}
+                    {summary.validations && summary.validations.length > 0 && (
+                        <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
+                            <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--danger)' }}>Warnings</h4>
+                            <ul style={{ margin: 0, paddingLeft: '1.5rem', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                                {summary.validations.map((v, i) => <li key={i}>{v}</li>)}
+                            </ul>
                         </div>
                     )}
 
                     {/* Table */}
-                    <div className={styles.payoutTableWrap}>
+                    <div className={styles.payoutTableWrap} style={{ background: 'var(--bg-card)', borderRadius: '8px', overflow: 'hidden' }}>
                         <table className={styles.dayPayoutTable}>
                             <thead>
                                 <tr>
                                     <th>Employee</th>
+                                    <th>{summary.payouts?.roleGrouped ? 'Team Worked' : 'Role'}</th>
                                     <th>Points</th>
-                                    <th>Tips</th>
-                                    <th>Gratuity</th>
+                                    <th>CTP</th>
+                                    <th>GRT</th>
                                     <th>Cash</th>
-                                    <th>Wine+</th>
                                     <th>Total</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {grouped.map(({ role, members }) => (
-                                    <React.Fragment key={role}>
-                                        {/* Role section header */}
-                                        <tr className={styles.roleHeaderRow}>
-                                            <td colSpan={7}>
-                                                <span className={styles.roleHeaderLabel}>
-                                                    {ROLE_LABELS[role] ?? role}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                        {members.map((p) => (
-                                            <tr key={p.uid} className={styles.payoutRow}>
-                                                <td className={styles.nameCell}>{p.name}</td>
-                                                <td className={styles.roleCell}>{p.points}</td>
-                                                <td>{fmt(p.tips)}</td>
-                                                <td>{fmt(p.gratuity)}</td>
-                                                <td>{fmt(p.cash)}</td>
-                                                <td>{p.wineBonus > 0 ? fmt(p.wineBonus) : <span className={styles.dash}>—</span>}</td>
-                                                <td className={styles.totalCell}>{fmt(p.total)}</td>
-                                            </tr>
+                                {/* NEW FORMAT: ROLE GROUPED */}
+                                {summary.payouts?.roleGrouped && (() => {
+                                    const renderGroup = (label, arr, isRunner = false) => {
+                                        if (!arr || arr.length === 0) return null;
+                                        return (
+                                            <React.Fragment key={label}>
+                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>{label}</span></td></tr>
+                                                {arr.map(p => (
+                                                    <tr key={p.uid} className={styles.payoutRow}>
+                                                        <td className={styles.nameCell}>{p.name}</td>
+                                                        <td>{isRunner ? "Runner" : (p.teamId ? p.teamId.replace('team-', 'Team ') : "Bar")}</td>
+                                                        {isRunner ? (
+                                                            <td colSpan={4} style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                                {Object.entries(p.breakdown || {}).map(([src, val]) => `${src}: ${fmt(val)}`).join(' | ')}
+                                                            </td>
+                                                        ) : (
+                                                            <>
+                                                                <td className={styles.roleCell}>{p.points}</td>
+                                                                <td>{fmt(p.ctp)}</td>
+                                                                <td>{fmt(p.grt)}</td>
+                                                                <td>{fmt(p.cash)}</td>
+                                                            </>
+                                                        )}
+                                                        <td className={styles.totalCell}>{fmt(isRunner ? p.payoutAmount : p.total)}</td>
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
+                                        );
+                                    }
+
+                                    return (
+                                        <>
+                                            {renderGroup("Captains", summary.payouts.roleGrouped.captains)}
+                                            {renderGroup("Servers", summary.payouts.roleGrouped.servers)}
+                                            {renderGroup("Backs", summary.payouts.roleGrouped.backs)}
+                                            {renderGroup("SAs", summary.payouts.roleGrouped.bussers)}
+                                            {renderGroup("Bar Team", summary.payouts.roleGrouped.bar)}
+                                            {renderGroup("Runners", summary.payouts.roleGrouped.runners, true)}
+                                        </>
+                                    );
+                                })()}
+
+
+                                {/* OLD FORMATS FALLBACK (Legacy) */}
+                                {!summary.payouts?.roleGrouped && (
+                                    <>
+                                        {/* Old Format: Team Employees */}
+                                        {summary.payouts?.teamEmployees?.length > 0 && (
+                                            <>
+                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Team Members (Legacy)</span></td></tr>
+                                                {summary.payouts.teamEmployees.map(p => (
+                                                    <tr key={p.uid} className={styles.payoutRow}>
+                                                        <td className={styles.nameCell}>{p.name}</td>
+                                                        <td>{p.role}</td>
+                                                        <td className={styles.roleCell}>{p.points}</td>
+                                                        <td>{fmt(p.ctp)}</td>
+                                                        <td>{fmt(p.grt)}</td>
+                                                        <td>{fmt(p.cash)}</td>
+                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
+                                                    </tr>
+                                                ))}
+                                            </>
+                                        )}
+
+                                        {/* Grouped Team Employees */}
+                                        {summary.payouts?.teamPayouts?.length > 0 && summary.payouts.teamPayouts.map((tGroup, idx) => (
+                                            <React.Fragment key={tGroup.teamId}>
+                                                <tr className={styles.roleHeaderRow}>
+                                                    <td colSpan={7}><span className={styles.roleHeaderLabel}>Team {idx + 1}</span></td>
+                                                </tr>
+                                                {tGroup.payouts.map(p => (
+                                                    <tr key={p.uid} className={styles.payoutRow}>
+                                                        <td className={styles.nameCell}>{p.name}</td>
+                                                        <td>{p.role}</td>
+                                                        <td className={styles.roleCell}>{p.points}</td>
+                                                        <td>{fmt(p.ctp)}</td>
+                                                        <td>{fmt(p.grt)}</td>
+                                                        <td>{fmt(p.cash)}</td>
+                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
                                         ))}
-                                    </React.Fragment>
-                                ))}
+
+                                        {/* Captain Overrides */}
+                                        {summary.payouts?.captainsOverride?.length > 0 && (() => {
+                                            const isGrouped = Array.isArray(summary.payouts.captainsOverride[0]?.payouts);
+                                            if (isGrouped) {
+                                                return summary.payouts.captainsOverride.map((tGroup, idx) => (
+                                                    <React.Fragment key={"cap_ov_" + tGroup.teamId}>
+                                                        <tr className={styles.roleHeaderRow}>
+                                                            <td colSpan={7}><span className={styles.roleHeaderLabel}>Team {idx + 1} — Captain Overrides</span></td>
+                                                        </tr>
+                                                        {tGroup.payouts.map(p => (
+                                                            <tr key={p.uid + "_ov"} className={styles.payoutRow}>
+                                                                <td className={styles.nameCell}>{p.name}</td>
+                                                                <td>Override</td>
+                                                                <td className={styles.roleCell}>—</td>
+                                                                <td>{fmt(p.ctp)}</td>
+                                                                <td>{fmt(p.grt)}</td>
+                                                                <td>—</td>
+                                                                <td className={styles.totalCell}>{fmt(p.total)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </React.Fragment>
+                                                ));
+                                            } else {
+                                                return (
+                                                    <React.Fragment>
+                                                        <tr className={styles.roleHeaderRow}>
+                                                            <td colSpan={7}><span className={styles.roleHeaderLabel}>Captain Overrides</span></td>
+                                                        </tr>
+                                                        {summary.payouts.captainsOverride.map(p => (
+                                                            <tr key={p.uid + "_ov"} className={styles.payoutRow}>
+                                                                <td className={styles.nameCell}>{p.name}</td>
+                                                                <td>Override</td>
+                                                                <td className={styles.roleCell}>—</td>
+                                                                <td>{fmt(p.ctp)}</td>
+                                                                <td>{fmt(p.grt)}</td>
+                                                                <td>—</td>
+                                                                <td className={styles.totalCell}>{fmt(p.total)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </React.Fragment>
+                                                );
+                                            }
+                                        })()}
+
+                                        {/* Old Format: Bar Employees */}
+                                        {summary.payouts?.barEmployees?.length > 0 && (
+                                            <>
+                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Bar Team (Legacy)</span></td></tr>
+                                                {summary.payouts.barEmployees.map(p => (
+                                                    <tr key={p.uid} className={styles.payoutRow}>
+                                                        <td className={styles.nameCell}>{p.name}</td>
+                                                        <td>{p.role}</td>
+                                                        <td className={styles.roleCell}>{p.points}</td>
+                                                        <td>{fmt(p.ctp)}</td>
+                                                        <td>{fmt(p.grt)}</td>
+                                                        <td>{fmt(p.cash || 0)}</td>
+                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
+                                                    </tr>
+                                                ))}
+                                            </>
+                                        )}
+
+                                        {/* Bar Employees */}
+                                        {summary.payouts?.barPayouts?.length > 0 && (
+                                            <>
+                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Bar Team</span></td></tr>
+                                                {summary.payouts.barPayouts.map(p => (
+                                                    <tr key={p.uid} className={styles.payoutRow}>
+                                                        <td className={styles.nameCell}>{p.name}</td>
+                                                        <td>{p.role}</td>
+                                                        <td className={styles.roleCell}>{p.points}</td>
+                                                        <td>{fmt(p.ctp)}</td>
+                                                        <td>{fmt(p.grt)}</td>
+                                                        <td>{fmt(p.cash || 0)}</td>
+                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
+                                                    </tr>
+                                                ))}
+                                            </>
+                                        )}
+
+                                        {/* Runners */}
+                                        {summary.payouts?.runners?.length > 0 && (
+                                            <>
+                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Runners</span></td></tr>
+                                                {summary.payouts.runners.map(p => (
+                                                    <tr key={p.uid} className={styles.payoutRow}>
+                                                        <td className={styles.nameCell}>{p.name}</td>
+                                                        <td>Runner</td>
+                                                        <td colSpan={4} style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                            {Object.entries(p.breakdown || {}).map(([src, val]) => `${src}: ${fmt(val)}`).join(' | ')}
+                                                        </td>
+                                                        <td className={styles.totalCell}>{fmt(p.payoutAmount)}</td>
+                                                    </tr>
+                                                ))}
+                                            </>
+                                        )}
+                                    </>
+                                )}
                             </tbody>
-                            {/* Column totals footer */}
-                            {totals && (
-                                <tfoot>
-                                    <tr className={styles.totalsRow}>
-                                        <td colSpan={2} className={styles.totalsLabel}>Totals</td>
-                                        <td>{fmt(totals.tips)}</td>
-                                        <td>{fmt(totals.gratuity)}</td>
-                                        <td>{fmt(totals.cash)}</td>
-                                        <td>{totals.wineBonus > 0 ? fmt(totals.wineBonus) : <span className={styles.dash}>—</span>}</td>
-                                        <td className={styles.totalCell}>{fmt(totals.total)}</td>
-                                    </tr>
-                                </tfoot>
-                            )}
                         </table>
                     </div>
                 </>
@@ -325,31 +475,28 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
 function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [activeTab, setActiveTab] = useState("setup");
 
-    // Teams & runners
+    // Teams & runners (UI state for assignment)
     const [teams, setTeams] = useState([
-        emptyTeam("team-1"),
+        { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" } }
     ]);
-    const [barTeam, setBarTeam] = useState({ members: [], pools: emptyTeamPools() });
+    const [barTeam, setBarTeam] = useState({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
     const [runners, setRunners] = useState([]);
 
-    // Per-team contract helpers
-    const addContractToTeam = (ti) => setTeams(prev => {
-        const updated = [...prev];
-        updated[ti] = { ...updated[ti], contracts: [...(updated[ti].contracts || []), { id: Date.now().toString(), gratAmount: '', includeBarInPool: false, poolPercent: 18 }] };
-        return updated;
-    });
-    const removeContractFromTeam = (ti, cid) => setTeams(prev => {
-        const updated = [...prev];
-        updated[ti] = { ...updated[ti], contracts: updated[ti].contracts.filter(c => c.id !== cid) };
-        return updated;
-    });
-    const updateContractInTeam = (ti, cid, field, value) => setTeams(prev => {
-        const updated = [...prev];
-        updated[ti] = { ...updated[ti], contracts: updated[ti].contracts.map(c => c.id === cid ? { ...c, [field]: value } : c) };
-        return updated;
+    const [shiftInputs, setShiftInputs] = useState({
+        defaultRunnerSource: "Team CTP"
     });
 
-    // Wine / Liquor are now per-team inside each team's pools
+    const updateInput = (field, value) => setShiftInputs(prev => ({ ...prev, [field]: value }));
+
+    const updatePool = (teamId, field, value) => {
+        setTeams(prev => prev.map(t =>
+            t.teamId === teamId ? { ...t, pools: { ...t.pools, [field]: value } } : t
+        ));
+    };
+
+    const updateBarPool = (field, value) => {
+        setBarTeam(prev => ({ ...prev, pools: { ...prev.pools, [field]: value } }));
+    };
 
     // Payouts state
     const [payouts, setPayouts] = useState(null);
@@ -366,40 +513,28 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     const d = shiftDoc.data();
 
                     if (d.teams) {
-                        // Ensure each team has contracts + wine/liquor fields
                         setTeams(d.teams.map(t => ({
-                            ...t,
-                            contracts: t.contracts || [],
-                            pools: {
-                                tips: t.pools?.tips ?? "",
-                                gratuity: t.pools?.gratuity ?? "",
-                                cash: t.pools?.cash ?? "",
-                                sales: t.pools?.sales ?? "",
-                                wine: t.pools?.wine ?? "",
-                                liquor: t.pools?.liquor ?? "",
-                                covers: t.pools?.covers ?? "",
-                            }
+                            teamId: t.teamId,
+                            members: t.members || [],
+                            pools: t.pools || { sales: t.teamSales || "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }
                         })));
                     }
-                    if (d.barTeam) setBarTeam(d.barTeam);
+                    if (d.barTeam) {
+                        setBarTeam({
+                            members: d.barTeam.members || [],
+                            pools: d.barTeam.pools || { sales: "", tips: "", gratuity: "", covers: "" }
+                        });
+                    }
                     if (d.runners) setRunners(d.runners);
-                    // Legacy global contracts → migrate onto first team
-                    if (d.contracts?.length && !d.teams?.[0]?.contracts?.length) {
-                        setTeams(prev => prev.map((t, i) => i === 0 ? { ...t, contracts: d.contracts } : t));
-                    } else if (d.isContract && d.contractGratAmount) {
-                        setTeams(prev => prev.map((t, i) => i === 0 ? { ...t, contracts: [{ id: 'legacy', gratAmount: String(d.contractGratAmount), includeBarInPool: d.includeBarInPool || false }] } : t));
+
+                    if (d.shiftInputs) {
+                        setShiftInputs(prev => ({ ...prev, ...d.shiftInputs }));
+                    } else if (d.summary && d.summary.normalizedInputs) {
+                        setShiftInputs({
+                            defaultRunnerSource: d.summary.normalizedInputs.defaultRunnerSource || "Team CTP"
+                        });
                     }
-                    // Legacy global wine/liquor → migrate onto first team
-                    if (d.wineAmount !== undefined || d.liquorAmount !== undefined) {
-                        setTeams(prev => prev.map((t, i) => i === 0 ? {
-                            ...t,
-                            pools: {
-                                ...t.pools,
-                                wine: t.pools.wine || String(d.wineAmount || ""),
-                                liquor: t.pools.liquor || String(d.liquorAmount || ""),
-                            }
-                        } : t));
-                    }
+
                     if (d.payouts) setPayouts(d.payouts);
                     if (d.summary) setSummary(d.summary);
                 }
@@ -412,59 +547,77 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         loadShift();
     }, [date]);
 
-    // ── Team member management ──
-    const updateTeamPool = (ti, field, value) => {
-        setTeams((prev) => {
-            const updated = [...prev];
-            updated[ti] = { ...updated[ti], pools: { ...updated[ti].pools, [field]: value } };
-            return updated;
-        });
-    };
-
-    const updateBarPool = (field, value) => setBarTeam((prev) => ({ ...prev, pools: { ...prev.pools, [field]: value } }));
-
     // ── Calculate & Save ──
     const handleCalculateAndSave = async () => {
         setSaveStatus("Calculating...");
-        // Flatten all per-team contracts for distribution engine
-        const allContracts = teams.flatMap(t =>
-            (t.contracts || []).map(c => ({
-                ...c,
-                gratAmount: Number(c.gratAmount) || 0,
-                poolPercent: Number(c.poolPercent ?? 18)
-            }))
-        );
-        // Sum wine and liquor across all restaurant teams AND the bar team
-        const totalWine = teams.reduce((s, t) => s + (Number(t.pools.wine) || 0), 0) + (Number(barTeam.pools.wine) || 0);
-        const totalLiquor = teams.reduce((s, t) => s + (Number(t.pools.liquor) || 0), 0) + (Number(barTeam.pools.liquor) || 0);
-        const result = calculateDistribution({
-            restaurantTeams: teams,
-            barTeam,
-            runners,
-            wineAmount: totalWine,
-            liquorAmount: totalLiquor,
-            contracts: allContracts,
-        });
 
-        const newPayouts = result.payouts;
-        const newSummary = result.summary;
-        setPayouts(newPayouts);
-        setSummary(newSummary);
+        const inputs = {
+            ...shiftInputs,
+            teams,
+            barTeam,
+            runners
+        };
+
+        const result = calculateShift(inputs);
+
+        // Map payouts back into an object by UID so old `users/{uid}/tips` data saves cleanly
+        const mappedPayoutsForFirebase = {};
+
+        const attachToMapped = (arr, globalRole) => {
+            if (!arr) return;
+            arr.forEach(p => {
+                mappedPayoutsForFirebase[p.uid] = {
+                    name: p.name,
+                    role: p.role || globalRole,
+                    points: p.points || 0,
+                    tips: p.ctp !== undefined ? p.ctp : (p.payoutAmount || 0),
+                    gratuity: p.grt || 0,
+                    cash: p.cash || 0,
+                    wineBonus: 0,
+                    total: p.total !== undefined ? p.total : (p.payoutAmount || 0)
+                };
+            });
+        };
+
+        if (result.payouts?.teamPayouts) {
+            result.payouts.teamPayouts.forEach(teamObj => {
+                attachToMapped(teamObj.payouts, 'server');
+            });
+        }
+        attachToMapped(result.payouts.barPayouts, 'bartender');
+
+        if (result.payouts?.captainsOverride) {
+            result.payouts.captainsOverride.forEach(teamObj => {
+                teamObj.payouts.forEach(co => {
+                    if (mappedPayoutsForFirebase[co.uid]) {
+                        mappedPayoutsForFirebase[co.uid].tips += (co.ctp || 0);
+                        mappedPayoutsForFirebase[co.uid].gratuity += (co.grt || 0);
+                        mappedPayoutsForFirebase[co.uid].total += (co.total || 0);
+                    }
+                });
+            });
+        }
+
+        attachToMapped(result.payouts.runners, 'runner');
+
+        setPayouts(mappedPayoutsForFirebase);
+        setSummary(result);
 
         setSaveStatus("Saving...");
         try {
             await setDoc(doc(db, "shifts", date), {
                 date,
-                teams,  // pools.wine, pools.liquor, contracts[] all inside each team
+                teams,
                 barTeam,
                 runners,
-                payouts: newPayouts,
-                summary: newSummary,
+                shiftInputs,
+                payouts: mappedPayoutsForFirebase,
+                summary: result, // Save the full result as summary
                 updatedAt: new Date().toISOString(),
             });
 
-            if (newPayouts) {
-                const saves = Object.entries(newPayouts).map(([uid, payout]) =>
+            if (mappedPayoutsForFirebase) {
+                const saves = Object.entries(mappedPayoutsForFirebase).map(([uid, payout]) =>
                     setDoc(doc(db, "users", uid, "tips", date), {
                         gratuity: payout.gratuity,
                         tip: payout.tips,
@@ -485,9 +638,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     };
 
     const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
-    const totalPoolTips = teams.reduce((s, t) => s + (Number(t.pools.tips) || 0), 0) + (Number(barTeam.pools.tips) || 0);
-    const totalPoolGrat = teams.reduce((s, t) => s + (Number(t.pools.gratuity) || 0), 0) + (Number(barTeam.pools.gratuity) || 0);
-    const totalPoolCash = teams.reduce((s, t) => s + (Number(t.pools.cash) || 0), 0) + (Number(barTeam.pools.cash) || 0);
+
 
     return (
         <div className={styles.editorPanel}>
@@ -535,125 +686,59 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         </div>
                     )}
 
-                    {/* ── Tab 2: Pool Inputs — card grid ── */}
+                    {/* ── Tab 2: Pool Inputs ── */}
                     {activeTab === "pools" && (
                         <div>
-                            {/* Contract summaries banner */}
-                            {teams.some(t => (t.contracts || []).length > 0) && (
-                                <div className={styles.contractInfo}>
-                                    {teams.flatMap((t, ti) =>
-                                        (t.contracts || []).filter(c => Number(c.gratAmount) > 0).map((c, ci) => {
-                                            const pPct = Number(c.poolPercent ?? 18);
-                                            const poolVal = Number(c.gratAmount) * (pPct / 26);
-                                            const sepVal = Number(c.gratAmount) * ((26 - pPct) / 26);
-                                            return (
-                                                <span key={c.id}>
-                                                    T{ti + 1} Contract {ci + 1} — Pool {pPct}%: <strong>${Math.round(poolVal)}</strong> | Separate {26 - pPct}%: <strong>${Math.round(sepVal)}</strong>
-                                                    {c.includeBarInPool && <em> (bar)</em>}
-                                                </span>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Restaurant team cards — 2 column grid */}
-                            <div className={styles.poolGrid}>
-                                {teams.map((team, ti) => (
-                                    <div key={team.teamId} className={styles.poolCard}>
+                            <div className={styles.poolsLayout} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '1rem', width: '100%', maxWidth: '800px', margin: '0 auto 2rem' }}>
+                                {/* Teams */}
+                                {teams.map((t, idx) => (
+                                    <div key={t.teamId} className={styles.poolCard} style={{ margin: 0 }}>
                                         <div className={styles.poolCardHeader}>
-                                            <span className={styles.poolCardTitle}>Team {ti + 1}</span>
-                                            <span className={styles.memberCount}>{team.members.length} members</span>
+                                            <span className={styles.poolCardTitle}>Team {idx + 1} ({t.members.length} members)</span>
                                         </div>
-
                                         <div className={styles.poolFieldGrid}>
-                                            <PoolField label="Sales ($)" value={team.pools.sales} onChange={(v) => updateTeamPool(ti, "sales", v)} />
-                                            <PoolField label="Covers" value={team.pools.covers} onChange={(v) => updateTeamPool(ti, "covers", v)} />
-                                            <PoolField label="Tips" value={team.pools.tips} onChange={(v) => updateTeamPool(ti, "tips", v)} />
-                                            <PoolField label="Gratuity" value={team.pools.gratuity} onChange={(v) => updateTeamPool(ti, "gratuity", v)} />
-                                            <PoolField label="Cash" value={team.pools.cash} onChange={(v) => updateTeamPool(ti, "cash", v)} />
-                                            <PoolField label="Wine Sales ($)" value={team.pools.wine} onChange={(v) => updateTeamPool(ti, "wine", v)} />
-                                            <PoolField label="Liquor Sales ($)" value={team.pools.liquor} onChange={(v) => updateTeamPool(ti, "liquor", v)} />
+                                            <PoolField label="Sales ($)" value={t.pools.sales} onChange={(v) => updatePool(t.teamId, "sales", v)} />
+                                            <PoolField label="Tips (CTP) ($)" value={t.pools.tips} onChange={(v) => updatePool(t.teamId, "tips", v)} />
+                                            <PoolField label="Gratuity ($)" value={t.pools.gratuity} onChange={(v) => updatePool(t.teamId, "gratuity", v)} />
+                                            <PoolField label="Cash ($)" value={t.pools.cash} onChange={(v) => updatePool(t.teamId, "cash", v)} />
+                                            <PoolField label="Covers" value={t.pools.covers} onChange={(v) => updatePool(t.teamId, "covers", v)} />
+                                            <PoolField label="Contract 26% Gratuity ($)" value={t.pools.contract26Gratuity} onChange={(v) => updatePool(t.teamId, "contract26Gratuity", v)} />
                                         </div>
-
-                                        {/* Per-team contracts */}
-                                        <details className={styles.teamContractDetails}>
-                                            <summary className={styles.teamContractSummary}>
-                                                <span>Contracts</span>
-                                                <span className={styles.contractsBadge}>
-                                                    {(team.contracts || []).length === 0 ? 'None' : `${team.contracts.length}`}
-                                                </span>
-                                                <button
-                                                    className={styles.addContractMini}
-                                                    onClick={(e) => { e.preventDefault(); addContractToTeam(ti); }}
-                                                >+ Add</button>
-                                            </summary>
-                                            <div className={styles.teamContractList}>
-                                                {(team.contracts || []).length === 0 && (
-                                                    <p className={styles.emptyMsg} style={{ margin: 0, fontSize: '0.72rem' }}>No contracts.</p>
-                                                )}
-                                                {(team.contracts || []).map((c, ci) => (
-                                                    <div key={c.id} className={styles.contractCard}>
-                                                        <span className={styles.contractLabel}>#{ci + 1}</span>
-                                                        <input
-                                                            type="number"
-                                                            className={styles.inlineInput}
-                                                            placeholder="Amount ($)"
-                                                            value={c.gratAmount}
-                                                            aria-label={`Gratuity amount for contract ${ci + 1}`}
-                                                            onChange={(e) => updateContractInTeam(ti, c.id, 'gratAmount', e.target.value)}
-                                                        />
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                                                            <input
-                                                                type="number"
-                                                                className={styles.inlineInput}
-                                                                style={{ width: '60px' }}
-                                                                placeholder="%"
-                                                                value={c.poolPercent ?? 18}
-                                                                aria-label="Pool Percentage"
-                                                                onChange={(e) => updateContractInTeam(ti, c.id, 'poolPercent', e.target.value)}
-                                                            />
-                                                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>/ 26</span>
-                                                        </div>
-                                                        <label className={styles.barPoolToggle}>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={c.includeBarInPool}
-                                                                onChange={(e) => updateContractInTeam(ti, c.id, 'includeBarInPool', e.target.checked)}
-                                                            />
-                                                            Bar
-                                                        </label>
-                                                        <button className={styles.removeContractBtn} onClick={() => removeContractFromTeam(ti, c.id)}>✕</button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </details>
                                     </div>
                                 ))}
 
-                                {/* Bar card */}
-                                <div className={styles.poolCard}>
+                                {/* Bar Team */}
+                                <div className={styles.poolCard} style={{ margin: 0 }}>
                                     <div className={styles.poolCardHeader}>
-                                        <span className={styles.poolCardTitle}>Bar Team</span>
-                                        <span className={styles.memberCount}>{barTeam.members.length} members</span>
+                                        <span className={styles.poolCardTitle}>Bar Team ({barTeam.members.length} members)</span>
                                     </div>
                                     <div className={styles.poolFieldGrid}>
+                                        <PoolField label="Bar Sales ($)" value={barTeam.pools.sales} onChange={(v) => updateBarPool("sales", v)} />
+                                        <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
+                                        <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
                                         <PoolField label="Covers" value={barTeam.pools.covers} onChange={(v) => updateBarPool("covers", v)} />
-                                        <PoolField label="Tips" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
-                                        <PoolField label="Gratuity" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
-                                        <PoolField label="Cash" value={barTeam.pools.cash} onChange={(v) => updateBarPool("cash", v)} />
-                                        <PoolField label="Wine Sales ($)" value={barTeam.pools.wine} onChange={(v) => updateBarPool("wine", v)} />
-                                        <PoolField label="Liquor Sales ($)" value={barTeam.pools.liquor} onChange={(v) => updateBarPool("liquor", v)} />
                                     </div>
                                 </div>
-
                             </div>
 
-                            {/* Totals bar */}
-                            <div className={styles.totalSummary}>
-                                <span>Total Tips: <strong>{fmt(totalPoolTips)}</strong></span>
-                                <span>Total Grat: <strong>{fmt(totalPoolGrat)}</strong></span>
-                                <span>Total Cash: <strong>{fmt(totalPoolCash)}</strong></span>
+                            <div className={styles.poolCard} style={{ maxWidth: '600px', margin: '2rem auto' }}>
+                                <div className={styles.poolCardHeader}>
+                                    <span className={styles.poolCardTitle}>Global Shift Settings</span>
+                                </div>
+                                <div className={styles.poolFieldGrid}>
+                                    <div className={styles.poolField}>
+                                        <label className={styles.label}>Default Runner Source</label>
+                                        <select
+                                            className={styles.input}
+                                            value={shiftInputs.defaultRunnerSource}
+                                            onChange={(e) => updateInput("defaultRunnerSource", e.target.value)}
+                                        >
+                                            <option value="Team CTP">Team CTP</option>
+                                            <option value="Bar CTP">Bar CTP</option>
+                                            <option value="Team/Bar 50/50">Team & Bar (50/50)</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className={styles.saveRow}>
@@ -754,9 +839,7 @@ function AdminReportsPanel() {
                     const sd = shiftMap[key];
                     let t = 0, g = 0, c = 0, rev = 0, w = 0, liq = 0;
                     if (sd) {
-                        rev = sd.summary?.totalRevenue || 0;
-                        liq = sd.summary?.liquorAmount || Number(sd.liquorAmount) || 0;
-                        w = sd.teams ? sd.teams.reduce((s, team) => s + (Number(team.pools?.wine) || 0), 0) : (Number(sd.wineAmount) || 0);
+                        rev = (sd.summary?.derivedValues?.totalTeamSales || sd.summary?.normalizedInputs?.teamSales || 0) + (sd.summary?.normalizedInputs?.barSales || 0);
 
                         if (sd.payouts) {
                             Object.values(sd.payouts).forEach(p => {
@@ -768,7 +851,7 @@ function AdminReportsPanel() {
                     }
                     return {
                         date: key, tip: t, gratuity: g, cash: c,
-                        revenue: rev, wine: w, liquor: liq,
+                        revenue: rev,
                         payouts: sd?.payouts || {}
                     };
                 });
@@ -795,10 +878,8 @@ function AdminReportsPanel() {
         gratuity: acc.gratuity + d.gratuity,
         cash: acc.cash + d.cash,
         revenue: acc.revenue + d.revenue,
-        wine: acc.wine + d.wine,
-        liquor: acc.liquor + d.liquor,
         total: acc.total + d.tip + d.gratuity + d.cash
-    }), { tips: 0, gratuity: 0, cash: 0, revenue: 0, wine: 0, liquor: 0, total: 0 });
+    }), { tips: 0, gratuity: 0, cash: 0, revenue: 0, total: 0 });
 
     const changePeriod = (delta) => {
         const d = new Date(baseDateStr + "T12:00:00");
@@ -847,8 +928,6 @@ function AdminReportsPanel() {
 
                 <div className={styles.totalSummary} style={{ marginBottom: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
                     <span>Rev: <strong>{fmt(totals.revenue)}</strong></span>
-                    <span>Wine: <strong>{fmt(totals.wine)}</strong></span>
-                    <span>Liq: <strong>{fmt(totals.liquor)}</strong></span>
                     <span>Tips: <strong>{fmt(totals.tips)}</strong></span>
                     <span>Grat: <strong>{fmt(totals.gratuity)}</strong></span>
                     <span>Cash: <strong>{fmt(totals.cash)}</strong></span>
@@ -866,8 +945,6 @@ function AdminReportsPanel() {
                                 <tr>
                                     <th>Date</th>
                                     <th>Rev</th>
-                                    <th>Wine</th>
-                                    <th>Liq</th>
                                     <th>Tips</th>
                                     <th>Gratuity</th>
                                     <th>Cash</th>
@@ -882,8 +959,6 @@ function AdminReportsPanel() {
                                         <tr key={d.date} className={styles.payoutRow} style={{ opacity: noData ? 0.5 : 1 }}>
                                             <td style={{ fontWeight: 500 }}>{new Date(d.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</td>
                                             <td>{fmt(d.revenue)}</td>
-                                            <td>{fmt(d.wine)}</td>
-                                            <td>{fmt(d.liquor)}</td>
                                             <td>{fmt(d.tip)}</td>
                                             <td>{fmt(d.gratuity)}</td>
                                             <td>{fmt(d.cash)}</td>

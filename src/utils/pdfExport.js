@@ -42,10 +42,10 @@ export const generateShiftReport = async (date, summary, payouts) => {
     doc.setTextColor(50);
 
     const summaryTexts = [
-        `Revenue: $${(summary.totalRevenue || 0).toFixed(2)}`,
-        `Tips: $${(summary.restaurantTipsPool || 0).toFixed(2)}`,
-        `Gratuity: $${(summary.restaurantGratPool || 0).toFixed(2)}`,
-        `Cash: $${(summary.restaurantCashPool || 0).toFixed(2)}`
+        `Revenue: $${((summary.derivedValues?.totalTeamSales || summary.normalizedInputs?.teamSales || 0) + (summary.normalizedInputs?.barSales || 0)).toFixed(2)}`,
+        `Tips: $${(summary.normalizedInputs?.ctpTotal || 0).toFixed(2)}`,
+        `Gratuity: $${(summary.derivedValues?.grtTotal || 0).toFixed(2)}`,
+        `Cash: $${(summary.normalizedInputs?.cashTotal || 0).toFixed(2)}`
     ];
 
     let xOffset = 55;
@@ -54,43 +54,147 @@ export const generateShiftReport = async (date, summary, payouts) => {
         xOffset += 110;
     });
 
-    if (summary.isContract) {
+    if (summary.normalizedInputs?.contract26Gratuity > 0) {
         doc.setTextColor(...PRIMARY_COLOR);
-        doc.text(`Contract Shift (Total Grat: $${summary.contractGratAmount})`, 40, 160);
+        doc.text(`Contract Shift (26% Grat: $${summary.normalizedInputs.contract26Gratuity})`, 40, 160);
     }
 
     // 4. Employee Payouts Table
-    if (!payouts || Object.keys(payouts).length === 0) {
-        doc.text("No payouts calculated for this shift.", 40, 190);
+    if (!summary || !summary.payouts) {
+        doc.text("No valid calculation summary found for this shift.", 40, 190);
     } else {
         const tableBody = [];
 
-        // Group by Role
-        const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
+        if (summary.payouts.roleGrouped) {
+            const { roleGrouped } = summary.payouts;
 
-        ROLE_ORDER.forEach(role => {
-            const members = Object.values(payouts).filter(p => p.role === role);
-            if (members.length === 0) return;
+            const addGroup = (title, arr, isRunner = false) => {
+                if (!arr || arr.length === 0) return;
+                tableBody.push([{
+                    content: title,
+                    colSpan: 6,
+                    styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                }]);
+                arr.forEach(m => {
+                    tableBody.push([
+                        m.name,
+                        isRunner ? 'Runner' : m.teamId?.replace('team-', 'Team ') || 'Bar',
+                        `$${m.ctp}`,
+                        `$${m.grt}`,
+                        `$${m.cash || 0}`,
+                        `$${m.total || m.payoutAmount}`
+                    ]);
+                });
+            };
 
-            // Role Section Header
-            tableBody.push([{
-                content: role.toUpperCase(),
-                colSpan: 6,
-                styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
-            }]);
+            addGroup('CAPTAINS', roleGrouped.captains);
+            addGroup('SERVERS', roleGrouped.servers);
+            addGroup('BACKS', roleGrouped.backs);
+            addGroup('SAs', roleGrouped.bussers);
+            addGroup('BAR TEAM', roleGrouped.bar);
+            addGroup('RUNNERS', roleGrouped.runners, true);
 
-            // Role Members
-            members.forEach(m => {
-                tableBody.push([
-                    m.name,
-                    m.points || (role === 'runner' ? `Flat $${RUNNER_FLAT_RATE}` : '0'),
-                    `$${(m.tips || 0).toFixed(2)}`,
-                    `$${(m.gratuity || 0).toFixed(2)}`,
-                    `$${(m.cash || 0).toFixed(2)}`,
-                    `$${(m.total || 0).toFixed(2)}`
-                ]);
-            });
-        });
+        } else {
+            // 1. Teams
+            if (summary.payouts.teamPayouts?.length > 0) {
+                summary.payouts.teamPayouts.forEach((teamGroup, idx) => {
+                    tableBody.push([{
+                        content: `TEAM ${idx + 1}`,
+                        colSpan: 6,
+                        styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                    }]);
+                    teamGroup.payouts.forEach(m => {
+                        tableBody.push([
+                            m.name,
+                            m.points,
+                            `$${m.ctp}`,
+                            `$${m.grt}`,
+                            `$${m.cash}`,
+                            `$${m.total}`
+                        ]);
+                    });
+                });
+            }
+
+            // 2. Captain Overrides
+            if (summary.payouts.captainsOverride?.length > 0) {
+                // If it's the old grouped format
+                const isGrouped = Array.isArray(summary.payouts.captainsOverride[0]?.payouts);
+                if (isGrouped) {
+                    summary.payouts.captainsOverride.forEach((teamGroup, idx) => {
+                        tableBody.push([{
+                            content: `TEAM ${idx + 1} CAPTAINS OVERRIDE`,
+                            colSpan: 6,
+                            styles: { fillColor: [255, 240, 245], textColor: [200, 50, 100], fontStyle: 'bold' }
+                        }]);
+                        teamGroup.payouts.forEach(m => {
+                            tableBody.push([
+                                m.name,
+                                '—',
+                                `$${m.ctp}`,
+                                `$${m.grt}`,
+                                '—',
+                                `$${m.total}`
+                            ]);
+                        });
+                    });
+                } else {
+                    tableBody.push([{
+                        content: `CAPTAINS OVERRIDE`,
+                        colSpan: 6,
+                        styles: { fillColor: [255, 240, 245], textColor: [200, 50, 100], fontStyle: 'bold' }
+                    }]);
+                    summary.payouts.captainsOverride.forEach(m => {
+                        tableBody.push([
+                            m.name,
+                            '—',
+                            `$${m.ctp}`,
+                            `$${m.grt}`,
+                            '—',
+                            `$${m.total}`
+                        ]);
+                    });
+                }
+            }
+
+            // 3. Bar Team
+            if (summary.payouts.barPayouts?.length > 0) {
+                tableBody.push([{
+                    content: 'BAR TEAM',
+                    colSpan: 6,
+                    styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                }]);
+                summary.payouts.barPayouts.forEach(m => {
+                    tableBody.push([
+                        m.name,
+                        m.points,
+                        `$${m.ctp}`,
+                        `$${m.grt}`,
+                        `$${m.cash || 0}`,
+                        `$${m.total}`
+                    ]);
+                });
+            }
+
+            // 4. Runners
+            if (summary.payouts.runners?.length > 0) {
+                tableBody.push([{
+                    content: 'RUNNERS',
+                    colSpan: 6,
+                    styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                }]);
+                summary.payouts.runners.forEach(m => {
+                    tableBody.push([
+                        m.name,
+                        'Flat/Split',
+                        `$${m.payoutAmount}`,
+                        '—',
+                        '—',
+                        `$${m.payoutAmount}`
+                    ]);
+                });
+            }
+        }
 
         autoTable(doc, {
             startY: summary.isContract ? 175 : 160,
@@ -129,22 +233,18 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel, allData) =>
     doc.text(`Pay Period: ${weekRangeLabel}`, 40, 70);
 
     // Calculate Totals and aggregate employee payouts
-    let totalTips = 0, totalGrat = 0, totalCash = 0, totalRev = 0, totalWine = 0, totalLiq = 0;
+    let totalTips = 0, totalGrat = 0, totalCash = 0, totalRev = 0;
     const dayRows = [];
     const employeeTotals = {}; // { uid: { name, role, tips, gratuity, cash, total } }
 
     weekData.forEach(day => {
         const r = Number(day.revenue) || 0;
-        const w = Number(day.wine) || 0;
-        const l = Number(day.liquor) || 0;
         const g = Number(day.gratuity) || 0;
         const t = Number(day.tip) || 0;
         const c = Number(day.cash) || 0;
         const sum = g + t + c;
 
         totalRev += r;
-        totalWine += w;
-        totalLiq += l;
         totalGrat += g;
         totalTips += t;
         totalCash += c;
@@ -154,8 +254,6 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel, allData) =>
         dayRows.push([
             dateStr,
             `$${r.toFixed(2)}`,
-            `$${w.toFixed(2)}`,
-            `$${l.toFixed(2)}`,
             `$${t.toFixed(2)}`,
             `$${g.toFixed(2)}`,
             `$${c.toFixed(2)}`,
@@ -190,23 +288,22 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel, allData) =>
     doc.setFontSize(10);
     doc.setTextColor(50);
     doc.text(`Week Rev: $${totalRev.toFixed(2)}`, 55, 110);
-    doc.text(`Wine: $${totalWine.toFixed(2)}`, 165, 110);
-    doc.text(`Liquor: $${totalLiq.toFixed(2)}`, 275, 110);
+    doc.text(`Tips: $${totalTips.toFixed(2)}`, 165, 110);
+    doc.text(`Gratuity: $${totalGrat.toFixed(2)}`, 275, 110);
 
-    doc.text(`Tips: $${totalTips.toFixed(2)}`, 55, 125);
-    doc.text(`Gratuity: $${totalGrat.toFixed(2)}`, 165, 125);
-    doc.text(`Cash: $${totalCash.toFixed(2)}`, 275, 125);
-    doc.text(`Week Tips/Grat: $${(totalTips + totalGrat).toFixed(2)}`, 385, 125);
+    doc.text(`Cash: $${totalCash.toFixed(2)}`, 55, 125);
+    doc.text(`Week Pool: $${grandTotal.toFixed(2)}`, 165, 125);
+    doc.text(`Week Tips/Grat: $${(totalTips + totalGrat).toFixed(2)}`, 275, 125);
 
     // 1. Daily Breakdown Table
     autoTable(doc, {
         startY: 160,
-        head: [['Date', 'Revenue', 'Wine', 'Liquor', 'Tips', 'Gratuity', 'Cash', 'Daily Pool']],
+        head: [['Date', 'Revenue', 'Tips', 'Gratuity', 'Cash', 'Daily Pool']],
         body: dayRows,
         theme: 'striped',
         headStyles: { fillColor: PRIMARY_COLOR, textColor: 255 },
         styles: { fontSize: 10 },
-        columnStyles: { 7: { fontStyle: 'bold' } }
+        columnStyles: { 5: { fontStyle: 'bold' } }
     });
 
     // 2. Employee Weekly Totals Table
@@ -278,7 +375,7 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
     doc.text(`Month: ${monthName}`, 40, 70);
 
     // Calculate Month Totals and Group by week
-    let mTips = 0, mGrat = 0, mCash = 0, mRev = 0, mWine = 0, mLiq = 0;
+    let mTips = 0, mGrat = 0, mCash = 0, mRev = 0;
     const groupedByWeek = {};
 
     daysInMonthData.forEach(day => {
@@ -286,8 +383,6 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
         const t = Number(day.tip) || 0;
         const c = Number(day.cash) || 0;
         const r = Number(day.revenue) || 0;
-        const w = Number(day.wine) || 0;
-        const l = Number(day.liquor) || 0;
 
         if (g === 0 && t === 0 && c === 0 && r === 0) return; // Skip empty days
 
@@ -295,15 +390,13 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
         mGrat += g;
         mCash += c;
         mRev += r;
-        mWine += w;
-        mLiq += l;
 
         const weekLabel = getWeekLabel(day.date);
         if (!groupedByWeek[weekLabel]) groupedByWeek[weekLabel] = [];
 
         groupedByWeek[weekLabel].push({
             dateStr: new Date(day.date).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-            t, g, c, r, w, l, sum: t + g + c
+            t, g, c, r, sum: t + g + c
         });
     });
 
@@ -318,13 +411,11 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
     doc.setTextColor(50);
 
     doc.text(`Month Rev: $${mRev.toFixed(2)}`, 55, 110);
-    doc.text(`Wine: $${mWine.toFixed(2)}`, 165, 110);
-    doc.text(`Liquor: $${mLiq.toFixed(2)}`, 275, 110);
+    doc.text(`Tips: $${mTips.toFixed(2)}`, 165, 110);
+    doc.text(`Gratuity: $${mGrat.toFixed(2)}`, 275, 110);
 
-    doc.text(`Tips: $${mTips.toFixed(2)}`, 55, 125);
-    doc.text(`Gratuity: $${mGrat.toFixed(2)}`, 165, 125);
-    doc.text(`Cash: $${mCash.toFixed(2)}`, 275, 125);
-    doc.text(`Month Pool: $${mTotal.toFixed(2)}`, 385, 125);
+    doc.text(`Cash: $${mCash.toFixed(2)}`, 55, 125);
+    doc.text(`Month Pool: $${mTotal.toFixed(2)}`, 165, 125);
 
     let currentY = 160;
 
@@ -343,8 +434,6 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
         const tableBody = days.map(d => [
             d.dateStr,
             `$${d.r.toFixed(2)}`,
-            `$${d.w.toFixed(2)}`,
-            `$${d.l.toFixed(2)}`,
             `$${d.t.toFixed(2)}`,
             `$${d.g.toFixed(2)}`,
             `$${d.c.toFixed(2)}`,
@@ -353,12 +442,12 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
 
         autoTable(doc, {
             startY: currentY + 10,
-            head: [['Date', 'Revenue', 'Wine', 'Liquor', 'Tips', 'Gratuity', 'Cash', 'Daily Pool']],
+            head: [['Date', 'Revenue', 'Tips', 'Gratuity', 'Cash', 'Daily Pool']],
             body: tableBody,
             theme: 'plain',
             headStyles: { borderBottomColor: [200, 200, 200], borderBottomWidth: 1, textColor: 100 },
             styles: { fontSize: 9 },
-            columnStyles: { 7: { fontStyle: 'bold' } },
+            columnStyles: { 5: { fontStyle: 'bold' } },
             margin: { bottom: 20 }
         });
 

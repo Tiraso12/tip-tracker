@@ -163,13 +163,19 @@ function ShiftSetupDnd({
         }
     };
 
-    const handleUpdatePoints = useCallback((teamId, uid, newPts) => {
-        setTeams(prev => prev.map(t =>
-            t.teamId === teamId
-                ? { ...t, members: t.members.map(m => m.uid === uid ? { ...m, points: newPts } : m) }
-                : t
-        ));
-    }, [setTeams]);
+    const handleUpdateField = useCallback((teamId, uid, field, newPts) => {
+        if (teamId === 'runner') {
+            setRunners(prev => prev.map(m => m.uid === uid ? { ...m, [field]: newPts } : m));
+        } else if (teamId === 'bar') {
+            setBarTeam(prev => ({ ...prev, members: prev.members.map(m => m.uid === uid ? { ...m, [field]: newPts } : m) }));
+        } else {
+            setTeams(prev => prev.map(t =>
+                t.teamId === teamId
+                    ? { ...t, members: t.members.map(m => m.uid === uid ? { ...m, [field]: newPts } : m) }
+                    : t
+            ));
+        }
+    }, [setTeams, setRunners, setBarTeam]);
 
     const handleAddTeam = useCallback(() => {
         if (teams.length >= 6) return;
@@ -193,8 +199,8 @@ function ShiftSetupDnd({
         onDrop: handleDropTeam,
         onDragStart: handleDragStart,
         onRemove: removeEmployee,
-        onUpdatePoints: handleUpdatePoints
-    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, handleUpdatePoints]);
+        onUpdateField: handleUpdateField
+    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, handleUpdateField]);
 
     return (
         <div className={styles.container}>
@@ -252,7 +258,28 @@ export default React.memo(ShiftSetupDnd, (prevProps, nextProps) => {
         for (let j = 0; j < prevT.members.length; j++) {
             if (prevT.members[j].uid !== nextT.members[j].uid) return false;
             if (prevT.members[j].points !== nextT.members[j].points) return false;
+            if (prevT.members[j].isCaptainActive !== nextT.members[j].isCaptainActive) return false;
         }
+    }
+
+    // Check barTeam deeply
+    for (let j = 0; j < prevProps.barTeam.members.length; j++) {
+        const pm = prevProps.barTeam.members[j];
+        const nm = nextProps.barTeam.members[j];
+        if (pm.uid !== nm.uid || pm.points !== nm.points || pm.isCaptainActive !== nm.isCaptainActive) return false;
+    }
+
+    // Check runners deeply
+    for (let j = 0; j < prevProps.runners.length; j++) {
+        const pr = prevProps.runners[j];
+        const nr = nextProps.runners[j];
+        if (pr.uid !== nr.uid) return false;
+        if (pr.payoutAmount !== nr.payoutAmount) return false;
+        if (pr.fundingSourceMode !== nr.fundingSourceMode) return false;
+        if (pr.sourceA !== nr.sourceA) return false;
+        if (pr.sourceB !== nr.sourceB) return false;
+        if (pr.amountFromSourceA !== nr.amountFromSourceA) return false;
+        if (pr.percentFromSourceA !== nr.percentFromSourceA) return false;
     }
 
     return true; // Members are identical, ignore `pools` changes safely.
