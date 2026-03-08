@@ -1,8 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import styles from './ShiftSetup.module.css';
 import EmployeePool from './EmployeePool';
 import TeamAssignmentPanel from './TeamAssignmentPanel';
 import { ROLE_POINTS } from '../../../utils/distributionUtils';
+import { db } from '../../../config/firebase';
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
 function ShiftSetupDnd({
     allEmployees,
@@ -13,6 +15,49 @@ function ShiftSetupDnd({
     const [draggedData, setDraggedData] = useState(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [selectedTeamId, setSelectedTeamId] = useState(null); // click-to-assign target
+
+    // ── Unregistered Staff ──
+    const [unregisteredDb, setUnregisteredDb] = useState([]);
+
+    useEffect(() => {
+        const fetchUnreg = async () => {
+            try {
+                const snap = await getDocs(collection(db, "unregisteredStaff"));
+                const list = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+                setUnregisteredDb(list);
+            } catch (e) {
+                console.error("Failed to fetch unregistered staff:", e);
+            }
+        };
+        fetchUnreg();
+    }, []);
+
+    const combinedEmployees = useMemo(() => {
+        return [...allEmployees, ...unregisteredDb];
+    }, [allEmployees, unregisteredDb]);
+
+    const handleAddUnregistered = async (name, role) => {
+        // Create permanent placeholder employee
+        const newUid = `unreg_${Date.now()}_${name.replace(/\s+/g, '')}`.toLowerCase();
+        const unregData = {
+            uid: newUid,
+            name: `${name} (Temp)`,
+            username: name,
+            role: role,
+            status: "active",
+            isUnregistered: true,
+            createdAt: new Date().toISOString()
+        };
+
+        // Optimistic update
+        setUnregisteredDb(prev => [...prev, unregData]);
+
+        try {
+            await setDoc(doc(db, "unregisteredStaff", newUid), unregData);
+        } catch (e) {
+            console.error("Failed to save unregistered staff:", e);
+        }
+    };
 
     // Get assigned UIDs to hide them from the pool
     // OPTIMIZATION: Memoize to prevent recalculating on every render
@@ -61,7 +106,7 @@ function ShiftSetupDnd({
         const { uid, sourceTeamId } = draggedData;
         if (sourceTeamId === targetTeamId) { setDraggedData(null); return; }
 
-        const emp = allEmployees.find(user => user.uid === uid);
+        const emp = combinedEmployees.find(user => user.uid === uid);
         if (!emp) return;
 
         removeEmployee(uid, sourceTeamId);
@@ -72,7 +117,7 @@ function ShiftSetupDnd({
 
         addEmployee(emp, targetTeamId, pts);
         setDraggedData(null);
-    }, [draggedData, allEmployees]);
+    }, [draggedData, combinedEmployees]);
 
     // ── Click-to-assign ──────────────────────────────────
     const handleTeamClick = useCallback((teamId) => {
@@ -161,11 +206,12 @@ function ShiftSetupDnd({
                 style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
             >
                 <EmployeePool
-                    employees={allEmployees}
+                    employees={combinedEmployees}
                     assignedUids={assignedUids}
                     onDragStart={handleDragStart}
                     onEmployeeClick={handlePoolEmployeeClick}
                     selectedTeamId={selectedTeamId}
+                    onAddUnregistered={handleAddUnregistered}
                 />
             </div>
 
