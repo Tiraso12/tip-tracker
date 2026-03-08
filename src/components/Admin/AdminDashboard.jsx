@@ -19,7 +19,7 @@ const ROLE_LABELS = {
     runner: `Runner (flat $${RUNNER_FLAT_RATE})`,
 };
 
-const emptyTeamPools = () => ({ tips: "", gratuity: "", cash: "", sales: "", wine: "", liquor: "" });
+const emptyTeamPools = () => ({ tips: "", gratuity: "", cash: "", sales: "", wine: "", liquor: "", covers: "" });
 const emptyTeam = (teamId) => ({ teamId, members: [], pools: emptyTeamPools(), contracts: [] });
 
 const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
@@ -377,6 +377,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                 sales: t.pools?.sales ?? "",
                                 wine: t.pools?.wine ?? "",
                                 liquor: t.pools?.liquor ?? "",
+                                covers: t.pools?.covers ?? "",
                             }
                         })));
                     }
@@ -433,9 +434,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 poolPercent: Number(c.poolPercent ?? 18)
             }))
         );
-        // Sum wine and liquor across all restaurant teams
-        const totalWine = teams.reduce((s, t) => s + (Number(t.pools.wine) || 0), 0);
-        const totalLiquor = teams.reduce((s, t) => s + (Number(t.pools.liquor) || 0), 0);
+        // Sum wine and liquor across all restaurant teams AND the bar team
+        const totalWine = teams.reduce((s, t) => s + (Number(t.pools.wine) || 0), 0) + (Number(barTeam.pools.wine) || 0);
+        const totalLiquor = teams.reduce((s, t) => s + (Number(t.pools.liquor) || 0), 0) + (Number(barTeam.pools.liquor) || 0);
         const result = calculateDistribution({
             restaurantTeams: teams,
             barTeam,
@@ -567,6 +568,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
                                         <div className={styles.poolFieldGrid}>
                                             <PoolField label="Sales ($)" value={team.pools.sales} onChange={(v) => updateTeamPool(ti, "sales", v)} />
+                                            <PoolField label="Covers" value={team.pools.covers} onChange={(v) => updateTeamPool(ti, "covers", v)} />
                                             <PoolField label="Tips" value={team.pools.tips} onChange={(v) => updateTeamPool(ti, "tips", v)} />
                                             <PoolField label="Gratuity" value={team.pools.gratuity} onChange={(v) => updateTeamPool(ti, "gratuity", v)} />
                                             <PoolField label="Cash" value={team.pools.cash} onChange={(v) => updateTeamPool(ti, "cash", v)} />
@@ -636,9 +638,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                         <span className={styles.memberCount}>{barTeam.members.length} members</span>
                                     </div>
                                     <div className={styles.poolFieldGrid}>
+                                        <PoolField label="Covers" value={barTeam.pools.covers} onChange={(v) => updateBarPool("covers", v)} />
                                         <PoolField label="Tips" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
                                         <PoolField label="Gratuity" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
                                         <PoolField label="Cash" value={barTeam.pools.cash} onChange={(v) => updateBarPool("cash", v)} />
+                                        <PoolField label="Wine Sales ($)" value={barTeam.pools.wine} onChange={(v) => updateBarPool("wine", v)} />
+                                        <PoolField label="Liquor Sales ($)" value={barTeam.pools.liquor} onChange={(v) => updateBarPool("liquor", v)} />
                                     </div>
                                 </div>
 

@@ -61,6 +61,39 @@
     box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
 }
 
+.passwordWrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.passwordWrapper .input {
+    width: 100%;
+    padding-right: 2.75rem;
+    /* space for the eye icon */
+}
+
+.passwordToggleBtn {
+    position: absolute;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+}
+
+.passwordToggleBtn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
 .button {
     margin-top: 1rem;
     padding: 0.75rem;
