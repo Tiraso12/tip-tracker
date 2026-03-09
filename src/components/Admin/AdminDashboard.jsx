@@ -477,21 +477,43 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
     // Teams & runners (UI state for assignment)
     const [teams, setTeams] = useState([
-        { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" } }
+        { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
     ]);
     const [barTeam, setBarTeam] = useState({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
     const [runners, setRunners] = useState([]);
-
-    const [shiftInputs, setShiftInputs] = useState({
-        defaultRunnerSource: "Team CTP"
-    });
-
-    const updateInput = (field, value) => setShiftInputs(prev => ({ ...prev, [field]: value }));
 
     const updatePool = (teamId, field, value) => {
         setTeams(prev => prev.map(t =>
             t.teamId === teamId ? { ...t, pools: { ...t.pools, [field]: value } } : t
         ));
+    };
+
+    const addContract = (teamId) => {
+        setTeams(prev => prev.map(t =>
+            t.teamId === teamId ? { ...t, contracts: [...(t.contracts || []), { name: "", gratuity: "" }] } : t
+        ));
+    };
+
+    const updateContract = (teamId, index, field, value) => {
+        setTeams(prev => prev.map(t => {
+            if (t.teamId === teamId) {
+                const newContracts = [...(t.contracts || [])];
+                newContracts[index] = { ...newContracts[index], [field]: value };
+                return { ...t, contracts: newContracts };
+            }
+            return t;
+        }));
+    };
+
+    const removeContract = (teamId, index) => {
+        setTeams(prev => prev.map(t => {
+            if (t.teamId === teamId) {
+                const newContracts = [...(t.contracts || [])];
+                newContracts.splice(index, 1);
+                return { ...t, contracts: newContracts };
+            }
+            return t;
+        }));
     };
 
     const updateBarPool = (field, value) => {
@@ -516,7 +538,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         setTeams(d.teams.map(t => ({
                             teamId: t.teamId,
                             members: t.members || [],
-                            pools: t.pools || { sales: t.teamSales || "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }
+                            pools: t.pools || { sales: t.teamSales || "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" },
+                            contracts: t.contracts || []
                         })));
                     }
                     if (d.barTeam) {
@@ -526,14 +549,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         });
                     }
                     if (d.runners) setRunners(d.runners);
-
-                    if (d.shiftInputs) {
-                        setShiftInputs(prev => ({ ...prev, ...d.shiftInputs }));
-                    } else if (d.summary && d.summary.normalizedInputs) {
-                        setShiftInputs({
-                            defaultRunnerSource: d.summary.normalizedInputs.defaultRunnerSource || "Team CTP"
-                        });
-                    }
 
                     if (d.payouts) setPayouts(d.payouts);
                     if (d.summary) setSummary(d.summary);
@@ -552,7 +567,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         setSaveStatus("Calculating...");
 
         const inputs = {
-            ...shiftInputs,
             teams,
             barTeam,
             runners
@@ -579,26 +593,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             });
         };
 
-        if (result.payouts?.teamPayouts) {
-            result.payouts.teamPayouts.forEach(teamObj => {
-                attachToMapped(teamObj.payouts, 'server');
-            });
+        if (result.payouts?.roleGrouped) {
+            attachToMapped(result.payouts.roleGrouped.captains, 'captain');
+            attachToMapped(result.payouts.roleGrouped.servers, 'server');
+            attachToMapped(result.payouts.roleGrouped.backs, 'back');
+            attachToMapped(result.payouts.roleGrouped.bussers, 'busser');
+            attachToMapped(result.payouts.roleGrouped.bar, 'bartender');
+            attachToMapped(result.payouts.roleGrouped.runners, 'runner');
         }
-        attachToMapped(result.payouts.barPayouts, 'bartender');
-
-        if (result.payouts?.captainsOverride) {
-            result.payouts.captainsOverride.forEach(teamObj => {
-                teamObj.payouts.forEach(co => {
-                    if (mappedPayoutsForFirebase[co.uid]) {
-                        mappedPayoutsForFirebase[co.uid].tips += (co.ctp || 0);
-                        mappedPayoutsForFirebase[co.uid].gratuity += (co.grt || 0);
-                        mappedPayoutsForFirebase[co.uid].total += (co.total || 0);
-                    }
-                });
-            });
-        }
-
-        attachToMapped(result.payouts.runners, 'runner');
 
         setPayouts(mappedPayoutsForFirebase);
         setSummary(result);
@@ -610,7 +612,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 teams,
                 barTeam,
                 runners,
-                shiftInputs,
                 payouts: mappedPayoutsForFirebase,
                 summary: result, // Save the full result as summary
                 updatedAt: new Date().toISOString(),
@@ -702,7 +703,83 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                             <PoolField label="Gratuity ($)" value={t.pools.gratuity} onChange={(v) => updatePool(t.teamId, "gratuity", v)} />
                                             <PoolField label="Cash ($)" value={t.pools.cash} onChange={(v) => updatePool(t.teamId, "cash", v)} />
                                             <PoolField label="Covers" value={t.pools.covers} onChange={(v) => updatePool(t.teamId, "covers", v)} />
-                                            <PoolField label="Contract 26% Gratuity ($)" value={t.pools.contract26Gratuity} onChange={(v) => updatePool(t.teamId, "contract26Gratuity", v)} />
+
+                                            {/* Legacy Contract Fallback */}
+                                            {t.pools.contract26Gratuity && (!t.contracts || t.contracts.length === 0) && (
+                                                <PoolField label="Legacy Contract Grat ($)" value={t.pools.contract26Gratuity} onChange={(v) => updatePool(t.teamId, "contract26Gratuity", v)} />
+                                            )}
+                                        </div>
+
+                                        {/* Dynamic Contracts Section */}
+                                        <div style={{ marginTop: '0', borderTop: '1px solid var(--border)', paddingTop: '0' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: t._showContracts ? '0.5rem' : '0', marginTop: '0.75rem' }}>
+                                                <button
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: 'var(--text-main)',
+                                                        fontWeight: 600,
+                                                        fontSize: '0.95rem',
+                                                        cursor: 'pointer',
+                                                        padding: 0,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.5rem'
+                                                    }}
+                                                    onClick={() => {
+                                                        setTeams(prev => prev.map(pt => pt.teamId === t.teamId ? { ...pt, _showContracts: !pt._showContracts } : pt));
+                                                    }}
+                                                >
+                                                    <span style={{ transform: t._showContracts ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', display: 'inline-block', fontSize: '0.8rem' }}>▶</span>
+                                                    Contracts {t.contracts && t.contracts.length > 0 ? `(${t.contracts.length})` : ''}
+                                                </button>
+
+                                                {t._showContracts && (
+                                                    <button
+                                                        onClick={() => addContract(t.teamId)}
+                                                        style={{ background: 'var(--primary)', color: 'white', border: 'none', borderRadius: '4px', padding: '0.2rem 0.5rem', fontSize: '0.75rem', cursor: 'pointer' }}
+                                                    >
+                                                        + Add Contract
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {t._showContracts && (
+                                                t.contracts && t.contracts.length > 0 ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.4rem' }}>
+                                                        {t.contracts.map((contract, cIdx) => (
+                                                            <div key={cIdx} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', background: 'var(--bg-tertiary)', padding: '0.4rem', borderRadius: '4px' }}>
+                                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>#{cIdx + 1}</span>
+                                                                <div style={{ flex: 1, display: 'flex' }}>
+                                                                    <div style={{ position: 'relative', width: '100%' }}>
+                                                                        <span style={{ position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>$</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            min="0" step="0.01"
+                                                                            placeholder="26% Gratuity Amount"
+                                                                            value={contract.gratuity}
+                                                                            onChange={(e) => updateContract(t.teamId, cIdx, "gratuity", e.target.value)}
+                                                                            className={styles.noSpinners}
+                                                                            style={{ padding: '0.3rem 0.3rem 0.3rem 1.2rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', width: '100%', fontSize: '0.85rem' }}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => removeContract(t.teamId, cIdx)}
+                                                                    style={{ background: 'transparent', color: 'var(--danger)', border: 'none', cursor: 'pointer', padding: '0.2rem', fontSize: '1.2rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                                    title="Remove Contract"
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic', textAlign: 'center', padding: '0.5rem', marginTop: '0.4rem', border: '1px dashed var(--border)', borderRadius: '4px' }}>
+                                                        No contracts added. Click '+ Add Contract' to input a contract amount.
+                                                    </div>
+                                                )
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -717,26 +794,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                         <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
                                         <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
                                         <PoolField label="Covers" value={barTeam.pools.covers} onChange={(v) => updateBarPool("covers", v)} />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className={styles.poolCard} style={{ maxWidth: '600px', margin: '2rem auto' }}>
-                                <div className={styles.poolCardHeader}>
-                                    <span className={styles.poolCardTitle}>Global Shift Settings</span>
-                                </div>
-                                <div className={styles.poolFieldGrid}>
-                                    <div className={styles.poolField}>
-                                        <label className={styles.label}>Default Runner Source</label>
-                                        <select
-                                            className={styles.input}
-                                            value={shiftInputs.defaultRunnerSource}
-                                            onChange={(e) => updateInput("defaultRunnerSource", e.target.value)}
-                                        >
-                                            <option value="Team CTP">Team CTP</option>
-                                            <option value="Bar CTP">Bar CTP</option>
-                                            <option value="Team/Bar 50/50">Team & Bar (50/50)</option>
-                                        </select>
                                     </div>
                                 </div>
                             </div>

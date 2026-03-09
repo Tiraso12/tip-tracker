@@ -18,40 +18,43 @@ function AssignedEmployeeRow({ member, onDragStart, onRemove, onUpdateField, isR
                     <input
                         type="number"
                         placeholder="Payout $"
-                        className={styles.ptsBtn}
+                        className={`${styles.runnerInput} ${styles.noSpinners}`}
                         style={{ width: '60px', borderRadius: '4px' }}
                         value={member.payoutAmount || ''}
                         onChange={(e) => onUpdateField('payoutAmount', e.target.value)}
                     />
 
                     <select
-                        className={styles.ptsBtn}
+                        className={styles.runnerSelect}
                         style={{ width: 'auto', borderRadius: '4px' }}
                         value={member.fundingSourceMode || 'single_source'}
                         onChange={(e) => onUpdateField('fundingSourceMode', e.target.value)}
                     >
-                        <option value="single_source">Single Source</option>
-                        <option value="amount_plus_remainder">Fixed $ + Remainder</option>
-                        <option value="percent_plus_remainder">Percent % + Remainder</option>
+                        <option value="single_source">S/S</option>
+                        <option value="amount_plus_remainder">Fixed</option>
+                        <option value="percent_plus_remainder">% Split</option>
                     </select>
 
                     <select
-                        className={styles.ptsBtn}
+                        className={styles.runnerSelect}
                         style={{ width: 'auto', borderRadius: '4px' }}
-                        value={member.sourceA || ''}
+                        value={member.sourceA || 'Even Split'}
                         onChange={(e) => onUpdateField('sourceA', e.target.value)}
                     >
-                        <option value="">-- Main Pool --</option>
-                        <option value="Team CTP">Team CTP</option>
+                        <option value="Even Split">Even Split</option>
+                        <option value="Team 1 CTP">Team 1 CTP</option>
+                        <option value="Team 2 CTP">Team 2 CTP</option>
+                        <option value="Team 3 CTP">Team 3 CTP</option>
+                        <option value="Team 4 CTP">Team 4 CTP</option>
+                        <option value="Team 5 CTP">Team 5 CTP</option>
                         <option value="Bar CTP">Bar CTP</option>
-                        <option value="Team/Bar 50/50">Team & Bar (50/50)</option>
                     </select>
 
                     {member.fundingSourceMode === 'amount_plus_remainder' && (
                         <input
                             type="number"
                             placeholder="$ Src A"
-                            className={styles.ptsBtn}
+                            className={`${styles.runnerInput} ${styles.noSpinners}`}
                             style={{ width: '60px', borderRadius: '4px' }}
                             value={member.amountFromSourceA || ''}
                             onChange={(e) => onUpdateField('amountFromSourceA', e.target.value)}
@@ -62,7 +65,7 @@ function AssignedEmployeeRow({ member, onDragStart, onRemove, onUpdateField, isR
                         <input
                             type="number"
                             placeholder="% Src A"
-                            className={styles.ptsBtn}
+                            className={`${styles.runnerInput} ${styles.noSpinners}`}
                             style={{ width: '60px', borderRadius: '4px' }}
                             value={member.percentFromSourceA || ''}
                             onChange={(e) => onUpdateField('percentFromSourceA', e.target.value)}
@@ -71,13 +74,17 @@ function AssignedEmployeeRow({ member, onDragStart, onRemove, onUpdateField, isR
 
                     {(member.fundingSourceMode === 'amount_plus_remainder' || member.fundingSourceMode === 'percent_plus_remainder') && (
                         <select
-                            className={styles.ptsBtn}
+                            className={styles.runnerSelect}
                             style={{ width: 'auto', borderRadius: '4px' }}
                             value={member.sourceB || ''}
                             onChange={(e) => onUpdateField('sourceB', e.target.value)}
                         >
-                            <option value="">-- Remainder --</option>
-                            <option value="Team CTP">Team CTP</option>
+                            <option value="">-- Remainder Pool --</option>
+                            <option value="Team 1 CTP">Team 1 CTP</option>
+                            <option value="Team 2 CTP">Team 2 CTP</option>
+                            <option value="Team 3 CTP">Team 3 CTP</option>
+                            <option value="Team 4 CTP">Team 4 CTP</option>
+                            <option value="Team 5 CTP">Team 5 CTP</option>
                             <option value="Bar CTP">Bar CTP</option>
                         </select>
                     )}

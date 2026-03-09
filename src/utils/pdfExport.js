@@ -42,10 +42,10 @@ export const generateShiftReport = async (date, summary, payouts) => {
     doc.setTextColor(50);
 
     const summaryTexts = [
-        `Revenue: $${((summary.derivedValues?.totalTeamSales || summary.normalizedInputs?.teamSales || 0) + (summary.normalizedInputs?.barSales || 0)).toFixed(2)}`,
-        `Tips: $${(summary.normalizedInputs?.ctpTotal || 0).toFixed(2)}`,
+        `Revenue: $${((summary.derivedValues?.totalTeamSales || 0) + (summary.derivedValues?.barSales || parseInt(summary.normalizedInputs?.barTeam?.pools?.sales || 0) || 0)).toFixed(2)}`,
+        `Tips: $${(summary.derivedValues?.ctpTotal || summary.normalizedInputs?.ctpTotal || 0).toFixed(2)}`,
         `Gratuity: $${(summary.derivedValues?.grtTotal || 0).toFixed(2)}`,
-        `Cash: $${(summary.normalizedInputs?.cashTotal || 0).toFixed(2)}`
+        `Cash: $${(summary.derivedValues?.baseTeamCash || summary.normalizedInputs?.cashTotal || 0).toFixed(2)}`
     ];
 
     let xOffset = 55;

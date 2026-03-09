@@ -555,9 +555,6 @@
 .ptsInput {
     background: transparent;
     border: none;
-    color: var(--primary);
-    font-size: 0.875rem;
-    font-weight: 700;
     width: 48px;
     outline: none;
     text-align: center;
@@ -573,6 +570,19 @@
 .ptsInput[type=number] {
     -moz-appearance: textfield;
     appearance: textfield;
+}
+
+/* Hide number input arrows for specific inputs */
+.noSpinners::-webkit-outer-spin-button,
+.noSpinners::-webkit-inner-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+    display: none !important;
+}
+
+input[type="number"].noSpinners {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
 }
 
 /* Points badge on member tags */

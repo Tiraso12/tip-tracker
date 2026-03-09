@@ -155,7 +155,7 @@ function ShiftSetupDnd({
         if (targetTeamId === 'bar') {
             setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
         } else if (targetTeamId === 'runner') {
-            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null }]);
+            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null, payoutAmount: 102 }]);
         } else {
             setTeams(prev => prev.map(t =>
                 t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t
