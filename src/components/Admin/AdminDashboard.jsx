@@ -605,6 +605,16 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         setPayouts(mappedPayoutsForFirebase);
         setSummary(result);
 
+        // ── Validation: Prevent saving invalid shifts ──
+        const payoutCount = Object.keys(mappedPayoutsForFirebase).length;
+
+        if (payoutCount === 0) {
+            setSaveStatus("⚠️ Cannot save shift: No employees are assigned to this shift.");
+            // Reset status after a few seconds
+            setTimeout(() => setSaveStatus(""), 4000);
+            return;
+        }
+
         setSaveStatus("Saving...");
         try {
             await setDoc(doc(db, "shifts", date), {

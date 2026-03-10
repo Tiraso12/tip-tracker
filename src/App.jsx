@@ -148,8 +148,8 @@ function App() {
     return <Login />;
   }
 
-  // Unverified or pending users cannot access the app until verified and approved
-  if (user.status === "pending" || !user.emailVerified) {
+  // Pending users cannot access the app until approved
+  if (user.status === "pending") {
     return <PendingApproval />;
   }
 
