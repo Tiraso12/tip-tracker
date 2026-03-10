@@ -1,4 +1,4 @@
-import { RUNNER_FLAT_RATE } from './distributionUtils';
+import { RUNNER_FLAT_RATE } from './constants';
 
 const PRIMARY_COLOR = [147, 51, 234]; // #9333ea (var(--primary))
 const BACKGROUND_COLOR = [30, 41, 59]; // Dark mode equivalent (slate-800)

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import styles from './ShiftSetup.module.css';
 import EmployeePool from './EmployeePool';
 import TeamAssignmentPanel from './TeamAssignmentPanel';
-import { ROLE_POINTS } from '../../../utils/distributionUtils';
+import { ROLE_POINTS } from '../../../utils/constants';
 import { db } from '../../../config/firebase';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 

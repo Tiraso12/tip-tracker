@@ -1,7 +1,7 @@
 import React from 'react';
 import styles from './ShiftSetup.module.css';
 import TeamDropZone from './TeamDropZone';
-import { RUNNER_FLAT_RATE } from '../../../utils/distributionUtils';
+import { RUNNER_FLAT_RATE } from '../../../utils/constants';
 
 function TeamAssignmentPanel({
     teams,
