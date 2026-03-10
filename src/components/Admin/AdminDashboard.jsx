@@ -642,6 +642,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 await Promise.all(saves);
             }
             setSaveStatus("✅ Saved!");
+
+            // Automatically return to day payout view after a short delay
+            setTimeout(() => {
+                onClose();
+            }, 1500);
         } catch (e) {
             console.error(e);
             setSaveStatus("❌ Failed to save.");
