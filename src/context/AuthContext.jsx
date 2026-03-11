@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { auth, db } from '../config/firebase';
-import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendEmailVerification, sendPasswordResetEmail, setPersistence, browserSessionPersistence } from "firebase/auth";
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, setPersistence, browserSessionPersistence } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 const AuthContext = createContext(null);
@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }) => {
                             uid: firebaseUser.uid,
                             username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
                             email: firebaseUser.email,
-                            emailVerified: firebaseUser.emailVerified,
+                            emailVerified: true, // Default to true as we're removing verification step
                             role,
                             status,
                         };
@@ -113,10 +113,7 @@ export const AuthProvider = ({ children }) => {
             createdAt: new Date().toISOString()
         });
 
-        // Send Email Verification
-        await sendEmailVerification(firebaseUser);
-
-        setUser(prev => ({ ...prev, username: username, role: "unassigned", status: "pending", emailVerified: false }));
+        setUser(prev => ({ ...prev, username: username, role: "unassigned", status: "pending", emailVerified: true }));
         return firebaseUser;
     };
 
@@ -124,14 +121,8 @@ export const AuthProvider = ({ children }) => {
         await sendPasswordResetEmail(auth, email);
     };
 
-    const resendVerificationEmail = async () => {
-        if (auth.currentUser) {
-            await sendEmailVerification(auth.currentUser);
-        }
-    };
-
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading, resetPassword, resendVerificationEmail }}>
+        <AuthContext.Provider value={{ user, login, register, logout, loading, resetPassword }}>
             {!loading && children}
         </AuthContext.Provider>
     );

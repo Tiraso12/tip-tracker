@@ -7,332 +7,84 @@ It is intended as a reference for developers implementing the tip distribution e
 The system processes inputs from multiple dining room teams and the bar, calculates required allocations, and distributes the remaining pools among employees using a point-based payout model.
 
 The logic is designed to:
-
-Separate calculation rules from distribution rules
-
-Ensure that sales are only used as calculation bases
-
-Keep the actual payouts tied strictly to tip pools
+- Separate calculation rules from distribution rules
+- Ensure that sales are only used as calculation bases
+- Keep the actual payouts tied strictly to tip pools
 
 1. Core Principles
 Sales vs Tip Pools
 
-Sales are not money distributed to staff.
-Sales are only used to determine percentage-based allocations.
-
-Actual payouts always come from tip pools.
-
-Tip pools include:
-
-CTP — Credit card tips
-
-GRT — Regular gratuity
-
-CGRT — Contract gratuity
-
-Cash
-
-Dining Room vs Bar
-
-The system maintains two service areas:
-
-Dining Room (Teams)
-All floor staff working in teams.
-
-Bar
-
-The bar receives certain allocations from dining room sales but distributes its own pool independently.
+Sales are not money distributed to staff. They are only used to determine percentage-based allocations.
+Actual payouts always come from tip pools (CTP, GRT, Cash).
 
 2. Shift Inputs
 
-Each dining room team provides the following inputs:
-
-sales
-ctp
-grt
-cgrt
-cash
-wineSales
-liquorSales
-covers
-
-The bar provides:
-
-sales
-ctp
-grt
-wineSales
-liquorSales
-covers
-
-Note:
-The bar does not generate contract gratuity (CGRT).
+Each team provides: sales, ctp, grt, cgrt, cash.
+The bar provides: sales, ctp, grt, covers, and a **Runners Transfer** amount.
 
 3. Aggregated Totals
 
-All team data is aggregated into shift totals.
+All team data is aggregated into shift totals (totalSales, totalCTP, etc.).
+The bar Sales/Tips are handled independently until the transfer phase.
 
-Dining room totals:
-
-totalSales
-totalCTP
-totalGRT
-totalCGRT
-totalCash
-totalCovers
-
-Bar totals:
-
-barSales
-barCTP
-barGRT
-barCovers
 4. Contract Sales Calculation
 
-Contract gratuity is typically 26% of the contract sale value.
-
-To determine contract sales:
-
 contractSales = totalCGRT / 0.26
+(Used to calculate gratuity-based allocations like House and Captain Override).
 
-Example:
-
-totalCGRT = 2600
-contractSales = 2600 / 0.26 = 10000
 5. Regular Dining Room Sales
 
-Regular sales exclude contract sales.
-
 regularSales = totalSales - contractSales
+(Used as the base for CTP-based allocations like Bar Fee and Door Fee).
 
-Regular sales become the base for CTP allocations.
+6. Allocation Phase (Deductions)
 
-6. Allocation Phase
-
-Two types of allocations exist:
-
-CTP Allocations
-
-Contract Gratuity Allocations
-
-These allocations occur before team distributions.
+Allocations are subtracted from the raw pools before any staff distribution.
 
 7. CTP Allocations (From Regular Sales)
-
-These are calculated from regular dining room sales but paid from the CTP pool.
-
-Captain Override
-captainAllocation = 1% of regularSales
-
-This amount is split evenly among captains working that shift.
-
-Bar Allocation
-barCTPAllocation = 1% of regularSales
-
-This amount moves from team CTP → bar CTP.
-
-Door Allocation
-doorCTPAllocation = 0.5% of regularSales
-
-This amount is removed from team CTP.
-
-Runner Pay
-
-Runners are paid a flat rate.
-
-runnerPay = $102 per runner
-
-Runner funding may come from:
-
-teamCTP
-barCTP
-or both
-
-This is configurable per shift.
-
-8. Contract Gratuity Allocations (From CGRT)
-
-Contract gratuity triggers additional allocations.
-
-These are calculated from contract sales but paid from CGRT.
-
-captainCGRT = 1% of contractSales
-barCGRT = 1% of contractSales
-doorCGRT = 2% of contractSales
-coordinatorCGRT = 2% of contractSales
-houseCGRT = 3% of contractSales
-
-Total contract deductions:
-
-contractAllocations =
-captainCGRT + barCGRT + doorCGRT + coordinatorCGRT + houseCGRT
-9. Remaining Contract Gratuity
-
-After contract allocations are removed:
-
-remainingCGRT = totalCGRT - contractAllocations
-10. Gratuity Pool Simplification
-
-To simplify distribution logic:
-
-After allocations are completed:
-
-finalGRT = totalGRT + remainingCGRT
-
-This merges regular gratuity with leftover contract gratuity.
-
-From this point forward the engine treats gratuity as one unified pool.
-
-11. Final Pools Before Distribution
-
-Dining room pools:
-
-finalTeamCTP =
-totalCTP
-- captainAllocation
-- barCTPAllocation
-- doorCTPAllocation
-- runnerTeamCTPDeductions
-finalGRT = totalGRT + remainingCGRT
-finalCash = totalCash
-
-Bar pools:
-
-finalBarCTP =
-barCTP
-+ barCTPAllocation
-- runnerBarCTPDeductions
-finalBarGRT =
-barGRT
-+ barCGRT
-12. Dining Room Point System
-
-Dining room staff are paid using a point-based distribution system.
-
-Role values:
-
-Captain = 4 points
-Server = 4 points
-Back Server = 2.5 points
-SA / Busser = 2 points
-13. Point Value Calculation
-
-Total shift points:
-
-totalPoints = sum(employeePoints)
-
-Pool distributed to team:
-
-teamDistributionPool =
-finalTeamCTP
-+ finalGRT
-+ finalCash
-
-Point value:
-
-pointValue = teamDistributionPool / totalPoints
-
-Employee payout:
-
-employeePay = employeePoints * pointValue
-14. Bar Distribution
-
-The bar distributes its pool independently.
-
-Bar pool includes:
-
-finalBarCTP
-finalBarGRT
-
-Runner deductions may reduce the bar CTP pool.
-
-The remaining bar pool is divided among bartenders.
-
-15. Calculation Order
-
-The recommended engine sequence:
-
-Aggregate team and bar inputs
-
-Calculate contract sales
-
-Calculate regular dining room sales
-
-Calculate CTP allocations
-
-Calculate contract gratuity allocations
-
-Deduct runner payments
-
-Compute remaining pools
-
-Merge remaining CGRT into finalGRT
-
-Calculate point value
-
-Distribute dining room payouts
-
-Distribute bar payouts
-
-16. Engine Output
-
-The engine should produce:
-
-shiftTotals
-salesBreakdown
-allocations
-remainingPools
-finalPools
-employeePayouts
-barPayouts
-runnerDeductions
-validationMessages
-balanceSummary
-17. Validation Rules
-
-The engine should detect and report:
-
-Negative pools
-
-Runner deductions exceeding available pools
-
-Allocation totals exceeding pool values
-
-Imbalanced distributions
-
-The system should ensure:
-
-totalDistributed == totalTipPools
-18. Key Simplification Rule
-
-Contract gratuity only exists as a separate entity during the allocation phase.
-
-After allocations:
-
-CGRT → merged into finalGRT
-
-This greatly simplifies the final distribution logic.
-
-Summary
-
-The system operates in three phases:
-
-1. Calculation Phase
-
-Determine sales splits
-
-Compute allocations
-
-2. Pool Normalization
-
-Deduct allocations
-
-Merge gratuity pools
-
-3. Distribution Phase
-
-Calculate point values
-
-Pay employees
-
-This structure keeps the engine deterministic, easier to debug, and easier to maintain.
+- **Bar Fee**: 1% of regular sales (Team CTP → Bar CTP).
+- **Door Fee**: 0.5% of regular sales (Removed from Team CTP).
+- **Captain Override (CTP)**: 1% of regular sales (Merged into Captain payouts).
+- **Runners**: 100% of Runner Pay (Flat rate, default $102) is deducted from the Team CTP pool.
+
+8. Gratuity Allocations (From Contract Sales)
+- **House**: 3%
+- **Coordinator**: 2%
+- **Door**: 2%
+- **Bar**: 1%
+- **Captain Override (GRT)**: 1%
+
+9. Pool Adjustment Phase (Transfers)
+
+After initial allocations, the engine performs manual pool-to-pool adjustments based on user input:
+- **Bar-to-Team Transfer**: The amount in the Bar "Runners Transfer" field is:
+    1. Subtracted from the Bar CTP adjusted pool.
+    2. Added to the Dining Room Staff CTP adjusted pool.
+
+10. Final Adjusted Pools
+
+- **Adjusted Team CTP**: `(Base Tips - Allocations - 100% Runners) + Bar_Transfer`
+- **Adjusted Bar CTP**: `(Bar Tips + Bar_Fee - Bar_Transfer)`
+
+11. Distribution Phase (Point System)
+
+Staff Payouts = `Points * PointValue`
+
+The **Point Value (PV)** is calculated from the final adjusted pools.
+For transparency, the Point Value is calculated in two parts in the engine logs:
+1. **Base Staff PV**: `(Total DR Tips net of runners) / Total Points`
+2. **Transfer PV**: `(Manual Bar Contribution) / Total Points`
+3. **Final Staff PV**: `Base Staff PV + Transfer PV`
+
+12. Reconciliation & Integrity
+
+- **Rounding**: Any rounding drift (from dividing tips by points) is reconciled with the last person in the team's array.
+- **Balance Check**: `Total Available Tips (Inputs) == Total Distributed (Staff + Fees)`.
+- **Target**: The balance must always reconcile to exactly **$0.00**.
+
+13. Summary of Sequence
+1. **Aggregate**: Sum all sales and tips.
+2. **Allocate**: Deduct House/Door fees and 100% of Runner Pay from DR.
+3. **Transfer**: Move manual Bar contribution to the Team pool.
+4. **Distribute**: Calculate final point values and individual payouts.
+5. **Audit**: Verify shift balances to zero.
