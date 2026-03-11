@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import styles from "./AdminDashboard.module.css";
-import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/distributionUtils";
+import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/constants";
 import { calculateShift } from "../../utils/engine";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, setDoc, getDoc, query, where } from "firebase/firestore";
@@ -253,6 +253,9 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
                                 </div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Available CTP ({fmt(summary.derivedValues?.ctpTotal)}) + GRT ({fmt(summary.derivedValues?.grtTotal)}): {fmt((summary.balances?.totalAvailable || 0) - (summary.derivedValues?.baseTeamCash || 0))}</div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Distributed CTP + GRT: {fmt((summary.balances?.totalDistributed || 0) - (summary.derivedValues?.baseTeamCash || 0))}</div>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.4rem' }}>
+                                    Total Team Points: {summary.pointTotals?.totalAllTeamPoints || 0}
+                                </div>
                             </div>
                         </div>
                     </div>
