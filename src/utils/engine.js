@@ -8,7 +8,13 @@
  * along with a double-entry balance check.
  */
 
-import { ROLE_POINTS, LEGACY_ROLE_MAP } from './constants';
+import { ROLE_POINTS } from './distributionUtils';
+
+
+export const LEGACY_ROLE_MAP = {
+    server: 'front',
+    assistant: 'busser'
+};
 
 const n = (val) => Number(val) || 0;
 const r2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
@@ -46,6 +52,8 @@ export function calculateShift(inputs) {
         ...inputs
     };
 
+    console.log("ENGINE: 1. FULL INPUT DATA (CONFIG)", config);
+
     // Backwards compat for old shift schemas
     if (config.barTeam.members.length === 0 && config.barMembers.length > 0) {
         config.barTeam.members = config.barMembers;
@@ -73,6 +81,7 @@ export function calculateShift(inputs) {
     const barSales = Math.max(0, n(config.barTeam.pools?.sales) || n(config.barSales));
     const barCTP = Math.max(0, n(config.barTeam.pools?.tips));
     const barGRT = Math.max(0, n(config.barTeam.pools?.gratuity));
+    const barToTeamTransfer = Math.max(0, n(config.barTeam.pools?.runners));
 
     // If new format is active, firmly ignore global inputs to prevent ghost totals
     const baseTeamCTP = isNewFormat ? totalTeamCTP : n(config.ctpTotal);
@@ -94,133 +103,76 @@ export function calculateShift(inputs) {
         validations.push("Warning: Contract sales exceed total team sales. Regular sales base clamped to 0.");
     }
 
-    // 2. PRE-DISTRIBUTIONS
-    const barCTPAllocation = r2(regularSalesBase * 0.01);
-    const doorCTPAllocation = r2(regularSalesBase * 0.005);
+    console.log("ENGINE: 2. AGGREGATION TOTALS", {
+        totalTeamSales,
+        totalTeamCTP,
+        totalTeamCash,
+        totalTeamGrt,
+        grtContractTotal,
+        contractSales,
+        regularSalesBase
+    });
 
-    // Captain Override CTP is strictly derived from Regular Sales (1% of sales goes to captain)
-    const captainOverrideCTP = r2(regularSalesBase * 0.01);
-
-    // GRT Allocations are derived from Contract Sales
-    const captainOverrideGRT = r2(contractSales * 0.01);
-    const barGRTAllocation = r2(contractSales * 0.01);
-    const doorGRTAllocation = r2(contractSales * 0.02);
-    const peCoordinatorGRT = r2(contractSales * 0.02);
-    const houseAllocation = r2(contractSales * 0.03);
-
-    // 3. BAR POOLS
-    // Bar gets 1% of Regular Sales (CTP) and 1% of Contract Sales (GRT)
-    const rawBarCTPPool = barCTP + barCTPAllocation;
-    const rawBarGRTPool = barGRT + barGRTAllocation;
-
-    // 4. TEAM POOLS
-    const rawTeamCTPPool = baseTeamCTP - barCTPAllocation - doorCTPAllocation - captainOverrideCTP;
-    const rawTeamCashPool = baseTeamCash;
-    const rawTeamGRTPool = (totalTeamGrt + grtContractTotal) - barGRTAllocation - doorGRTAllocation - peCoordinatorGRT - houseAllocation - captainOverrideGRT;
-
-    // 5. RUNNER LOGIC & DEDUCTIONS
-    const runnerDeductions = {
-        'Bar CTP': 0,
-        'Dining Room CTP': 0
-    };
-
+    // 5. RUNNER LOGIC (SIMPLIFIED)
+    // Runners are calculated here because they are deducted from the raw pool alongside allocations
     const runnerPayouts = config.runners.map(runner => {
-        let amountA = 0;
-        let amountB = 0;
-        let sourceA = runner.sourceA || runner.source || 'Even Split';
-        let sourceB = runner.sourceB || '';
-        const payoutAmount = n(runner.payoutAmount);
-
+        const payoutAmount = n(runner.payoutAmount) || 102; // Default to 102
         if (payoutAmount < 0) validations.push(`Warning: Runner ${runner.name || 'Unknown'} has a negative payout amount.`);
-        const mode = runner.fundingSourceMode || 'single_source';
-
-        // Custom Even Split Logic (Between Total DR Teams and Bar)
-        const evenSplitBreakdown = {};
-        if (mode === 'single_source' && sourceA === 'Even Split') {
-            const drTeamsCount = config.teams.length;
-            const barTeamCount = (config.barTeam && config.barTeam.members && config.barTeam.members.length > 0) ? 1 : 0;
-            const totalEntities = drTeamsCount + barTeamCount;
-
-            if (totalEntities > 0) {
-                const barShare = barTeamCount > 0 ? (payoutAmount / totalEntities) : 0;
-                const diningRoomShare = payoutAmount - barShare;
-
-                if (barShare > 0) {
-                    evenSplitBreakdown['Bar CTP'] = barShare;
-                    runnerDeductions['Bar CTP'] += barShare;
-                }
-                if (diningRoomShare > 0) {
-                    evenSplitBreakdown['Dining Room CTP'] = diningRoomShare;
-                    runnerDeductions['Dining Room CTP'] += diningRoomShare;
-                }
-            }
-
-            return {
-                uid: runner.uid,
-                name: runner.name,
-                role: 'runner',
-                payoutAmount: r2(payoutAmount),
-                breakdown: Object.keys(evenSplitBreakdown).reduce((acc, key) => { acc[key] = r2(evenSplitBreakdown[key]); return acc; }, {})
-            };
-        }
-
-        // Standard Manual Logic
-        if (mode === 'single_source') {
-            amountA = payoutAmount;
-        } else if (mode === 'amount_plus_remainder') {
-            amountA = n(runner.amountFromSourceA);
-            if (amountA > payoutAmount) {
-                amountA = payoutAmount;
-                validations.push(`Warning: Runner ${runner.name || 'Unknown'} fixed amount exceeds total payout.`);
-            }
-            amountB = payoutAmount - amountA;
-        } else if (mode === 'percent_plus_remainder') {
-            const pct = n(runner.percentFromSourceA);
-            if (pct < 0 || pct > 100) validations.push(`Warning: Runner ${runner.name || 'Unknown'} percent split must be between 0 and 100.`);
-            amountA = payoutAmount * (Math.max(0, Math.min(100, pct)) / 100);
-            amountB = payoutAmount - amountA;
-        }
-
-        if (runnerDeductions[sourceA] === undefined) {
-            validations.push(`Warning: Runner ${runner.name || 'Unknown'} has invalid sourceA: ${sourceA}. Defaulting to Dining Room CTP.`);
-            sourceA = 'Dining Room CTP';
-            if (mode === 'single_source') amountA = payoutAmount;
-        }
-
-        if (amountB > 0 && runnerDeductions[sourceB] === undefined) {
-            validations.push(`Warning: Runner ${runner.name || 'Unknown'} has invalid sourceB: ${sourceB}.`);
-            sourceB = 'Dining Room CTP';
-        }
-
-        if ((mode === 'amount_plus_remainder' || mode === 'percent_plus_remainder') && sourceA === sourceB && amountB > 0) {
-            validations.push(`Warning: Runner ${runner.name || 'Unknown'} has the same funding source for both parts of a split.`);
-        }
-
-        if (runnerDeductions[sourceA] !== undefined) runnerDeductions[sourceA] += amountA;
-        if (amountB > 0 && runnerDeductions[sourceB] !== undefined) runnerDeductions[sourceB] += amountB;
 
         return {
             uid: runner.uid,
             name: runner.name,
             role: 'runner',
             payoutAmount: r2(payoutAmount),
-            breakdown: {
-                [sourceA]: r2(amountA),
-                ...(amountB > 0 ? { [sourceB]: r2(amountB) } : {})
-            }
+            breakdown: { "Manual Split": r2(payoutAmount) }
         };
     });
 
-    // 6. ADJUSTED POOLS (GLOBAL DR & BAR)
-    const adjustedBarCTPPool = rawBarCTPPool - runnerDeductions['Bar CTP'];
-    const adjustedBarGRTPool = rawBarGRTPool; // GRT is never deducted for runners
+    const totalRunnerPay = r2(sumProp(runnerPayouts, 'payoutAmount'));
 
-    const adjustedTeamCTPPool = rawTeamCTPPool - runnerDeductions['Dining Room CTP'];
+    const runnerDeductions = {
+        'Dining Room CTP': totalRunnerPay
+    };
+
+    // 2. PRE-DISTRIBUTIONS
+    const barCTPAllocation = r2(regularSalesBase * 0.01);
+    const doorCTPAllocation = r2(regularSalesBase * 0.005);
+    const captainOverrideCTP = r2(regularSalesBase * 0.01);
+    const captainOverrideGRT = r2(contractSales * 0.01);
+    const barGRTAllocation = r2(contractSales * 0.01);
+    const doorGRTAllocation = r2(contractSales * 0.02);
+    const peCoordinatorGRT = r2(contractSales * 0.02);
+    const houseAllocation = r2(contractSales * 0.03);
+
+    // 4. TEAM POOLS
+    const rawTeamCTPPool = baseTeamCTP - barCTPAllocation - doorCTPAllocation - captainOverrideCTP - totalRunnerPay;
+    const rawTeamCashPool = baseTeamCash;
+    const rawTeamGRTPool = (totalTeamGrt + grtContractTotal) - barGRTAllocation - doorGRTAllocation - peCoordinatorGRT - houseAllocation - captainOverrideGRT;
+
+    const rawBarCTPPool = barCTP + barCTPAllocation;
+    const rawBarGRTPool = barGRT + barGRTAllocation;
+
+    // 6. ADJUSTED POOLS
+    const adjustedTeamCTPPool = r2(rawTeamCTPPool + barToTeamTransfer);
+    const adjustedBarCTPPool = r2(rawBarCTPPool - barToTeamTransfer);
+    const adjustedBarGRTPool = rawBarGRTPool;
     const adjustedTeamCashPool = rawTeamCashPool;
     const adjustedTeamGRTPool = rawTeamGRTPool;
 
-    if (adjustedBarCTPPool < 0) validations.push(`Warning: Bar CTP pool is negative (${r2(adjustedBarCTPPool)}). Allocations or deductions exceeded the available pool.`);
-    if (adjustedTeamCTPPool < 0) validations.push(`Warning: Dining Room CTP pool is negative (${r2(adjustedTeamCTPPool)}). Deductions exceeded available tips.`);
+    console.log("ENGINE: 3. ALLOCATIONS & DEDUCTIONS SUMMARY", {
+        fixedAllocations: { house: houseAllocation, door: r2(doorCTPAllocation + doorGRTAllocation), barFee: r2(barCTPAllocation + barGRTAllocation), captainOverride: r2(captainOverrideCTP + captainOverrideGRT), runners: totalRunnerPay },
+        tipTransfer: { fromBar: barToTeamTransfer }
+    });
+
+    if (adjustedBarCTPPool < 0) validations.push(`Warning: Bar CTP pool is negative.`);
+    if (adjustedTeamCTPPool < 0) validations.push(`Warning: Dining Room CTP pool is negative.`);
+
+    console.log("ENGINE: 4. FINAL ADJUSTED POOLS (READY FOR DISTRIBUTION)", {
+        adjustedBarCTPPool,
+        adjustedTeamCTPPool,
+        adjustedTeamCashPool,
+        adjustedTeamGRTPool
+    });
 
     // 7. POINT DISTRIBUTION (BAR)
     let totalBarPoints = sumProp(config.barTeam.members, 'points');
@@ -251,7 +203,6 @@ export function calculateShift(inputs) {
         };
     });
 
-    // Reconcile Bar Rounding
     reconcile(barPayouts, adjustedBarCTPPool, 'ctp');
     reconcile(barPayouts, adjustedBarGRTPool, 'grt');
 
@@ -311,14 +262,18 @@ export function calculateShift(inputs) {
     }
 
     // 10. GENERATE PAYOUTS 
-    const totalAdjTeamCTP = adjustedTeamCTPPool;
-    const totalAdjTeamCash = adjustedTeamCashPool;
-    const totalAdjTeamGRT = adjustedTeamGRTPool;
     const totalAllTeamPoints = teamsProcessed.reduce((sum, t) => sum + t.teamPts, 0);
 
-    const globalTeamCTPPointValue = totalAllTeamPoints > 0 ? totalAdjTeamCTP / totalAllTeamPoints : 0;
-    const globalTeamCashPointValue = totalAllTeamPoints > 0 ? totalAdjTeamCash / totalAllTeamPoints : 0;
-    const globalTeamGRTPointValue = totalAllTeamPoints > 0 ? totalAdjTeamGRT / totalAllTeamPoints : 0;
+    const globalTeamCTPPointValue = totalAllTeamPoints > 0 ? adjustedTeamCTPPool / totalAllTeamPoints : 0;
+    const globalTeamCashPointValue = totalAllTeamPoints > 0 ? adjustedTeamCashPool / totalAllTeamPoints : 0;
+    const globalTeamGRTPointValue = totalAllTeamPoints > 0 ? adjustedTeamGRTPool / totalAllTeamPoints : 0;
+
+    console.log("ENGINE: 5. POINT VALUES (DOLLAR PER POINT)", {
+        totalAllTeamPoints,
+        globalTeamCTPPointValue,
+        globalTeamCashPointValue,
+        globalTeamGRTPointValue
+    });
 
     const teamPayouts = [];
     const roleGroupedPayouts = {
@@ -371,9 +326,11 @@ export function calculateShift(inputs) {
 
     // Flatten all team payouts for reconciliation
     const allPayoutsFlat = teamPayouts.reduce((acc, t) => acc.concat(t.payouts), []);
-    reconcile(allPayoutsFlat, totalAdjTeamCTP + (activeCaptains.length * splitCTP), 'ctp');
-    reconcile(allPayoutsFlat, totalAdjTeamGRT + (activeCaptains.length * splitGRT), 'grt');
-    reconcile(allPayoutsFlat, totalAdjTeamCash, 'cash');
+    const targetDRCTP = r2(adjustedTeamCTPPool + (activeCaptains.length * splitCTP));
+
+    reconcile(allPayoutsFlat, targetDRCTP, 'ctp');
+    reconcile(allPayoutsFlat, r2(adjustedTeamGRTPool + (activeCaptains.length * splitGRT)), 'grt');
+    reconcile(allPayoutsFlat, adjustedTeamCashPool, 'cash');
 
     // Reconcile Runners
     reconcile(runnerPayouts, sumProp(config.runners, 'payoutAmount'), 'payoutAmount');
@@ -398,13 +355,11 @@ export function calculateShift(inputs) {
     const clean_TeamCTP = out_TeamCTP - out_CapOverrideCTP;
     const clean_TeamGRT = out_TeamGRT - out_CapOverrideGRT;
 
-    const out_Runners = sumProp(runnerPayouts, 'payoutAmount');
-
     const out_Allocations = doorCTPAllocation + doorGRTAllocation + peCoordinatorGRT + houseAllocation;
 
     // The global balance check should simply be:
     // Total Available (Input) - Total Distributed (Everyone's Payouts + External Fees)
-    const totalPaymentsToStaff = out_TeamCASH + out_TeamCTP + out_TeamGRT + out_BarCTP + out_BarGRT + out_Runners;
+    const totalPaymentsToStaff = out_TeamCASH + out_TeamCTP + out_TeamGRT + out_BarCTP + out_BarGRT + totalRunnerPay;
     const totalExternalFees = doorCTPAllocation + doorGRTAllocation + peCoordinatorGRT + houseAllocation;
 
     // Note: Captain Overrides are ALREADY included inside out_TeamCTP/GRT since we merged them in the role loop.
@@ -413,15 +368,23 @@ export function calculateShift(inputs) {
 
     const overallBalance = r2(totalAvailable - totalDistributed);
 
+    console.log("ENGINE: 6. FINAL BALANCE CHECK", {
+        totalAvailable,
+        totalDistributed,
+        overallBalance,
+        totalPaymentsToStaff,
+        totalExternalFees
+    });
+
     if (Math.abs(overallBalance) > 0.05) {
         validations.push(`Balance Warning: Shift does not balance. Total Available: ${r2(totalAvailable)}, Total Distributed: ${r2(totalDistributed)}, Diff: ${overallBalance}`);
     }
 
     const balances = {
         poolBalances: {
-            'Dining Room CTP': r2(totalAdjTeamCTP - clean_TeamCTP),
-            'Team CASH': r2(totalAdjTeamCash - out_TeamCASH),
-            'Team GRT': r2(totalAdjTeamGRT - clean_TeamGRT),
+            'Dining Room CTP': r2(adjustedTeamCTPPool - (out_TeamCTP - out_CapOverrideCTP)),
+            'Team CASH': r2(adjustedTeamCashPool - out_TeamCASH),
+            'Team GRT': r2(adjustedTeamGRTPool - (out_TeamGRT - out_CapOverrideGRT)),
             'Bar CTP': r2(adjustedBarCTPPool - out_BarCTP),
             'Bar GRT': r2(adjustedBarGRTPool - out_BarGRT),
             'Cap Ov CTP': r2(captainOverrideCTPPool - out_CapOverrideCTP),
@@ -454,7 +417,8 @@ export function calculateShift(inputs) {
             doorGRTAllocation: r2(doorGRTAllocation),
             peCoordinatorGRT: r2(peCoordinatorGRT),
             captainOverrideGRT: r2(captainOverrideGRT),
-            houseAllocation: r2(houseAllocation)
+            houseAllocation: r2(houseAllocation),
+            totalRunnerPay: r2(totalRunnerPay)
         },
         rawPools: {
             rawTeamCTPPool: r2(rawTeamCTPPool),
@@ -465,9 +429,9 @@ export function calculateShift(inputs) {
         },
         runnerDeductionsByPool: runnerDeductions,
         adjustedPools: {
-            adjustedTeamCTPPool: r2(totalAdjTeamCTP),
-            adjustedTeamCashPool: r2(totalAdjTeamCash),
-            adjustedTeamGRTPool: r2(totalAdjTeamGRT),
+            adjustedTeamCTPPool: r2(adjustedTeamCTPPool),
+            adjustedTeamCashPool: r2(adjustedTeamCashPool),
+            adjustedTeamGRTPool: r2(adjustedTeamGRTPool),
             adjustedBarCTPPool: r2(adjustedBarCTPPool),
             adjustedBarGRTPool: r2(adjustedBarGRTPool)
         },
