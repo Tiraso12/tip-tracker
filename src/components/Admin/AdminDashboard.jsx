@@ -20,7 +20,7 @@ const ROLE_LABELS = {
     runner: `Runner (flat $${RUNNER_FLAT_RATE})`,
 };
 
-const emptyTeamPools = () => ({ tips: "", gratuity: "", cash: "", sales: "", wine: "", liquor: "", covers: "" });
+const emptyTeamPools = () => ({ sales: "", tips: "", cash: "", gratuity: "", contract26Gratuity: "", runners: "" });
 const emptyTeam = (teamId) => ({ teamId, members: [], pools: emptyTeamPools(), contracts: [] });
 
 const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
@@ -234,8 +234,9 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>INPUTS</div>
                                 <div style={{ fontWeight: 600 }}>Team Sales: {fmt(summary.derivedValues?.totalTeamSales)}</div>
                                 <div>Contract Grat: {fmt(summary.derivedValues?.grtContractTotal)}</div>
-                                <div>CTP Total: {fmt(summary.derivedValues?.ctpTotal)}</div>
+                                <div>DCTP ({fmt(summary.derivedValues?.baseTeamCTP)}) + BCTP ({fmt(summary.derivedValues?.barCTP)}): {fmt(summary.derivedValues?.ctpTotal)}</div>
                                 <div>Cash Total: {fmt(summary.derivedValues?.baseTeamCash)}</div>
+                                <div>Grat total: {fmt(summary.derivedValues?.grtTotal)}</div>
                             </div>
                             <div>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>ALLOCATIONS (HOUSE & BAR)</div>
@@ -243,14 +244,15 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
                                 <div>Bar Cut: {fmt((summary.allocations?.barCTPAllocation || 0) + (summary.allocations?.barGRTAllocation || 0))}</div>
                                 <div>House: {fmt(summary.allocations?.houseAllocation || 0)}</div>
                                 <div>Coordinator: {fmt(summary.allocations?.peCoordinatorGRT || 0)}</div>
+                                <div>Runners Fee: {fmt(summary.allocations?.totalRunnerPay || 0)}</div>
                             </div>
                             <div>
                                 <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>BALANCES</div>
                                 <div style={{ fontWeight: 600, color: summary.balances?.overallBalance === 0 ? 'var(--success)' : 'var(--danger)' }}>
                                     Overall Balance: {fmt(summary.balances?.overallBalance)}
                                 </div>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Available: {fmt(summary.balances?.totalAvailable)}</div>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Distributed: {fmt(summary.balances?.totalDistributed)}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Available CTP ({fmt(summary.derivedValues?.ctpTotal)}) + GRT ({fmt(summary.derivedValues?.grtTotal)}): {fmt((summary.balances?.totalAvailable || 0) - (summary.derivedValues?.baseTeamCash || 0))}</div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Distributed CTP + GRT: {fmt((summary.balances?.totalDistributed || 0) - (summary.derivedValues?.baseTeamCash || 0))}</div>
                             </div>
                         </div>
                     </div>
@@ -794,6 +796,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                         <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
                                         <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
                                         <PoolField label="Covers" value={barTeam.pools.covers} onChange={(v) => updateBarPool("covers", v)} />
+                                        <PoolField label="Runners Transfer ($)" value={barTeam.pools.runners} onChange={(v) => updateBarPool("runners", v)} />
                                     </div>
                                 </div>
                             </div>

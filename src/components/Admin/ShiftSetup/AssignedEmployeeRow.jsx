@@ -14,80 +14,19 @@ function AssignedEmployeeRow({ member, onDragStart, onRemove, onUpdateField, isR
             </div>
 
             {isRunner ? (
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <input
-                        type="number"
-                        placeholder="Payout $"
-                        className={`${styles.runnerInput} ${styles.noSpinners}`}
-                        style={{ width: '60px', borderRadius: '4px' }}
-                        value={member.payoutAmount || ''}
-                        onChange={(e) => onUpdateField('payoutAmount', e.target.value)}
-                    />
-
-                    <select
-                        className={styles.runnerSelect}
-                        style={{ width: 'auto', borderRadius: '4px' }}
-                        value={member.fundingSourceMode || 'single_source'}
-                        onChange={(e) => onUpdateField('fundingSourceMode', e.target.value)}
-                    >
-                        <option value="single_source">S/S</option>
-                        <option value="amount_plus_remainder">Fixed</option>
-                        <option value="percent_plus_remainder">% Split</option>
-                    </select>
-
-                    <select
-                        className={styles.runnerSelect}
-                        style={{ width: 'auto', borderRadius: '4px' }}
-                        value={member.sourceA || 'Even Split'}
-                        onChange={(e) => onUpdateField('sourceA', e.target.value)}
-                    >
-                        <option value="Even Split">Even Split</option>
-                        <option value="Team 1 CTP">Team 1 CTP</option>
-                        <option value="Team 2 CTP">Team 2 CTP</option>
-                        <option value="Team 3 CTP">Team 3 CTP</option>
-                        <option value="Team 4 CTP">Team 4 CTP</option>
-                        <option value="Team 5 CTP">Team 5 CTP</option>
-                        <option value="Bar CTP">Bar CTP</option>
-                    </select>
-
-                    {member.fundingSourceMode === 'amount_plus_remainder' && (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Payout:</div>
+                    <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: '0.5rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.85rem', pointerEvents: 'none' }}>$</span>
                         <input
                             type="number"
-                            placeholder="$ Src A"
+                            placeholder="102"
                             className={`${styles.runnerInput} ${styles.noSpinners}`}
-                            style={{ width: '60px', borderRadius: '4px' }}
-                            value={member.amountFromSourceA || ''}
-                            onChange={(e) => onUpdateField('amountFromSourceA', e.target.value)}
+                            style={{ width: '75px', borderRadius: '4px', paddingLeft: '1.2rem' }}
+                            value={member.payoutAmount || ''}
+                            onChange={(e) => onUpdateField('payoutAmount', e.target.value)}
                         />
-                    )}
-
-                    {member.fundingSourceMode === 'percent_plus_remainder' && (
-                        <input
-                            type="number"
-                            placeholder="% Src A"
-                            className={`${styles.runnerInput} ${styles.noSpinners}`}
-                            style={{ width: '60px', borderRadius: '4px' }}
-                            value={member.percentFromSourceA || ''}
-                            onChange={(e) => onUpdateField('percentFromSourceA', e.target.value)}
-                        />
-                    )}
-
-                    {(member.fundingSourceMode === 'amount_plus_remainder' || member.fundingSourceMode === 'percent_plus_remainder') && (
-                        <select
-                            className={styles.runnerSelect}
-                            style={{ width: 'auto', borderRadius: '4px' }}
-                            value={member.sourceB || ''}
-                            onChange={(e) => onUpdateField('sourceB', e.target.value)}
-                        >
-                            <option value="">-- Remainder Pool --</option>
-                            <option value="Team 1 CTP">Team 1 CTP</option>
-                            <option value="Team 2 CTP">Team 2 CTP</option>
-                            <option value="Team 3 CTP">Team 3 CTP</option>
-                            <option value="Team 4 CTP">Team 4 CTP</option>
-                            <option value="Team 5 CTP">Team 5 CTP</option>
-                            <option value="Bar CTP">Bar CTP</option>
-                        </select>
-                    )}
+                    </div>
                 </div>
             ) : (
                 <div className={styles.pointsControl}>
