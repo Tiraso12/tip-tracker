@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import styles from "./AdminDashboard.module.css";
-import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/distributionUtils";
+import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/constants";
 import { calculateShift } from "../../utils/engine";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, setDoc, getDoc, query, where } from "firebase/firestore";
