@@ -8,17 +8,7 @@
  * along with a double-entry balance check.
  */
 
-export const ROLE_POINTS = {
-    captain: 4,
-    front: 4,
-    back: 2.5,
-    busser: 2,
-};
-
-export const LEGACY_ROLE_MAP = {
-    server: 'front',
-    assistant: 'busser'
-};
+import { ROLE_POINTS, LEGACY_ROLE_MAP } from './constants';
 
 const n = (val) => Number(val) || 0;
 const r2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
