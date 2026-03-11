@@ -10,6 +10,9 @@
 
 import { ROLE_POINTS, LEGACY_ROLE_MAP } from './constants';
 
+
+
+
 const n = (val) => Number(val) || 0;
 const r2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
 const sumProp = (arr, prop) => arr.reduce((sum, item) => sum + n(item[prop]), 0);
@@ -430,7 +433,8 @@ export function calculateShift(inputs) {
             adjustedBarGRTPool: r2(adjustedBarGRTPool)
         },
         pointTotals: {
-            totalBarPoints
+            totalBarPoints,
+            totalAllTeamPoints: r2(totalAllTeamPoints)
         },
         pointValues: {
             barCTPPointValue: r2(barCTPPointValue),

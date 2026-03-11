@@ -253,6 +253,9 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
                                 </div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Available CTP ({fmt(summary.derivedValues?.ctpTotal)}) + GRT ({fmt(summary.derivedValues?.grtTotal)}): {fmt((summary.balances?.totalAvailable || 0) - (summary.derivedValues?.baseTeamCash || 0))}</div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Distributed CTP + GRT: {fmt((summary.balances?.totalDistributed || 0) - (summary.derivedValues?.baseTeamCash || 0))}</div>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '0.4rem', borderTop: '1px solid var(--border)', paddingTop: '0.4rem' }}>
+                                    Total Team Points: {summary.pointTotals?.totalAllTeamPoints || 0}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -607,6 +610,16 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         setPayouts(mappedPayoutsForFirebase);
         setSummary(result);
 
+        // ── Validation: Prevent saving invalid shifts ──
+        const payoutCount = Object.keys(mappedPayoutsForFirebase).length;
+
+        if (payoutCount === 0) {
+            setSaveStatus("⚠️ Cannot save shift: No employees are assigned to this shift.");
+            // Reset status after a few seconds
+            setTimeout(() => setSaveStatus(""), 4000);
+            return;
+        }
+
         setSaveStatus("Saving...");
         try {
             await setDoc(doc(db, "shifts", date), {
@@ -634,6 +647,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 await Promise.all(saves);
             }
             setSaveStatus("✅ Saved!");
+
+            // Automatically return to day payout view after a short delay
+            setTimeout(() => {
+                onClose();
+            }, 1500);
         } catch (e) {
             console.error(e);
             setSaveStatus("❌ Failed to save.");
