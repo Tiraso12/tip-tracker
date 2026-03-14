@@ -150,6 +150,7 @@ export function calculateShift(inputs) {
     const rawBarGRTPool = barGRT + barGRTAllocation;
 
     // 6. ADJUSTED POOLS
+    debugger
     const adjustedTeamCTPPool = r2(rawTeamCTPPool + barToTeamTransfer);
     const adjustedBarCTPPool = r2(rawBarCTPPool - barToTeamTransfer);
     const adjustedBarGRTPool = rawBarGRTPool;
