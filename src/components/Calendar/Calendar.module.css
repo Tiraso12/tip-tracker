@@ -46,109 +46,24 @@
   color: var(--text-muted);
 }
 
-.input {
-  width: 60px;
-  height: 28px;
-  /* Fixed height matching value */
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid transparent;
-  color: var(--text-main);
-  text-align: right;
-  font-size: 1rem;
-  font-weight: 500;
-  padding: 0;
-  transition: border-color var(--transition-fast);
-  box-sizing: border-box;
-  /* Ensure border is inside height */
-}
-
-.input:focus {
-  outline: none;
-  border-bottom-color: var(--primary);
-}
-
-.input::placeholder {
-  color: var(--bg-tertiary);
-}
-
-.totalRow {
-  margin-top: auto;
-  padding-top: 0.75rem;
-  border-top: 1px dashed var(--bg-tertiary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: var(--text-main);
-}
-
-.totalLabel {
-  color: var(--text-muted);
-  font-size: 0.875rem;
-}
-
 .totalAmount {
   font-weight: 700;
   font-size: 1rem;
-}
-
-.footer {
-  margin-top: 0.5rem;
-  min-height: 36px;
-  /* Reserve space to prevent jump */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.actions {
-  display: flex;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.saveBtn,
-.cancelBtn {
-  flex: 1;
-  padding: 0.5rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
-}
-
-.saveBtn {
-  background-color: var(--primary);
-  color: white;
-}
-
-.cancelBtn {
-  background-color: var(--bg-tertiary);
-  color: var(--text-main);
-}
-
-.saveBtn:hover,
-.cancelBtn:hover {
-  opacity: 0.9;
 }
 
 .value {
   display: inline-block;
   width: 60px;
   height: 28px;
-  /* Match input height */
   line-height: 28px;
-  /* Vertically center text */
   text-align: right;
   font-size: 1rem;
   font-weight: 500;
   color: var(--text-main);
   border-bottom: 1px solid transparent;
-  /* Preserve space for border */
   box-sizing: border-box;
 }
+
 
 
 @media (max-width: 1024px) {
@@ -176,7 +91,6 @@
     font-size: 0.8rem;
   }
 
-  .input,
   .value {
     width: 50px;
     font-size: 0.875rem;
@@ -208,7 +122,6 @@
     font-size: 0.75rem;
   }
 
-  .input,
   .value {
     width: 46px;
     font-size: 0.8rem;
@@ -222,11 +135,5 @@
 
   .totalAmount {
     font-size: 0.875rem;
-  }
-
-  .saveBtn,
-  .cancelBtn {
-    font-size: 0.65rem;
-    padding: 0.35rem;
   }
 }

@@ -118,7 +118,7 @@ function AdminDashboard() {
                             className={`${styles.toggleBtn} ${activeTab === "users" ? styles.active : ""}`}
                             onClick={() => setActiveTab("users")}
                         >
-                            Team Mgmt
+                            Team
                         </button>
                         <button
                             className={`${styles.toggleBtn} ${activeTab === "reports" ? styles.active : ""}`}
