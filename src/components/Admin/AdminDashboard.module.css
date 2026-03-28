@@ -1069,3 +1069,8 @@ details[open]>.contractsSummary::before {
 .addBtn:hover {
     background: rgba(147, 51, 234, 0.28);
 }
+
+.span {
+    font-weight: 700;
+    color: var(--text-main)
+}

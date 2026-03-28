@@ -8,7 +8,7 @@
  * along with a double-entry balance check.
  */
 
-import { ROLE_POINTS, LEGACY_ROLE_MAP } from './constants';
+import { ROLE_POINTS } from './constants.js';
 
 
 
@@ -50,15 +50,9 @@ export function calculateShift(inputs) {
     };
 
 
-    // Backwards compat for old shift schemas
-    if (config.barTeam.members.length === 0 && config.barMembers.length > 0) {
-        config.barTeam.members = config.barMembers;
-    }
-
     const validations = [];
 
     // 1. DERIVED VALUES
-    const isNewFormat = config.teams.length > 0 && config.teams[0].pools !== undefined;
 
     const totalTeamSales = config.teams.reduce((sum, t) => sum + Math.max(0, n(t.pools?.sales) || n(t.teamSales)), 0);
     const totalTeamCTP = config.teams.reduce((sum, t) => sum + Math.max(0, n(t.pools?.tips)), 0);
@@ -80,13 +74,13 @@ export function calculateShift(inputs) {
     const barToTeamTransfer = Math.max(0, n(config.barTeam.pools?.runners));
 
     // If new format is active, firmly ignore global inputs to prevent ghost totals
-    const baseTeamCTP = isNewFormat ? totalTeamCTP : n(config.ctpTotal);
+    const baseTeamCTP = totalTeamCTP;
     const ctpTotal = baseTeamCTP + barCTP;
 
-    const baseTeamCash = isNewFormat ? totalTeamCash : n(config.cashTotal);
+    const baseTeamCash = totalTeamCash;
     const cashTotal = baseTeamCash;
 
-    const grtContractTotal = isNewFormat ? teamContractGratTotal : n(config.contract26Gratuity);
+    const grtContractTotal = teamContractGratTotal;
 
     // Total Gratuity Available (Regular + Contract)
     const grtTotalAvailable = totalTeamGrt + barGRT + grtContractTotal;
@@ -194,15 +188,14 @@ export function calculateShift(inputs) {
         const loc_adjGRT = totalTeamSales > 0 ? (loc_teamSalesBase / totalTeamSales) * adjustedTeamGRTPool : 0;
 
         const processedMembers = (team.members || []).map(emp => {
-            const standardizedRole = LEGACY_ROLE_MAP[emp.role] || emp.role;
             const pts = (emp.points !== undefined && emp.points !== null && emp.points !== "")
                 ? n(emp.points)
-                : (ROLE_POINTS[standardizedRole] || 0);
+                : (ROLE_POINTS[emp.role] || 0);
 
-            const m = { ...emp, points: pts, _stdRole: standardizedRole, teamId: teamDisplayName };
+            const m = { ...emp, points: pts, _stdRole: emp.role, teamId: teamDisplayName };
             allProcessedTeamMembers.push(m);
 
-            if (standardizedRole === 'captain') {
+            if (emp.role === 'captain') {
                 activeCaptains.push(m);
             }
             return m;

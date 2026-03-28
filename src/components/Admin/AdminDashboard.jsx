@@ -10,12 +10,12 @@ import TeamManagement from "./TeamManagement";
 import { generateShiftReport, generateWeeklyReport, generateMonthlyReport } from "../../utils/pdfExport";
 import { getCurrentWeek } from "../../utils/dateUtils";
 
-const RESTAURANT_ROLES = ["captain", "server", "back", "assistant"];
+const RESTAURANT_ROLES = ["captain", "front", "back", "busser"];
 const ROLE_LABELS = {
     captain: "Captain",
-    server: "Server",
+    front: "Server",
     back: "Back",
-    assistant: "Assistant",
+    busser: "Assistant",
     bartender: "Bartender",
     runner: `Runner (flat $${RUNNER_FLAT_RATE})`,
 };
@@ -150,7 +150,7 @@ function AdminDashboard() {
                     ) : activeTab === "editor" ? (
                         <>
                             <h2 className={styles.panelTitle}>Shift Editor</h2>
-                            <p className={styles.panelSubtitle}>Input cash, credit tips, and adjust team composition for {selectedDate}.</p>
+                            <p className={styles.panelSubtitle}>Input tips and adjust team composition for <span className={styles.span}>{selectedDate}</span></p>
                             <button className={styles.openBtn} style={{ marginTop: '1rem', background: 'var(--bg-tertiary)', color: 'var(--text-main)' }} onClick={handleEditorClose}>
                                 ← Back to Shifts
                             </button>
@@ -206,7 +206,7 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
     return (
         <div className={styles.payoutPanel}>
             <div className={styles.payoutPanelHeader}>
-                <h3 className={styles.payoutPanelTitle}>Day Payouts <span className={styles.payoutPanelDate}>• {displayDate}</span></h3>
+                <h3 className={styles.payoutPanelTitle}>{displayDate}</h3>
                 {summary && (
                     <button
                         className={styles.exportBtn}
@@ -326,147 +326,6 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
                                         </>
                                     );
                                 })()}
-
-
-                                {/* OLD FORMATS FALLBACK (Legacy) */}
-                                {!summary.payouts?.roleGrouped && (
-                                    <>
-                                        {/* Old Format: Team Employees */}
-                                        {summary.payouts?.teamEmployees?.length > 0 && (
-                                            <>
-                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Team Members (Legacy)</span></td></tr>
-                                                {summary.payouts.teamEmployees.map(p => (
-                                                    <tr key={p.uid} className={styles.payoutRow}>
-                                                        <td className={styles.nameCell}>{p.name}</td>
-                                                        <td>{p.role}</td>
-                                                        <td className={styles.roleCell}>{p.points}</td>
-                                                        <td>{fmt(p.ctp)}</td>
-                                                        <td>{fmt(p.grt)}</td>
-                                                        <td>{fmt(p.cash)}</td>
-                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
-                                                    </tr>
-                                                ))}
-                                            </>
-                                        )}
-
-                                        {/* Grouped Team Employees */}
-                                        {summary.payouts?.teamPayouts?.length > 0 && summary.payouts.teamPayouts.map((tGroup, idx) => (
-                                            <React.Fragment key={tGroup.teamId}>
-                                                <tr className={styles.roleHeaderRow}>
-                                                    <td colSpan={7}><span className={styles.roleHeaderLabel}>Team {idx + 1}</span></td>
-                                                </tr>
-                                                {tGroup.payouts.map(p => (
-                                                    <tr key={p.uid} className={styles.payoutRow}>
-                                                        <td className={styles.nameCell}>{p.name}</td>
-                                                        <td>{p.role}</td>
-                                                        <td className={styles.roleCell}>{p.points}</td>
-                                                        <td>{fmt(p.ctp)}</td>
-                                                        <td>{fmt(p.grt)}</td>
-                                                        <td>{fmt(p.cash)}</td>
-                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
-                                                    </tr>
-                                                ))}
-                                            </React.Fragment>
-                                        ))}
-
-                                        {/* Captain Overrides */}
-                                        {summary.payouts?.captainsOverride?.length > 0 && (() => {
-                                            const isGrouped = Array.isArray(summary.payouts.captainsOverride[0]?.payouts);
-                                            if (isGrouped) {
-                                                return summary.payouts.captainsOverride.map((tGroup, idx) => (
-                                                    <React.Fragment key={"cap_ov_" + tGroup.teamId}>
-                                                        <tr className={styles.roleHeaderRow}>
-                                                            <td colSpan={7}><span className={styles.roleHeaderLabel}>Team {idx + 1} — Captain Overrides</span></td>
-                                                        </tr>
-                                                        {tGroup.payouts.map(p => (
-                                                            <tr key={p.uid + "_ov"} className={styles.payoutRow}>
-                                                                <td className={styles.nameCell}>{p.name}</td>
-                                                                <td>Override</td>
-                                                                <td className={styles.roleCell}>—</td>
-                                                                <td>{fmt(p.ctp)}</td>
-                                                                <td>{fmt(p.grt)}</td>
-                                                                <td>—</td>
-                                                                <td className={styles.totalCell}>{fmt(p.total)}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </React.Fragment>
-                                                ));
-                                            } else {
-                                                return (
-                                                    <React.Fragment>
-                                                        <tr className={styles.roleHeaderRow}>
-                                                            <td colSpan={7}><span className={styles.roleHeaderLabel}>Captain Overrides</span></td>
-                                                        </tr>
-                                                        {summary.payouts.captainsOverride.map(p => (
-                                                            <tr key={p.uid + "_ov"} className={styles.payoutRow}>
-                                                                <td className={styles.nameCell}>{p.name}</td>
-                                                                <td>Override</td>
-                                                                <td className={styles.roleCell}>—</td>
-                                                                <td>{fmt(p.ctp)}</td>
-                                                                <td>{fmt(p.grt)}</td>
-                                                                <td>—</td>
-                                                                <td className={styles.totalCell}>{fmt(p.total)}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </React.Fragment>
-                                                );
-                                            }
-                                        })()}
-
-                                        {/* Old Format: Bar Employees */}
-                                        {summary.payouts?.barEmployees?.length > 0 && (
-                                            <>
-                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Bar Team (Legacy)</span></td></tr>
-                                                {summary.payouts.barEmployees.map(p => (
-                                                    <tr key={p.uid} className={styles.payoutRow}>
-                                                        <td className={styles.nameCell}>{p.name}</td>
-                                                        <td>{p.role}</td>
-                                                        <td className={styles.roleCell}>{p.points}</td>
-                                                        <td>{fmt(p.ctp)}</td>
-                                                        <td>{fmt(p.grt)}</td>
-                                                        <td>{fmt(p.cash || 0)}</td>
-                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
-                                                    </tr>
-                                                ))}
-                                            </>
-                                        )}
-
-                                        {/* Bar Employees */}
-                                        {summary.payouts?.barPayouts?.length > 0 && (
-                                            <>
-                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Bar Team</span></td></tr>
-                                                {summary.payouts.barPayouts.map(p => (
-                                                    <tr key={p.uid} className={styles.payoutRow}>
-                                                        <td className={styles.nameCell}>{p.name}</td>
-                                                        <td>{p.role}</td>
-                                                        <td className={styles.roleCell}>{p.points}</td>
-                                                        <td>{fmt(p.ctp)}</td>
-                                                        <td>{fmt(p.grt)}</td>
-                                                        <td>{fmt(p.cash || 0)}</td>
-                                                        <td className={styles.totalCell}>{fmt(p.total)}</td>
-                                                    </tr>
-                                                ))}
-                                            </>
-                                        )}
-
-                                        {/* Runners */}
-                                        {summary.payouts?.runners?.length > 0 && (
-                                            <>
-                                                <tr className={styles.roleHeaderRow}><td colSpan={7}><span className={styles.roleHeaderLabel}>Runners</span></td></tr>
-                                                {summary.payouts.runners.map(p => (
-                                                    <tr key={p.uid} className={styles.payoutRow}>
-                                                        <td className={styles.nameCell}>{p.name}</td>
-                                                        <td>Runner</td>
-                                                        <td colSpan={4} style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                                            {Object.entries(p.breakdown || {}).map(([src, val]) => `${src}: ${fmt(val)}`).join(' | ')}
-                                                        </td>
-                                                        <td className={styles.totalCell}>{fmt(p.payoutAmount)}</td>
-                                                    </tr>
-                                                ))}
-                                            </>
-                                        )}
-                                    </>
-                                )}
                             </tbody>
                         </table>
                     </div>
@@ -600,7 +459,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
         if (result.payouts?.roleGrouped) {
             attachToMapped(result.payouts.roleGrouped.captains, 'captain');
-            attachToMapped(result.payouts.roleGrouped.servers, 'server');
+            attachToMapped(result.payouts.roleGrouped.servers, 'front');
             attachToMapped(result.payouts.roleGrouped.backs, 'back');
             attachToMapped(result.payouts.roleGrouped.bussers, 'busser');
             attachToMapped(result.payouts.roleGrouped.bar, 'bartender');
@@ -723,11 +582,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                             <PoolField label="Gratuity ($)" value={t.pools.gratuity} onChange={(v) => updatePool(t.teamId, "gratuity", v)} />
                                             <PoolField label="Cash ($)" value={t.pools.cash} onChange={(v) => updatePool(t.teamId, "cash", v)} />
                                             <PoolField label="Covers" value={t.pools.covers} onChange={(v) => updatePool(t.teamId, "covers", v)} />
-
-                                            {/* Legacy Contract Fallback */}
-                                            {t.pools.contract26Gratuity && (!t.contracts || t.contracts.length === 0) && (
-                                                <PoolField label="Legacy Contract Grat ($)" value={t.pools.contract26Gratuity} onChange={(v) => updatePool(t.teamId, "contract26Gratuity", v)} />
-                                            )}
                                         </div>
 
                                         {/* Dynamic Contracts Section */}
@@ -846,7 +700,7 @@ function PoolField({ label, value, onChange, hint }) {
                 min="0"
                 step="0.01"
                 className={styles.input}
-                value={value}
+                value={value ?? ""}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="0.00"
                 aria-label={label}
