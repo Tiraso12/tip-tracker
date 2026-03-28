@@ -70,11 +70,11 @@ After initial allocations, the engine performs manual pool-to-pool adjustments b
 
 Staff Payouts = `Points * PointValue`
 
-The **Point Value (PV)** is calculated from the final adjusted pools.
-For transparency, the Point Value is calculated in two parts in the engine logs:
-1. **Base Staff PV**: `(Total DR Tips net of runners) / Total Points`
-2. **Transfer PV**: `(Manual Bar Contribution) / Total Points`
-3. **Final Staff PV**: `Base Staff PV + Transfer PV`
+The **Point Value (PV)** is calculated from the final adjusted pool. This is a single calculation based on the aggregated and adjusted tip total:
+
+- **Final Staff PV**: `(Adjusted Team CTP Pool) / Total All Team Points`
+
+*Note: The Adjusted Team CTP Pool already includes the manual bar-to-team transfer (if any).*
 
 12. Reconciliation & Integrity
 
@@ -87,4 +87,4 @@ For transparency, the Point Value is calculated in two parts in the engine logs:
 2. **Allocate**: Deduct House/Door fees and 100% of Runner Pay from DR.
 3. **Transfer**: Move manual Bar contribution to the Team pool.
 4. **Distribute**: Calculate final point values and individual payouts.
-5. **Audit**: Verify shift balances to zero.
+5. **Audit**: Verify shift balances to zero. 

@@ -40,8 +40,8 @@ function DayCard({ data, variant = 'week', readOnly = true }) {
                 <span className={styles.value}>${data.cash || "0"}</span>
             </div>
 
-            <div className={styles.totalRow}>
-                <span className={styles.totalLabel}>Total</span>
+            <div className={styles.totalAmount}>
+                {/* <span className={styles.totalLabel}>Total</span> */}
                 <span className={styles.totalAmount}>${currentTotal}</span>
             </div>
         </div>

@@ -49,7 +49,6 @@ export function calculateShift(inputs) {
         ...inputs
     };
 
-    console.log("ENGINE: 1. FULL INPUT DATA (CONFIG)", config);
 
     // Backwards compat for old shift schemas
     if (config.barTeam.members.length === 0 && config.barMembers.length > 0) {
@@ -100,16 +99,6 @@ export function calculateShift(inputs) {
         validations.push("Warning: Contract sales exceed total team sales. Regular sales base clamped to 0.");
     }
 
-    console.log("ENGINE: 2. AGGREGATION TOTALS", {
-        totalTeamSales,
-        totalTeamCTP,
-        totalTeamCash,
-        totalTeamGrt,
-        grtContractTotal,
-        contractSales,
-        regularSalesBase
-    });
-
     // 5. RUNNER LOGIC (SIMPLIFIED)
     // Runners are calculated here because they are deducted from the raw pool alongside allocations
     const runnerPayouts = config.runners.map(runner => {
@@ -150,27 +139,14 @@ export function calculateShift(inputs) {
     const rawBarGRTPool = barGRT + barGRTAllocation;
 
     // 6. ADJUSTED POOLS
-    debugger
     const adjustedTeamCTPPool = r2(rawTeamCTPPool + barToTeamTransfer);
     const adjustedBarCTPPool = r2(rawBarCTPPool - barToTeamTransfer);
     const adjustedBarGRTPool = rawBarGRTPool;
     const adjustedTeamCashPool = rawTeamCashPool;
     const adjustedTeamGRTPool = rawTeamGRTPool;
 
-    console.log("ENGINE: 3. ALLOCATIONS & DEDUCTIONS SUMMARY", {
-        fixedAllocations: { house: houseAllocation, door: r2(doorCTPAllocation + doorGRTAllocation), barFee: r2(barCTPAllocation + barGRTAllocation), captainOverride: r2(captainOverrideCTP + captainOverrideGRT), runners: totalRunnerPay },
-        tipTransfer: { fromBar: barToTeamTransfer }
-    });
-
     if (adjustedBarCTPPool < 0) validations.push(`Warning: Bar CTP pool is negative.`);
     if (adjustedTeamCTPPool < 0) validations.push(`Warning: Dining Room CTP pool is negative.`);
-
-    console.log("ENGINE: 4. FINAL ADJUSTED POOLS (READY FOR DISTRIBUTION)", {
-        adjustedBarCTPPool,
-        adjustedTeamCTPPool,
-        adjustedTeamCashPool,
-        adjustedTeamGRTPool
-    });
 
     // 7. POINT DISTRIBUTION (BAR)
     let totalBarPoints = sumProp(config.barTeam.members, 'points');
@@ -266,13 +242,6 @@ export function calculateShift(inputs) {
     const globalTeamCashPointValue = totalAllTeamPoints > 0 ? adjustedTeamCashPool / totalAllTeamPoints : 0;
     const globalTeamGRTPointValue = totalAllTeamPoints > 0 ? adjustedTeamGRTPool / totalAllTeamPoints : 0;
 
-    console.log("ENGINE: 5. POINT VALUES (DOLLAR PER POINT)", {
-        totalAllTeamPoints,
-        globalTeamCTPPointValue,
-        globalTeamCashPointValue,
-        globalTeamGRTPointValue
-    });
-
     const teamPayouts = [];
     const roleGroupedPayouts = {
         captains: [],
@@ -365,14 +334,6 @@ export function calculateShift(inputs) {
     const totalAvailable = cashTotal + ctpTotal + grtTotalAvailable;
 
     const overallBalance = r2(totalAvailable - totalDistributed);
-
-    console.log("ENGINE: 6. FINAL BALANCE CHECK", {
-        totalAvailable,
-        totalDistributed,
-        overallBalance,
-        totalPaymentsToStaff,
-        totalExternalFees
-    });
 
     if (Math.abs(overallBalance) > 0.05) {
         validations.push(`Balance Warning: Shift does not balance. Total Available: ${r2(totalAvailable)}, Total Distributed: ${r2(totalDistributed)}, Diff: ${overallBalance}`);
