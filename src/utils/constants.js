@@ -7,9 +7,9 @@
 
 export const ROLE_POINTS = {
     captain: 4,
-    front: 4,
+    server: 4,
     back: 2.5,
-    busser: 2,
+    assistant: 2,
 };
 
 export const RUNNER_FLAT_RATE = 102;

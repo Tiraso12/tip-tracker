@@ -90,7 +90,7 @@ export const generateShiftReport = async (date, summary, payouts) => {
             addGroup('CAPTAINS', roleGrouped.captains);
             addGroup('SERVERS', roleGrouped.servers);
             addGroup('BACKS', roleGrouped.backs);
-            addGroup('SAs', roleGrouped.bussers);
+            addGroup('ASSISTANTS', roleGrouped.assistants);
             addGroup('BAR TEAM', roleGrouped.bar);
             addGroup('RUNNERS', roleGrouped.runners, true);
 

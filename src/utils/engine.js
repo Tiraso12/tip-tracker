@@ -240,7 +240,7 @@ export function calculateShift(inputs) {
         captains: [],
         servers: [],
         backs: [],
-        bussers: [],
+        assistants: [],
         runners: runnerPayouts,
         bar: barPayouts
     };
@@ -271,9 +271,9 @@ export function calculateShift(inputs) {
 
             // Push to correct role group
             if (emp._stdRole === 'captain') roleGroupedPayouts.captains.push(payoutObj);
-            else if (emp._stdRole === 'front') roleGroupedPayouts.servers.push(payoutObj);
+            else if (emp._stdRole === 'server') roleGroupedPayouts.servers.push(payoutObj);
             else if (emp._stdRole === 'back') roleGroupedPayouts.backs.push(payoutObj);
-            else if (emp._stdRole === 'busser') roleGroupedPayouts.bussers.push(payoutObj);
+            else if (emp._stdRole === 'assistant') roleGroupedPayouts.assistants.push(payoutObj);
 
             return payoutObj;
         });

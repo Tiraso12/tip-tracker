@@ -10,12 +10,12 @@ import TeamManagement from "./TeamManagement";
 import { generateShiftReport, generateWeeklyReport, generateMonthlyReport } from "../../utils/pdfExport";
 import { getCurrentWeek } from "../../utils/dateUtils";
 
-const RESTAURANT_ROLES = ["captain", "front", "back", "busser"];
+const RESTAURANT_ROLES = ["captain", "server", "back", "assistant"];
 const ROLE_LABELS = {
     captain: "Captain",
-    front: "Server",
+    server: "Server",
     back: "Back",
-    busser: "Assistant",
+    assistant: "Assistant",
     bartender: "Bartender",
     runner: `Runner (flat $${RUNNER_FLAT_RATE})`,
 };
@@ -24,7 +24,6 @@ const emptyTeamPools = () => ({ sales: "", tips: "", cash: "", gratuity: "", con
 const emptyTeam = (teamId) => ({ teamId, members: [], pools: emptyTeamPools(), contracts: [] });
 
 const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
-
 // ─── Main Component ──────────────────────────────────────────────────────────
 function AdminDashboard() {
     const { logout } = useAuth();
@@ -64,6 +63,7 @@ function AdminDashboard() {
             const shiftDoc = await getDoc(doc(db, "shifts", date));
             if (shiftDoc.exists()) {
                 const d = shiftDoc.data();
+                console.log("DEBUG: Raw Firebase Shift Data for " + date, d);
                 setDayPayouts(d.payouts || null);
                 setDaySummary(d.summary || null);
             }
@@ -320,7 +320,7 @@ function DayPayoutPanel({ date, payouts, summary, loading }) {
                                             {renderGroup("Captains", summary.payouts.roleGrouped.captains)}
                                             {renderGroup("Servers", summary.payouts.roleGrouped.servers)}
                                             {renderGroup("Backs", summary.payouts.roleGrouped.backs)}
-                                            {renderGroup("SAs", summary.payouts.roleGrouped.bussers)}
+                                            {renderGroup("Assistants", summary.payouts.roleGrouped.assistants)}
                                             {renderGroup("Bar Team", summary.payouts.roleGrouped.bar)}
                                             {renderGroup("Runners", summary.payouts.roleGrouped.runners, true)}
                                         </>
@@ -459,9 +459,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
         if (result.payouts?.roleGrouped) {
             attachToMapped(result.payouts.roleGrouped.captains, 'captain');
-            attachToMapped(result.payouts.roleGrouped.servers, 'front');
+            attachToMapped(result.payouts.roleGrouped.servers, 'server');
             attachToMapped(result.payouts.roleGrouped.backs, 'back');
-            attachToMapped(result.payouts.roleGrouped.bussers, 'busser');
+            attachToMapped(result.payouts.roleGrouped.assistants, 'assistant');
             attachToMapped(result.payouts.roleGrouped.bar, 'bartender');
             attachToMapped(result.payouts.roleGrouped.runners, 'runner');
         }
