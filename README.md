@@ -10,17 +10,17 @@ A sophisticated, enterprise-grade **Shift & Payout Management System** designed 
 - **Dynamic Balancing**: Built-in "Double-Entry" audit logic to ensure every cent is accounted for across all pools.
 
 ### 👥 Team & Pool Management
-- **Multi-Team Support**: Parallel distribution across multiple dining room teams.
-- **Integrated Bar Pools**: Automated sales-based allocations from the dining room to the bar team.
-- **Manual Runner Overrides**: Flexible payout controls for support staff and runners.
+- **Multi-Team Support**: Distribution across multiple teams.
+- **Integrated Bar Pools**: Automated sales-based allocations.
+- **Manual Runner Overrides**: Flexible payout controls for support staff.
 
 ### ⚖️ Professional Allocations & Deductions
-- **Contract Sales Logic**: Automated 26% gratuity calculation and tracking.
+- **Contract Sales Logic**: Automated gratuity calculation and tracking.
 - **Systematic Cuts**: Pre-distribution "skims" for:
-  - **The Door**: Automated CTP and GRT allocations.
-  - **Captain Overrides**: Performance-based incentives.
-  - **PE Coordinator & House**: Venue-specific administrative deductions.
-- **Revenue-Based Splits**: Logical tip distribution based on individual or team sales performance.
+  - CTP and GRT allocations.
+  - Performance-based incentives.
+  - Venue-specific administrative deductions.
+- **Logical Splits**: Logical tip distribution based on individual or team sales performance.
 
 ### 📊 Financial Contexts & Reporting
 - **PDF Exporting**: Generate professional shift summaries and payout reports using `jsPDF`.
