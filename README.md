@@ -1,148 +1,72 @@
-# Tip Tracker
+# Tip Tracker (Professional)
 
-A modern, premium dark-themed web application for tracking daily gratuity, tips, and cash earnings. Built with React and Firebase, it provides elegant data visualization and biweekly financial summaries tailored for service industry professionals.
+A sophisticated, enterprise-grade **Shift & Payout Management System** designed for high-volume hospitality venues. This application streamlines complex tip-out distributions, multi-team allocations, and financial auditing with a high-performance calculation engine.
 
-## Features
+## Core Features
 
-- **Multi-View Calendar System**
-  - **Week View**: Detailed daily breakdown with editable cards
-  - **Month View**: Compact monthly overview with quick access to any day
-  
-- **Real-time Data Management**
-  - Track gratuity, tips, and cash earnings for each day
-  - Instant Firebase synchronization across all devices
-  - Live updates with real-time listeners
-  
-- **Financial Analytics**
-  - Biweekly summary calculations with customizable pay period (1-week lag support)
-  - Interactive charts powered by Recharts
-  - Visual data representation by week and month
+### 🚀 Advanced Calculation Engine (`engine.js`)
+- **Automated Payouts**: Real-time distribution based on weighted role points.
+- **Role-Based Logic**: Specialized handling for Captains, Servers, Backs, Assistants, Bartenders, and Runners.
+- **Dynamic Balancing**: Built-in "Double-Entry" audit logic to ensure every cent is accounted for across all pools.
 
-- **User Authentication**
-  - Secure Firebase Authentication
-  - User-specific data isolation with Firestore security rules
-  - Support for email/username login
+### 👥 Team & Pool Management
+- **Multi-Team Support**: Parallel distribution across multiple dining room teams.
+- **Integrated Bar Pools**: Automated sales-based allocations from the dining room to the bar team.
+- **Manual Runner Overrides**: Flexible payout controls for support staff and runners.
 
-- **Premium UI/UX**
-  - Modern dark theme with glassmorphism effects
-  - Smooth animations and micro-interactions
-  - Responsive design with Inter font family
-  - Minimalistic and clean interface
+### ⚖️ Professional Allocations & Deductions
+- **Contract Sales Logic**: Automated 26% gratuity calculation and tracking.
+- **Systematic Cuts**: Pre-distribution "skims" for:
+  - **The Door**: Automated CTP and GRT allocations.
+  - **Captain Overrides**: Performance-based incentives.
+  - **PE Coordinator & House**: Venue-specific administrative deductions.
+- **Revenue-Based Splits**: Logical tip distribution based on individual or team sales performance.
+
+### 📊 Financial Contexts & Reporting
+- **PDF Exporting**: Generate professional shift summaries and payout reports using `jsPDF`.
+- **Biweekly Summaries**: Long-term financial tracking and pay-period analytics.
+- **Calendar Visualization**: Week and month views for historical shift data access.
 
 ## Tech Stack
 
-- **Frontend**: React 19.1.1
-- **Build Tool**: Vite 7.1.7
-- **Database**: Firebase Firestore
-- **Authentication**: Firebase Auth
-- **Charts**: Recharts 3.5.1
-- **Styling**: CSS Modules with custom design system
+- **Frontend**: React 19 + Vite 7 (Latest)
+- **Database**: Firebase Firestore (Real-time sync)
+- **Auth**: Firebase Auth (User-specific data isolation)
+- **Reporting**: [jsPDF](https://github.com/parallax/jsPDF) & [jsPDF-autotable](https://github.com/simonbengtsson/jsPDF-AutoTable)
+- **Analytics**: Recharts 3.5
 
 ## Getting Started
 
 ### Prerequisites
-
-- Node.js (v16 or higher)
-- npm or yarn
-- Firebase account
+- Node.js (v18+)
+- Firebase Account & Project
 
 ### Installation
+1. Clone & `npm install`.
+2. Configure `.env.local` with Firebase credentials.
+3. Run `npm run dev`.
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd tip-tracker
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env.local` file in the root directory with your Firebase configuration:
-   ```env
-   VITE_FIREBASE_API_KEY=your_api_key
-   VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
-   VITE_FIREBASE_PROJECT_ID=your_project_id
-   VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-   VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-   VITE_FIREBASE_APP_ID=your_app_id
-   ```
-
-4. Run the development server:
-   ```bash
-   npm run dev
-   ```
-
-5. Open your browser and navigate to `http://localhost:5173`
-
-## Available Scripts
-
-- `npm run dev` - Start the development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build locally
-- `npm run lint` - Run ESLint for code quality
-
-## Deployment
-
-This application is configured for Firebase Hosting:
-
-1. Build the application:
-   ```bash
-   npm run build
-   ```
-
-2. Deploy to Firebase:
-   ```bash
-   firebase deploy
-   ```
-
-The `firebase.json` configuration is already set up to deploy the `dist` folder and includes proper SPA routing.
-
-## Project Structure
+## Project Architecture
 
 ```
 tip-tracker/
 ├── src/
 │   ├── components/
-│   │   ├── Auth/          # Login and authentication components
-│   │   ├── Calendar/      # Week and month view calendar components
-│   │   ├── Charts/        # Data visualization components
-│   │   ├── Header/        # Application header
-│   │   ├── WeekHeader/    # Navigation and view mode controls
-│   │   └── BiweeklySummary/  # Financial summary component
-│   ├── config/            # Firebase configuration
-│   ├── context/           # React context (AuthContext)
-│   ├── services/          # Data service layer (Firestore operations)
-│   ├── styles/            # Global styles and CSS variables
-│   ├── utils/             # Utility functions (date handling)
-│   ├── App.jsx            # Main application component
-│   └── main.jsx           # Application entry point
-├── firebase.json          # Firebase configuration
-├── firestore.rules        # Firestore security rules
+│   │   ├── Admin/          # Shift configuration & pool management
+│   │   ├── BiweeklySummary/ # Pay period financial tracking
+│   │   └── Calendar/       # Historical shift navigation
+│   ├── utils/
+│   │   ├── engine.js       # The "Brain": Core payout logic
+│   │   └── constants.js    # Role weights & allocation rules
+│   └── services/           # Firestore data synchronization layer
+├── firestore.rules         # Enterprise-grade security protocols
 └── package.json
 ```
 
-## Usage
+## Security & Reliability
+- **Data Isolation**: User-specific Firestore rules ensure privacy between venues/managers.
+- **Audit Logs**: The calculation engine generates detailed validation warnings for unbalanced shifts.
+- **Rounding Reconciliation**: Micro-adjustment logic ensures mathematical precision in decimal-based tip payouts.
 
-1. **Sign Up/Login**: Create an account or log in with existing credentials
-2. **Navigate**: Use the week/month toggle to switch between views
-3. **Edit Data**: Click on any day card to enter edit mode
-4. **Input Earnings**: Enter gratuity, tips, and cash amounts
-5. **Save**: Click "Save" to persist your data to Firebase
-6. **View Summary**: Check the biweekly summary for pay period totals
-7. **Analyze Trends**: Review charts for visual insights into your earnings
-
-## Security
-
-- Firestore security rules ensure each user can only access their own data
-- Authentication required for all data operations
-- Environment variables protect sensitive Firebase credentials
-
-## License
-
-This project is private and not licensed for public use.
-
-## Credits
-
-Built with ❤️ for service industry professionals
+---
+Built with ❤️ for professional service teams.
