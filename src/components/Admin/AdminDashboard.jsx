@@ -20,9 +20,6 @@ const ROLE_LABELS = {
     runner: `Runner (flat $${RUNNER_FLAT_RATE})`,
 };
 
-const emptyTeamPools = () => ({ sales: "", tips: "", cash: "", gratuity: "", contract26Gratuity: "", runners: "" });
-const emptyTeam = (teamId) => ({ teamId, members: [], pools: emptyTeamPools(), contracts: [] });
-
 const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
 // ─── Main Component ──────────────────────────────────────────────────────────
 function AdminDashboard() {
@@ -63,7 +60,6 @@ function AdminDashboard() {
             const shiftDoc = await getDoc(doc(db, "shifts", date));
             if (shiftDoc.exists()) {
                 const d = shiftDoc.data();
-                console.log("DEBUG: Raw Firebase Shift Data for " + date, d);
                 setDayPayouts(d.payouts || null);
                 setDaySummary(d.summary || null);
             }
@@ -385,8 +381,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     };
 
     // Payouts state
-    const [payouts, setPayouts] = useState(null);
-    const [summary, setSummary] = useState(null);
     const [saveStatus, setSaveStatus] = useState("");
     const [loading, setLoading] = useState(true);
 
@@ -414,8 +408,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     }
                     if (d.runners) setRunners(d.runners);
 
-                    if (d.payouts) setPayouts(d.payouts);
-                    if (d.summary) setSummary(d.summary);
                 }
             } catch (e) {
                 console.error("Failed to load shift:", e);
@@ -466,9 +458,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             attachToMapped(result.payouts.roleGrouped.runners, 'runner');
         }
 
-        setPayouts(mappedPayoutsForFirebase);
-        setSummary(result);
-
         // ── Validation: Prevent saving invalid shifts ──
         const payoutCount = Object.keys(mappedPayoutsForFirebase).length;
 
@@ -516,9 +505,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             setSaveStatus("❌ Failed to save.");
         }
     };
-
-    const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
-
 
     return (
         <div className={styles.editorPanel}>
@@ -769,9 +755,9 @@ function AdminReportsPanel() {
                 // Build dayList formatted identically to the BiweeklySummary payload
                 const list = dateKeys.map(key => {
                     const sd = shiftMap[key];
-                    let t = 0, g = 0, c = 0, rev = 0, w = 0, liq = 0;
+                    let t = 0, g = 0, c = 0, rev = 0;
                     if (sd) {
-                        rev = (sd.summary?.derivedValues?.totalTeamSales || sd.summary?.normalizedInputs?.teamSales || 0) + (sd.summary?.normalizedInputs?.barSales || 0);
+                        rev = (sd.summary?.derivedValues?.totalTeamSales || sd.summary?.normalizedInputs?.teamSales || 0) + (sd.summary?.derivedValues?.barSales || 0);
 
                         if (sd.payouts) {
                             Object.values(sd.payouts).forEach(p => {
@@ -800,8 +786,7 @@ function AdminReportsPanel() {
         if (viewMode === 'month') {
             generateMonthlyReport(displayLabel, reportData);
         } else {
-            // week report takes the data, label, and unused allData (null is fine)
-            generateWeeklyReport(reportData, displayLabel, null);
+            generateWeeklyReport(reportData, displayLabel);
         }
     };
 

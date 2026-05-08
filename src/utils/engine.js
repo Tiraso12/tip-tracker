@@ -320,7 +320,7 @@ export function calculateShift(inputs) {
     // The global balance check should simply be:
     // Total Available (Input) - Total Distributed (Everyone's Payouts + External Fees)
     const totalPaymentsToStaff = out_TeamCASH + out_TeamCTP + out_TeamGRT + out_BarCTP + out_BarGRT + totalRunnerPay;
-    const totalExternalFees = doorCTPAllocation + doorGRTAllocation + peCoordinatorGRT + houseAllocation;
+    const totalExternalFees = out_Allocations;
 
     // Note: Captain Overrides are ALREADY included inside out_TeamCTP/GRT since we merged them in the role loop.
     const totalDistributed = totalPaymentsToStaff + totalExternalFees;
@@ -334,9 +334,9 @@ export function calculateShift(inputs) {
 
     const balances = {
         poolBalances: {
-            'Dining Room CTP': r2(adjustedTeamCTPPool - (out_TeamCTP - out_CapOverrideCTP)),
+            'Dining Room CTP': r2(adjustedTeamCTPPool - clean_TeamCTP),
             'Team CASH': r2(adjustedTeamCashPool - out_TeamCASH),
-            'Team GRT': r2(adjustedTeamGRTPool - (out_TeamGRT - out_CapOverrideGRT)),
+            'Team GRT': r2(adjustedTeamGRTPool - clean_TeamGRT),
             'Bar CTP': r2(adjustedBarCTPPool - out_BarCTP),
             'Bar GRT': r2(adjustedBarGRTPool - out_BarGRT),
             'Cap Ov CTP': r2(captainOverrideCTPPool - out_CapOverrideCTP),
@@ -355,6 +355,7 @@ export function calculateShift(inputs) {
             grtTotal: r2(grtTotalAvailable),
             contractSales: r2(contractSales),
             regularSalesBase: r2(regularSalesBase),
+            barSales: r2(barSales),
             baseTeamCTP: r2(baseTeamCTP),
             baseTeamCash: r2(baseTeamCash),
             ctpTotal: r2(ctpTotal),

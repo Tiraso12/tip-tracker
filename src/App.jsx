@@ -122,22 +122,17 @@ function App() {
 
 
 
-  // Fetch all data on user login
+  // Keep user tip history fresh after login.
   useEffect(() => {
-    const fetchAllData = async () => {
-      if (user) {
-        try {
-          const data = await DataService.getAllData();
-          setAllData(data);
-        } catch (error) {
-          console.error("Failed to fetch all data:", error);
-        }
-      } else {
-        setAllData({});
-      }
-    };
+    if (!user) {
+      setAllData({});
+      return undefined;
+    }
 
-    fetchAllData();
+    return DataService.subscribeToAllData(
+      setAllData,
+      () => setAllData({})
+    );
   }, [user]);
 
   if (loading) {

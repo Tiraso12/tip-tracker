@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import styles from "./Calendar.module.css";
 
 
 
-function DayCard({ data, variant = 'week', readOnly = true }) {
+function DayCard({ data, variant = 'week' }) {
     // Component is now purely read-only display. Admins use the dashboard to edit.
 
     const currentTotal = (
@@ -61,4 +61,3 @@ export default React.memo(DayCard, (prevProps, nextProps) => {
         prevProps.variant === nextProps.variant
     );
 });
-

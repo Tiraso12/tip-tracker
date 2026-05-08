@@ -69,6 +69,33 @@ function ShiftSetupDnd({
         return Array.from(uids);
     }, [teams, barTeam.members, runners]);
 
+    // ── Core helpers ─────────────────────────────────────
+    const removeEmployee = useCallback((uid, teamId) => {
+        if (teamId === 'pool') return;
+        if (teamId === 'bar') {
+            setBarTeam(prev => ({ ...prev, members: prev.members.filter(m => m.uid !== uid) }));
+        } else if (teamId === 'runner') {
+            setRunners(prev => prev.filter(m => m.uid !== uid));
+        } else {
+            setTeams(prev => prev.map(t =>
+                t.teamId === teamId ? { ...t, members: t.members.filter(m => m.uid !== uid) } : t
+            ));
+        }
+    }, [setBarTeam, setRunners, setTeams]);
+
+    const addEmployee = useCallback((emp, targetTeamId, pts) => {
+        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: emp.role || null, points: pts };
+        if (targetTeamId === 'bar') {
+            setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
+        } else if (targetTeamId === 'runner') {
+            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null, payoutAmount: 102 }]);
+        } else {
+            setTeams(prev => prev.map(t =>
+                t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t
+            ));
+        }
+    }, [setBarTeam, setRunners, setTeams]);
+
     // ── Drag handlers ────────────────────────────────────
     const handleDragStart = useCallback((e, uid, sourceTeamId) => {
         setDraggedData({ uid, sourceTeamId });
@@ -96,7 +123,7 @@ function ShiftSetupDnd({
         const { uid, sourceTeamId } = draggedData;
         if (sourceTeamId !== 'pool') removeEmployee(uid, sourceTeamId);
         setDraggedData(null);
-    }, [draggedData]);
+    }, [draggedData, removeEmployee]);
 
     const handleDropTeam = useCallback((e, targetTeamId) => {
         e.preventDefault();
@@ -117,7 +144,7 @@ function ShiftSetupDnd({
 
         addEmployee(emp, targetTeamId, pts);
         setDraggedData(null);
-    }, [draggedData, combinedEmployees]);
+    }, [draggedData, combinedEmployees, removeEmployee, addEmployee]);
 
     // ── Click-to-assign ──────────────────────────────────
     const handleTeamClick = useCallback((teamId) => {
@@ -134,34 +161,7 @@ function ShiftSetupDnd({
 
         addEmployee(emp, selectedTeamId, pts);
         // keep team selected so user can keep clicking more employees
-    }, [selectedTeamId]);
-
-    // ── Core helpers ─────────────────────────────────────
-    const removeEmployee = (uid, teamId) => {
-        if (teamId === 'pool') return;
-        if (teamId === 'bar') {
-            setBarTeam(prev => ({ ...prev, members: prev.members.filter(m => m.uid !== uid) }));
-        } else if (teamId === 'runner') {
-            setRunners(prev => prev.filter(m => m.uid !== uid));
-        } else {
-            setTeams(prev => prev.map(t =>
-                t.teamId === teamId ? { ...t, members: t.members.filter(m => m.uid !== uid) } : t
-            ));
-        }
-    };
-
-    const addEmployee = (emp, targetTeamId, pts) => {
-        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: emp.role || null, points: pts };
-        if (targetTeamId === 'bar') {
-            setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
-        } else if (targetTeamId === 'runner') {
-            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null, payoutAmount: 102 }]);
-        } else {
-            setTeams(prev => prev.map(t =>
-                t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t
-            ));
-        }
-    };
+    }, [selectedTeamId, addEmployee]);
 
     const handleUpdateField = useCallback((teamId, uid, field, newPts) => {
         if (teamId === 'runner') {
@@ -200,7 +200,7 @@ function ShiftSetupDnd({
         onDragStart: handleDragStart,
         onRemove: removeEmployee,
         onUpdateField: handleUpdateField
-    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, handleUpdateField]);
+    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee, handleUpdateField]);
 
     return (
         <div className={styles.container}>

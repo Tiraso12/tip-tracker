@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styles from './TeamManagement.module.css';
 import { db } from '../../config/firebase';
-import { doc, updateDoc, deleteDoc, collection, getDocs, getDoc, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 
 const ROLES = ["captain", "server", "back", "assistant", "bartender", "runner"];
 const ROLE_LABELS = {

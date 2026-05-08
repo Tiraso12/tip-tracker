@@ -16,7 +16,7 @@ const getWeekLabel = (date) => {
 /**
  * Generate a detailed PDF report for a single Shift
  */
-export const generateShiftReport = async (date, summary, payouts) => {
+export const generateShiftReport = async (date, summary) => {
     const { jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
 
@@ -217,7 +217,7 @@ export const generateShiftReport = async (date, summary, payouts) => {
 /**
  * Generate a PDF report for a Week (Biweekly view fallback)
  */
-export const generateWeeklyReport = async (weekData, weekRangeLabel, allData) => {
+export const generateWeeklyReport = async (weekData, weekRangeLabel) => {
     const { jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
 
@@ -353,7 +353,7 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel, allData) =>
         });
     }
 
-    doc.save(`Weekly_Report_${weekRangeLabel.replace(/[\/\s-]/g, '_')}.pdf`);
+    doc.save(`Weekly_Report_${weekRangeLabel.replace(/[/\s-]/g, '_')}.pdf`);
 };
 
 /**

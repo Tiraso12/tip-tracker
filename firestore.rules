@@ -11,9 +11,18 @@ service cloud.firestore {
 
     // Users collection
     match /users/{uid} {
-      // Allow public read to enable username lookup before login/registration
-      allow read: if true;
+      allow read: if request.auth != null &&
+        (request.auth.uid == uid || isAdmin());
       allow create: if request.auth != null && request.auth.uid == uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Minimal public username lookup. This avoids exposing full user profiles
+    // while still allowing username-based login before authentication.
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
