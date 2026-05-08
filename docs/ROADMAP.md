@@ -92,10 +92,10 @@ These are placeholders, not commitments.
 
 ### v0.3.0-employee-dashboard
 
-- Show richer personal payout details.
-- Add pay-period summaries.
-- Improve empty states and mobile readability.
-- Consider previous-period comparisons.
+- Status: In Progress
+- [x] Show richer personal payout details.
+- [x] Add pay-period summaries.
+- [x] Improve empty states and mobile readability.
 
 ### v0.4.0-reports
 
@@ -110,6 +110,10 @@ These are placeholders, not commitments.
 - Core workflows are tested.
 - Security rules are reviewed.
 - Admin and employee experiences are polished enough for daily use.
+
+### Later Ideas
+
+- Previous-period comparisons for employee dashboard trends.
 
 ## Session Notes
 
@@ -136,3 +140,9 @@ These are placeholders, not commitments.
 - Added blocking pre-save validation for missing employees, missing money inputs, negative values, blank contract rows, and unbalanced engine results.
 - Disabled shift saving while a save is already in progress.
 - Clarified temporary staff creation and merge language in shift setup and team management.
+- Started `v0.3.0-employee-dashboard`.
+- Added a pay-period summary panel with total pay, worked shifts, average shift, best day, and source breakdown.
+- Expanded employee day cards with role, formatted totals, and point details when saved shift data includes them.
+- Tightened employee dashboard layout around tablet widths and replaced blank charts with an empty state when no payouts are available.
+- Added a viewed-week total beside the pay-period total so employees can compare the current week against the full two-week pay period.
+- Removed the duplicate financial summary from the employee dashboard now that earnings summary covers week and pay-period totals.

@@ -8,7 +8,7 @@ import layout from "./styles/AppLayout.module.css"
 import WeekHeader from "./components/WeekHeader/WeekHeader";
 import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
 
-import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
+import EmployeePeriodSummary from "./components/EmployeePeriodSummary/EmployeePeriodSummary";
 import DataService from "./services/dataService";
 import Login from "./components/Auth/Login";
 import PendingApproval from "./components/Auth/PendingApproval";
@@ -98,7 +98,9 @@ function App() {
           dateKey: key,
           gratuity: allData?.[key]?.gratuity || "",
           tip: allData?.[key]?.tip || "",
-          cash: allData?.[key]?.cash || ""
+          cash: allData?.[key]?.cash || "",
+          role: allData?.[key]?.role || "",
+          points: allData?.[key]?.points || ""
         };
       });
       setWeekData(computedWeekData);
@@ -168,6 +170,15 @@ function App() {
         onViewChange={setViewMode}
       />
       <div className={layout.section}>
+        <EmployeePeriodSummary
+          currentDate={baseDate}
+          currentWeekStart={currentWeekDates[0]}
+          currentWeekEnd={currentWeekDates[6]}
+          allData={allData}
+        />
+      </div>
+
+      <div className={layout.section}>
         {viewMode === 'week' ? (
           <Calendar weekData={weekData} />
         ) : (
@@ -179,14 +190,7 @@ function App() {
 
       </div>
 
-      <div className={`${layout.section} ${layout.summaryContainer}`}>
-        <BiweeklySummary
-          currentWeekData={weekData}
-          currentWeekStart={currentWeekDates[0]}
-          viewMode={viewMode}
-          currentDate={baseDate}
-          allData={allData}
-        />
+      <div className={layout.section}>
         <Charts weekData={chartData} />
       </div>
     </main>

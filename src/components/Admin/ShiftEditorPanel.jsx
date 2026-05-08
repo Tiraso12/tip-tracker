@@ -223,6 +223,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     tip: payout.tips,
                     cash: payout.cash,
                     wineBonus: payout.wineBonus,
+                    points: payout.points || 0,
+                    total: payout.total,
                     role: payout.role,
                     shiftDate: date,
                     updatedAt: new Date().toISOString(),
