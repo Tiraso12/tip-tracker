@@ -84,10 +84,11 @@ These are placeholders, not commitments.
 
 ### v0.2.0-admin-workflow
 
-- Split the large admin dashboard into smaller components.
-- Improve shift editor validation and save feedback.
-- Prevent accidental double saves.
-- Make temporary/unregistered staff linking clearer.
+- Status: Complete
+- [x] Split the large admin dashboard into smaller components.
+- [x] Improve shift editor validation and save feedback.
+- [x] Prevent accidental double saves.
+- [x] Make temporary/unregistered staff linking clearer.
 
 ### v0.3.0-employee-dashboard
 
@@ -130,3 +131,8 @@ These are placeholders, not commitments.
 - Tightened `users/{uid}` reads to the profile owner or admins.
 - Added a live tip-history subscription for employee dashboard data.
 - Removed leftover debug logs from auth, admin shift loading, and tip saves.
+- Started `v0.2.0-admin-workflow`.
+- Split `AdminDashboard` into focused `DayPayoutPanel`, `ShiftEditorPanel`, and `AdminReportsPanel` modules.
+- Added blocking pre-save validation for missing employees, missing money inputs, negative values, blank contract rows, and unbalanced engine results.
+- Disabled shift saving while a save is already in progress.
+- Clarified temporary staff creation and merge language in shift setup and team management.

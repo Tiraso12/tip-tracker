@@ -831,6 +831,12 @@ input[type="number"].noSpinners {
     opacity: 0.85;
 }
 
+.nextBtn:disabled,
+.saveBtn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
 .saveRow {
     display: flex;
     align-items: center;

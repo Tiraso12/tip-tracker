@@ -67,12 +67,12 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
 
     const handleLinkAccount = async (unregUser) => {
         const targetRealUid = linkTargetUpdates[unregUser.uid];
-        if (!targetRealUid) return alert("Select a registered account to link to first.");
+        if (!targetRealUid) return alert("Select the real employee account to merge this temporary profile into.");
 
         const realUser = allEmployees.find(e => e.uid === targetRealUid);
         if (!realUser) return;
 
-        if (!window.confirm(`Merge records from '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis will transfer all past shift history and tips.`)) return;
+        if (!window.confirm(`Merge temporary profile '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis updates past shifts and moves saved tip history to the real account. The temporary profile will be removed after the merge.`)) return;
 
         setLoadingId(unregUser.uid);
         try {
@@ -150,7 +150,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 delete n[unregUser.uid];
                 return n;
             });
-            alert("Account successfully linked and shifts transferred!");
+            alert("Temporary profile merged into the real account.");
 
         } catch (error) {
             console.error("Failed to link account:", error);
@@ -161,7 +161,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     };
 
     const handleDeleteUnregistered = async (uid) => {
-        if (!window.confirm("Delete this Unregistered profile? Any shifts they were previously assigned to will keep their static UID string, but they will no longer appear in the system.")) return;
+        if (!window.confirm("Delete this temporary staff profile? Past shifts keep the saved name/UID, but this profile will no longer appear when assigning future shifts.")) return;
         setLoadingId(uid);
         try {
             await deleteDoc(doc(db, "unregisteredStaff", uid));
@@ -249,7 +249,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     value={linkTargetUpdates[unregUser.uid] || ""}
                     onChange={(e) => setLinkTargetUpdates(prev => ({ ...prev, [unregUser.uid]: e.target.value }))}
                 >
-                    <option value="" disabled>Link to account...</option>
+                    <option value="" disabled>Merge into account...</option>
                     {allEmployees.filter(e => e.status === 'active' && e.role !== 'admin').map(emp => (
                         <option key={emp.uid} value={emp.uid}>{emp.username || emp.name} ({emp.role})</option>
                     ))}
@@ -258,15 +258,15 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     className={`${styles.actionBtn} ${styles.approveBtn}`}
                     onClick={() => handleLinkAccount(unregUser)}
                     disabled={loadingId === unregUser.uid || !linkTargetUpdates[unregUser.uid]}
-                    title="Merge shift history into real account"
+                    title="Merge this temporary profile into a real account"
                 >
-                    Link 🔗
+                    Merge
                 </button>
                 <button
                     className={`${styles.actionBtn} ${styles.denyBtn}`}
                     onClick={() => handleDeleteUnregistered(unregUser.uid)}
                     disabled={loadingId === unregUser.uid}
-                    title="Delete placeholder"
+                    title="Delete temporary profile"
                 >
                     ✕
                 </button>
@@ -310,13 +310,13 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 )}
             </div>
 
-            {/* Unregistered Accounts */}
+            {/* Temporary Staff Profiles */}
             {unregisteredStaff.length > 0 && (
                 <div className={styles.sectionCard} style={{ background: 'rgba(147, 51, 234, 0.03)', borderColor: 'rgba(147, 51, 234, 0.2)' }}>
                     <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Unregistered Staff</h3>
+                        <h3 className={styles.sectionTitle}>Temporary Staff Profiles</h3>
                         <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: 0 }}>
-                            Temporary accounts. Link them to real active accounts to merge shift history.
+                            Staff added during shift setup before they had an account. Merge one into a real active account to transfer saved history.
                         </p>
                     </div>
                     <div className={styles.userList}>

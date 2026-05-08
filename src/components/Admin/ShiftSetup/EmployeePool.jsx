@@ -60,7 +60,7 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
 
             {showUnregForm ? (
                 <div className={styles.addUnregForm}>
-                    <label>Temp Staff Name</label>
+                    <label>Temporary Staff Name</label>
                     <input
                         type="text"
                         placeholder="E.g., Guest Server"
@@ -68,6 +68,9 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
                         onChange={(e) => setUnregForm(prev => ({ ...prev, name: e.target.value }))}
                         autoFocus
                     />
+                    <p style={{ margin: '0.25rem 0 0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                        Use this for someone working today who has not created an account yet. Their history can be merged into a real account later.
+                    </p>
                     <label>Role</label>
                     <select
                         value={unregForm.role}
@@ -82,12 +85,12 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
                     </select>
                     <div className={styles.unregFormActions}>
                         <button className={styles.unregFormCancel} onClick={() => setShowUnregForm(false)}>Cancel</button>
-                        <button className={styles.unregFormSave} onClick={handleCreateUnregistered}>Create</button>
+                        <button className={styles.unregFormSave} onClick={handleCreateUnregistered}>Create Temporary Staff</button>
                     </div>
                 </div>
             ) : (
                 <button className={styles.addUnregBtn} onClick={() => setShowUnregForm(true)}>
-                    + Add Unregistered Staff
+                    + Add Temporary Staff
                 </button>
             )}
         </div>
