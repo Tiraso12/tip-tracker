@@ -156,3 +156,9 @@
     letter-spacing: 0.05em;
     width: max-content;
 }
+
+.mergeHint {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}

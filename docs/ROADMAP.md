@@ -92,12 +92,21 @@ These are placeholders, not commitments.
 
 ### v0.3.0-employee-dashboard
 
-- Status: In Progress
+- Status: Complete
 - [x] Show richer personal payout details.
 - [x] Add pay-period summaries.
 - [x] Improve empty states and mobile readability.
 
-### v0.4.0-reports
+### v0.4.0-user-management
+
+- Status: In Progress
+- [x] Block inactive users from accessing the employee dashboard.
+- [x] Replace misleading permanent employee deletion with safer deactivate/reactivate flow.
+- [x] Improve shift team setup layout with clearer assignment zones and employee role filters.
+- [x] Restrict temporary staff merges to active accounts without existing shift or tip history.
+- [ ] Review username mapping cleanup needs for denied accounts.
+
+### v0.5.0-reports
 
 - Improve weekly/monthly report accuracy.
 - Make PDF formatting consistent.
@@ -146,3 +155,8 @@ These are placeholders, not commitments.
 - Tightened employee dashboard layout around tablet widths and replaced blank charts with an empty state when no payouts are available.
 - Added a viewed-week total beside the pay-period total so employees can compare the current week against the full two-week pay period.
 - Removed the duplicate financial summary from the employee dashboard now that earnings summary covers week and pay-period totals.
+- Started `v0.4.0-user-management`.
+- Inactive employee users now see an inactive-account message instead of the dashboard; admins route by role so legacy admin profiles are not locked out by missing status.
+- Employee denial/deactivation now preserves account history instead of deleting only the Firestore profile.
+- Improved shift editor team setup so assignment zones appear before the long employee list on smaller screens, with role filters and live assignment counts.
+- Temporary staff merge targets now exclude active accounts that already have saved shift or tip history.

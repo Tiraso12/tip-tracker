@@ -69,6 +69,14 @@ function ShiftSetupDnd({
         return Array.from(uids);
     }, [teams, barTeam.members, runners]);
 
+    const selectedTargetLabel = useMemo(() => {
+        if (!selectedTeamId) return "";
+        if (selectedTeamId === "bar") return "Bar Team";
+        if (selectedTeamId === "runner") return "Runners";
+        const teamIndex = teams.findIndex(t => t.teamId === selectedTeamId);
+        return teamIndex >= 0 ? `Team ${teamIndex + 1}` : "";
+    }, [selectedTeamId, teams]);
+
     // ── Core helpers ─────────────────────────────────────
     const removeEmployee = useCallback((uid, teamId) => {
         if (teamId === 'pool') return;
@@ -217,6 +225,7 @@ function ShiftSetupDnd({
                     onDragStart={handleDragStart}
                     onEmployeeClick={handlePoolEmployeeClick}
                     selectedTeamId={selectedTeamId}
+                    selectedTargetLabel={selectedTargetLabel}
                     onAddUnregistered={handleAddUnregistered}
                 />
             </div>

@@ -145,14 +145,15 @@ function App() {
     return <Login />;
   }
 
-  // Pending users cannot access the app until approved
-  if (user.status === "pending") {
-    return <PendingApproval />;
-  }
-
-  // Admins go directly to their own central panel — no tracker
+  // Admins go directly to their own central panel. Some legacy admin
+  // profiles may not have an explicit active status yet.
   if (isAdmin) {
     return <AdminDashboard />;
+  }
+
+  // Employees need an active profile before they can access the dashboard.
+  if (user.status !== "active") {
+    return <PendingApproval />;
   }
 
   return (

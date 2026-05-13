@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styles from './TeamManagement.module.css';
 import { db } from '../../config/firebase';
 import { doc, updateDoc, deleteDoc, collection, getDocs, setDoc } from 'firebase/firestore';
@@ -17,6 +17,8 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     const [loadingId, setLoadingId] = useState(null);
     const [unregisteredStaff, setUnregisteredStaff] = useState([]);
     const [linkTargetUpdates, setLinkTargetUpdates] = useState({}); // unregUid -> selected real uid
+    const [accountsWithData, setAccountsWithData] = useState({});
+    const [mergeEligibilityLoading, setMergeEligibilityLoading] = useState(true);
 
     const fetchUnregistered = async () => {
         try {
@@ -32,9 +34,79 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     }, []);
 
     // Split users into lists
-    const pendingUsers = allEmployees.filter(emp => emp.status === "pending");
-    const activeUsers = allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin");
-    const inactiveUsers = allEmployees.filter(emp => emp.status === "inactive" && emp.role !== "admin");
+    const pendingUsers = useMemo(() => allEmployees.filter(emp => emp.status === "pending"), [allEmployees]);
+    const activeUsers = useMemo(() => allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin"), [allEmployees]);
+    const inactiveUsers = useMemo(() => allEmployees.filter(emp => emp.status === "inactive" && emp.role !== "admin"), [allEmployees]);
+    const mergeTargetUsers = useMemo(
+        () => activeUsers.filter(emp => !accountsWithData[emp.uid]),
+        [activeUsers, accountsWithData]
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadMergeEligibility = async () => {
+            if (activeUsers.length === 0) {
+                setAccountsWithData({});
+                setMergeEligibilityLoading(false);
+                return;
+            }
+
+            setMergeEligibilityLoading(true);
+            try {
+                const nextAccountsWithData = {};
+
+                activeUsers.forEach(emp => {
+                    nextAccountsWithData[emp.uid] = false;
+                });
+
+                const shiftSnap = await getDocs(collection(db, "shifts"));
+                shiftSnap.docs.forEach(shiftDoc => {
+                    const shiftData = shiftDoc.data();
+
+                    activeUsers.forEach(emp => {
+                        if (nextAccountsWithData[emp.uid]) return;
+
+                        const inPayouts = !!shiftData.payouts?.[emp.uid];
+                        const inTeams = (shiftData.teams || []).some(team =>
+                            (team.members || []).some(member => member.uid === emp.uid)
+                        );
+                        const inBar = (shiftData.barTeam?.members || []).some(member => member.uid === emp.uid);
+                        const inRunners = (shiftData.runners || []).some(member => member.uid === emp.uid);
+
+                        if (inPayouts || inTeams || inBar || inRunners) {
+                            nextAccountsWithData[emp.uid] = true;
+                        }
+                    });
+                });
+
+                await Promise.all(activeUsers.map(async emp => {
+                    if (nextAccountsWithData[emp.uid]) return;
+
+                    const tipsSnap = await getDocs(collection(db, "users", emp.uid, "tips"));
+                    if (!tipsSnap.empty) {
+                        nextAccountsWithData[emp.uid] = true;
+                    }
+                }));
+
+                if (!cancelled) {
+                    setAccountsWithData(nextAccountsWithData);
+                }
+            } catch (error) {
+                console.error("Failed to check merge eligibility:", error);
+            } finally {
+                if (!cancelled) {
+                    setMergeEligibilityLoading(false);
+                }
+            }
+        };
+
+        loadMergeEligibility();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeUsers]);
 
     const handleUpdateUser = async (uid, updates) => {
         setLoadingId(uid);
@@ -49,20 +121,9 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         }
     };
 
-    const handleDeleteUser = async (uid) => {
-        if (!window.confirm("Are you sure you want to permanently delete this user?")) return;
-        setLoadingId(uid);
-        try {
-            await deleteDoc(doc(db, 'users', uid));
-            // Note: This only deletes the firestore doc, not the Firebase Auth account.
-            // A full deletion requires an admin SDK backend. For now, deleting the doc removes their access.
-            await refreshEmployees();
-        } catch (error) {
-            console.error("Failed to delete user:", error);
-            alert("Error deleting user.");
-        } finally {
-            setLoadingId(null);
-        }
+    const handleDeactivateUser = async (uid, confirmMessage) => {
+        if (!window.confirm(confirmMessage)) return;
+        await handleUpdateUser(uid, { status: 'inactive' });
     };
 
     const handleLinkAccount = async (unregUser) => {
@@ -71,6 +132,16 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
 
         const realUser = allEmployees.find(e => e.uid === targetRealUid);
         if (!realUser) return;
+
+        if (mergeEligibilityLoading) {
+            alert("Wait until account data checks finish before merging.");
+            return;
+        }
+
+        if (accountsWithData[targetRealUid]) {
+            alert("This account already has saved shift or tip history, so it cannot be used as a merge target. Choose an empty active account instead.");
+            return;
+        }
 
         if (!window.confirm(`Merge temporary profile '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis updates past shifts and moves saved tip history to the real account. The temporary profile will be removed after the merge.`)) return;
 
@@ -205,7 +276,10 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                         </button>
                         <button
                             className={`${styles.actionBtn} ${styles.denyBtn}`}
-                            onClick={() => handleDeleteUser(user.uid)}
+                            onClick={() => handleDeactivateUser(
+                                user.uid,
+                                "Deny this sign-up request? The account will be marked inactive, and the user will not be able to access the dashboard."
+                            )}
                             disabled={loadingId === user.uid}
                         >
                             Deny
@@ -215,19 +289,15 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     <>
                         <button
                             className={`${styles.actionBtn} ${user.status === 'active' ? styles.denyBtn : styles.approveBtn}`}
-                            onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'inactive' : 'active' })}
+                            onClick={() => user.status === 'active'
+                                ? handleDeactivateUser(
+                                    user.uid,
+                                    "Deactivate this employee? They will keep their account and saved history, but they will not be able to access the dashboard until reactivated."
+                                )
+                                : handleUpdateUser(user.uid, { status: 'active' })}
                             disabled={loadingId === user.uid}
                         >
                             {user.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                        </button>
-                        <button
-                            className={`${styles.actionBtn} ${styles.denyBtn}`}
-                            onClick={() => handleDeleteUser(user.uid)}
-                            disabled={loadingId === user.uid}
-                            style={{ marginLeft: '0.5rem' }}
-                            title="Permanently remove user"
-                        >
-                            Delete
                         </button>
                     </>
                 )}
@@ -248,16 +318,22 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     style={{ maxWidth: '160px' }}
                     value={linkTargetUpdates[unregUser.uid] || ""}
                     onChange={(e) => setLinkTargetUpdates(prev => ({ ...prev, [unregUser.uid]: e.target.value }))}
+                    disabled={mergeEligibilityLoading || mergeTargetUsers.length === 0}
                 >
                     <option value="" disabled>Merge into account...</option>
-                    {allEmployees.filter(e => e.status === 'active' && e.role !== 'admin').map(emp => (
+                    {mergeTargetUsers.map(emp => (
                         <option key={emp.uid} value={emp.uid}>{emp.username || emp.name} ({emp.role})</option>
                     ))}
                 </select>
+                {mergeEligibilityLoading ? (
+                    <span className={styles.mergeHint}>Checking data...</span>
+                ) : mergeTargetUsers.length === 0 ? (
+                    <span className={styles.mergeHint}>No empty active accounts</span>
+                ) : null}
                 <button
                     className={`${styles.actionBtn} ${styles.approveBtn}`}
                     onClick={() => handleLinkAccount(unregUser)}
-                    disabled={loadingId === unregUser.uid || !linkTargetUpdates[unregUser.uid]}
+                    disabled={loadingId === unregUser.uid || mergeEligibilityLoading || !linkTargetUpdates[unregUser.uid]}
                     title="Merge this temporary profile into a real account"
                 >
                     Merge
