@@ -278,7 +278,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                             className={`${styles.actionBtn} ${styles.denyBtn}`}
                             onClick={() => handleDeactivateUser(
                                 user.uid,
-                                "Deny this sign-up request? The account will be marked inactive, and the user will not be able to access the dashboard."
+                                "Deny this sign-up request? The account will be marked inactive, and the user will not be able to access the dashboard. Their username stays reserved so it cannot be reused by another account."
                             )}
                             disabled={loadingId === user.uid}
                         >
@@ -292,7 +292,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                             onClick={() => user.status === 'active'
                                 ? handleDeactivateUser(
                                     user.uid,
-                                    "Deactivate this employee? They will keep their account and saved history, but they will not be able to access the dashboard until reactivated."
+                                    "Deactivate this employee? They will keep their account, username, and saved history, but they will not be able to access the dashboard until reactivated."
                                 )
                                 : handleUpdateUser(user.uid, { status: 'active' })}
                             disabled={loadingId === user.uid}
@@ -352,6 +352,9 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
 
     return (
         <div className={styles.container}>
+            <div className={styles.policyNote}>
+                <strong>Account safety:</strong> denied or deactivated employees keep their username and saved history reserved. Reactivate the same profile if they return.
+            </div>
 
             {/* Pending Approvals */}
             <div className={styles.sectionCard}>
@@ -406,6 +409,9 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 <div className={styles.sectionCard} style={{ opacity: 0.8 }}>
                     <div className={styles.sectionHeader}>
                         <h3 className={styles.sectionTitle}>Inactive Employees</h3>
+                        <p className={styles.sectionDescription}>
+                            These profiles cannot access the app, but their usernames and historical payout records remain attached to the same account.
+                        </p>
                     </div>
                     <div className={styles.userList}>
                         {inactiveUsers.map(user => <UserRow key={user.uid} user={user} isPending={false} />)}

@@ -171,20 +171,6 @@ function ShiftSetupDnd({
         // keep team selected so user can keep clicking more employees
     }, [selectedTeamId, addEmployee]);
 
-    const handleUpdateField = useCallback((teamId, uid, field, newPts) => {
-        if (teamId === 'runner') {
-            setRunners(prev => prev.map(m => m.uid === uid ? { ...m, [field]: newPts } : m));
-        } else if (teamId === 'bar') {
-            setBarTeam(prev => ({ ...prev, members: prev.members.map(m => m.uid === uid ? { ...m, [field]: newPts } : m) }));
-        } else {
-            setTeams(prev => prev.map(t =>
-                t.teamId === teamId
-                    ? { ...t, members: t.members.map(m => m.uid === uid ? { ...m, [field]: newPts } : m) }
-                    : t
-            ));
-        }
-    }, [setTeams, setRunners, setBarTeam]);
-
     const handleAddTeam = useCallback(() => {
         if (teams.length >= 6) return;
         const newId = `team-${Date.now()}`;
@@ -206,9 +192,8 @@ function ShiftSetupDnd({
         onDragLeave: handleDragLeave,
         onDrop: handleDropTeam,
         onDragStart: handleDragStart,
-        onRemove: removeEmployee,
-        onUpdateField: handleUpdateField
-    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee, handleUpdateField]);
+        onRemove: removeEmployee
+    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee]);
 
     return (
         <div className={styles.container}>

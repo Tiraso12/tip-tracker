@@ -217,41 +217,18 @@
     flex-grow: 1;
     font-weight: 600;
     font-size: 0.8rem;
+    min-width: 0;
 }
 
-/* Points control */
-.pointsControl {
-    display: flex;
-    align-items: center;
-    background: var(--bg-primary);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.ptsBtn {
-    background: transparent;
-    border: none;
-    color: var(--text-main);
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 0.95rem;
-    transition: background 0.15s;
-}
-
-.ptsBtn:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.ptsValue {
+.assignmentMeta {
+    color: var(--text-muted);
+    font-size: 0.7rem;
     font-weight: 700;
-    color: var(--primary);
-    min-width: 26px;
-    text-align: center;
-    font-size: 0.8rem;
+    white-space: nowrap;
+    background: var(--bg-primary);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+    padding: 0.16rem 0.4rem;
 }
 
 /* Runner Inputs */
