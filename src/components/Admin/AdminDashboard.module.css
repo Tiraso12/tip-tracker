@@ -379,6 +379,116 @@
     transform: scale(1.1);
 }
 
+.reportControls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.reportSelect {
+    cursor: pointer;
+    padding: 0.4rem 0.8rem;
+}
+
+.reportDateControls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.reportBody {
+    padding: 1.5rem;
+}
+
+.reportHeaderRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.reportPeriodTitle {
+    color: var(--text-main);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.reportPeriodMeta {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin: 0.25rem 0 0;
+}
+
+.reportSummaryGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 2rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.reportSummaryGrid span {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.reportSummaryGrid strong {
+    color: var(--text-main);
+}
+
+.reportSummaryTotal {
+    grid-column: 1 / -1;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 0.6rem;
+    margin-top: 0.2rem;
+}
+
+.reportSummaryTotal strong {
+    color: var(--primary);
+}
+
+.reportSection {
+    margin-top: 1.5rem;
+}
+
+.reportSectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.reportSectionTitle {
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.reportSectionMeta {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.reportEmptyDayRow {
+    opacity: 0.5;
+}
+
+.reportDateCell {
+    font-weight: 600;
+}
+
 
 /* Editor Panel (was Modal) */
 .editorPanel {

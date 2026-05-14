@@ -2,8 +2,67 @@ import React, { useEffect, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import styles from "./AdminDashboard.module.css";
 import { db } from "../../config/firebase";
-import { getCurrentWeek } from "../../utils/dateUtils";
+import { getBiweeklyPeriod, getCurrentWeek } from "../../utils/dateUtils";
 import { generateMonthlyReport, generateWeeklyReport } from "../../utils/pdfExport";
+
+const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
+const ROLE_LABELS = {
+    captain: "Captain",
+    server: "Server",
+    back: "Back",
+    assistant: "Assistant",
+    bartender: "Bartender",
+    runner: "Runner",
+};
+
+const toMoney = (value) => Number(value) || 0;
+
+function getShiftRevenue(shiftData) {
+    if (!shiftData) return 0;
+    return toMoney(shiftData.summary?.derivedValues?.totalTeamSales)
+        + toMoney(shiftData.summary?.derivedValues?.barSales);
+}
+
+function buildEmployeeTotals(reportData) {
+    const employeeMap = {};
+
+    reportData.forEach((day) => {
+        Object.entries(day.payouts || {}).forEach(([uid, payout]) => {
+            if (!employeeMap[uid]) {
+                employeeMap[uid] = {
+                    uid,
+                    name: payout.name || "Unknown",
+                    role: payout.role || "staff",
+                    shifts: 0,
+                    tips: 0,
+                    gratuity: 0,
+                    cash: 0,
+                    total: 0,
+                };
+            }
+
+            const tips = toMoney(payout.tips);
+            const gratuity = toMoney(payout.gratuity);
+            const cash = toMoney(payout.cash);
+            const total = payout.total !== undefined ? toMoney(payout.total) : tips + gratuity + cash;
+
+            employeeMap[uid].tips += tips;
+            employeeMap[uid].gratuity += gratuity;
+            employeeMap[uid].cash += cash;
+            employeeMap[uid].total += total;
+            employeeMap[uid].shifts += total > 0 ? 1 : 0;
+        });
+    });
+
+    return Object.values(employeeMap).sort((a, b) => {
+        const aRoleRank = ROLE_ORDER.includes(a.role) ? ROLE_ORDER.indexOf(a.role) : ROLE_ORDER.length;
+        const bRoleRank = ROLE_ORDER.includes(b.role) ? ROLE_ORDER.indexOf(b.role) : ROLE_ORDER.length;
+        const roleDiff = aRoleRank - bRoleRank;
+        if (roleDiff !== 0) return roleDiff;
+        if (b.total !== a.total) return b.total - a.total;
+        return a.name.localeCompare(b.name);
+    });
+}
 
 function AdminReportsPanel() {
     const [viewMode, setViewMode] = useState("week");
@@ -11,7 +70,7 @@ function AdminReportsPanel() {
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+    const fmt = (n) => `$${toMoney(n).toFixed(2)}`;
 
     const { startStr, endStr, displayLabel, dateKeys } = React.useMemo(() => {
         const d = new Date(baseDateStr + "T12:00:00");
@@ -23,6 +82,18 @@ function AdminReportsPanel() {
             start = weekDates[0];
             end = weekDates[6];
             keys = weekDates.map(wd => wd.toISOString().split("T")[0]);
+            label = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+        } else if (viewMode === "period") {
+            const period = getBiweeklyPeriod(d);
+            start = period.start;
+            end = period.end;
+
+            const cursor = new Date(start);
+            while (cursor <= end) {
+                keys.push(cursor.toISOString().split("T")[0]);
+                cursor.setDate(cursor.getDate() + 1);
+            }
+
             label = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
         } else {
             const year = d.getFullYear();
@@ -62,7 +133,7 @@ function AdminReportsPanel() {
                     const sd = shiftMap[key];
                     let t = 0, g = 0, c = 0, rev = 0;
                     if (sd) {
-                        rev = (sd.summary?.derivedValues?.totalTeamSales || sd.summary?.normalizedInputs?.teamSales || 0) + (sd.summary?.derivedValues?.barSales || 0);
+                        rev = getShiftRevenue(sd);
 
                         if (sd.payouts) {
                             Object.values(sd.payouts).forEach(p => {
@@ -91,7 +162,7 @@ function AdminReportsPanel() {
         if (viewMode === 'month') {
             generateMonthlyReport(displayLabel, reportData);
         } else {
-            generateWeeklyReport(reportData, displayLabel);
+            generateWeeklyReport(reportData, displayLabel, viewMode === "period" ? "Pay Period" : "Weekly");
         }
     };
 
@@ -103,10 +174,15 @@ function AdminReportsPanel() {
         total: acc.total + d.tip + d.gratuity + d.cash
     }), { tips: 0, gratuity: 0, cash: 0, revenue: 0, total: 0 });
 
+    const employeeTotals = React.useMemo(() => buildEmployeeTotals(reportData), [reportData]);
+    const workedDays = reportData.filter(d => Object.keys(d.payouts).length > 0).length;
+
     const changePeriod = (delta) => {
         const d = new Date(baseDateStr + "T12:00:00");
         if (viewMode === 'week') {
             d.setDate(d.getDate() + (delta * 7));
+        } else if (viewMode === 'period') {
+            d.setDate(d.getDate() + (delta * 14));
         } else {
             d.setMonth(d.getMonth() + delta);
         }
@@ -124,12 +200,13 @@ function AdminReportsPanel() {
                 )}
             </div>
 
-            <div style={{ display: 'flex', gap: '1rem', padding: '1rem 1.5rem', background: 'rgba(0,0,0,0.15)', borderBottom: '1px solid rgba(255,255,255,0.05)', alignItems: 'center' }}>
-                <select value={viewMode} onChange={e => setViewMode(e.target.value)} className={styles.dateInput} style={{ cursor: 'pointer', padding: '0.4rem 0.8rem' }}>
+            <div className={styles.reportControls}>
+                <select value={viewMode} onChange={e => setViewMode(e.target.value)} className={`${styles.dateInput} ${styles.reportSelect}`}>
                     <option value="week">Weekly Report</option>
+                    <option value="period">Pay Period Report</option>
                     <option value="month">Monthly Report</option>
                 </select>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div className={styles.reportDateControls}>
                     <button className={styles.dayNavBtn} onClick={() => changePeriod(-1)} title="Previous">←</button>
                     <input
                         type="date"
@@ -141,18 +218,23 @@ function AdminReportsPanel() {
                 </div>
             </div>
 
-            <div style={{ padding: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>{displayLabel}</h4>
+            <div className={styles.reportBody}>
+                <div className={styles.reportHeaderRow}>
+                    <div>
+                        <h4 className={styles.reportPeriodTitle}>{displayLabel}</h4>
+                        <p className={styles.reportPeriodMeta}>
+                            {workedDays} worked {workedDays === 1 ? "day" : "days"} / {employeeTotals.length} employees paid
+                        </p>
+                    </div>
                 </div>
 
-                <div className={styles.totalSummary} style={{ marginBottom: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
-                    <span>Rev: <strong>{fmt(totals.revenue)}</strong></span>
-                    <span>Tips: <strong>{fmt(totals.tips)}</strong></span>
-                    <span>Grat: <strong>{fmt(totals.gratuity)}</strong></span>
-                    <span>Cash: <strong>{fmt(totals.cash)}</strong></span>
-                    <span style={{ gridColumn: '1 / -1', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '0.5rem', marginTop: '0.2rem' }}>
-                        Period Pool: <strong style={{ color: 'var(--primary)' }}>{fmt(totals.total)}</strong>
+                <div className={styles.reportSummaryGrid}>
+                    <span>Revenue <strong>{fmt(totals.revenue)}</strong></span>
+                    <span>Tips <strong>{fmt(totals.tips)}</strong></span>
+                    <span>Gratuity <strong>{fmt(totals.gratuity)}</strong></span>
+                    <span>Cash <strong>{fmt(totals.cash)}</strong></span>
+                    <span className={styles.reportSummaryTotal}>
+                        Period Pool <strong>{fmt(totals.total)}</strong>
                     </span>
                 </div>
 
@@ -176,8 +258,8 @@ function AdminReportsPanel() {
                                     const dailyTotal = d.tip + d.gratuity + d.cash;
                                     const noData = dailyTotal === 0 && Object.keys(d.payouts).length === 0;
                                     return (
-                                        <tr key={d.date} className={styles.payoutRow} style={{ opacity: noData ? 0.5 : 1 }}>
-                                            <td style={{ fontWeight: 500 }}>{new Date(d.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</td>
+                                        <tr key={d.date} className={`${styles.payoutRow} ${noData ? styles.reportEmptyDayRow : ""}`}>
+                                            <td className={styles.reportDateCell}>{new Date(d.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</td>
                                             <td>{fmt(d.revenue)}</td>
                                             <td>{fmt(d.tip)}</td>
                                             <td>{fmt(d.gratuity)}</td>
@@ -188,6 +270,48 @@ function AdminReportsPanel() {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                )}
+
+                {!loading && (
+                    <div className={styles.reportSection}>
+                        <div className={styles.reportSectionHeader}>
+                            <h4 className={styles.reportSectionTitle}>Employee Earnings Summary</h4>
+                            <span className={styles.reportSectionMeta}>Totals for selected {viewMode === "period" ? "pay period" : viewMode}</span>
+                        </div>
+
+                        {employeeTotals.length === 0 ? (
+                            <div className={styles.payoutEmpty}>No employee payouts found for this period.</div>
+                        ) : (
+                            <div className={styles.payoutTableWrap}>
+                                <table className={styles.dayPayoutTable}>
+                                    <thead>
+                                        <tr>
+                                            <th>Employee</th>
+                                            <th>Role</th>
+                                            <th>Shifts</th>
+                                            <th>Tips</th>
+                                            <th>Gratuity</th>
+                                            <th>Cash</th>
+                                            <th>Total Pay</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {employeeTotals.map(employee => (
+                                            <tr key={employee.uid} className={styles.payoutRow}>
+                                                <td className={styles.nameCell}>{employee.name}</td>
+                                                <td className={styles.roleCell}>{ROLE_LABELS[employee.role] || employee.role}</td>
+                                                <td>{employee.shifts}</td>
+                                                <td>{fmt(employee.tips)}</td>
+                                                <td>{fmt(employee.gratuity)}</td>
+                                                <td>{fmt(employee.cash)}</td>
+                                                <td className={styles.totalCell}>{fmt(employee.total)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

@@ -4,12 +4,12 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 
 ## Current Version
 
-- Version name: `v0.5.0-admin-daily-workflow`
+- Version name: `v0.6.0-reports`
 - Branch: `foundation-stabilization`
-- Status: Ready for review
+- Status: In Progress
 - Started: 2026-05-07
-- Goal: Make daily shift input clearer before deeper report/PDF work.
-- Current working state: Uncommitted local changes are present and verified.
+- Goal: Improve admin report accuracy, employee period summaries, and report/PDF consistency.
+- Current working state: v0.5.0 is committed/pushed; v0.6.0 report work has started.
 
 ## Version History
 
@@ -19,7 +19,8 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 | `v0.2.0` | Admin Workflow | Complete | Smaller admin modules, better shift validation, safer saves |
 | `v0.3.0` | Employee Dashboard | Complete | Richer employee earnings summaries and clearer weekly/pay-period totals |
 | `v0.4.0` | User Management | Complete | Safer account status handling, temporary staff merge rules, better team setup |
-| `v0.5.0` | Admin Daily Workflow | Ready for review | One-screen shift workspace, live closeout totals, and safer payout review |
+| `v0.5.0` | Admin Daily Workflow | Complete | One-screen shift workspace, live closeout totals, and safer payout review |
+| `v0.6.0` | Reports | In Progress | More accurate weekly/monthly/pay-period reports and exports |
 
 ## Guiding Principles
 
@@ -115,7 +116,7 @@ Decision: denied and deactivated employee accounts keep their username mapping r
 
 ### v0.5.0-admin-daily-workflow
 
-- Status: Ready for review
+- Status: Complete
 - [x] Add live pool totals while admins enter shift money.
 - [x] Improve runner payout input visibility during pool review.
 - [x] Add clearer pre-save review of calculated payout totals.
@@ -132,14 +133,25 @@ Print decision: `Print Team Sheet` is currently a simple training / assignment s
 
 Verification status: `npm test`, `npm run lint`, and `npm run build` pass after the latest v0.5.0 changes.
 
-Recommended next step: do one final manual browser pass, then commit and push the v0.4/v0.5 batch with the roadmap. After that, start `v0.6.0-reports`.
+Committed and pushed as `360c33c Improve admin daily shift workflow`.
 
 ### v0.6.0-reports
 
-- Improve weekly/monthly report accuracy.
-- Make PDF formatting consistent.
-- Add admin reports that summarize total earnings per employee for each selected week, month, or pay period.
+- Status: In Progress
+- [x] Start admin report employee earnings summaries for selected week, month, or pay period.
+- [x] Align weekly/pay-period/monthly PDF exports with the on-screen employee earnings summary.
+- [ ] Improve weekly/monthly report accuracy.
+- [ ] Make PDF formatting consistent.
+- [x] Add admin reports that summarize total earnings per employee for each selected week, month, or pay period.
 - Review report export permissions.
+
+Current behavior: Admin Reports supports weekly, monthly, and pay-period views. The screen shows daily report totals plus an employee earnings summary for the selected range, including shifts worked, tips, gratuity, cash, and total pay.
+
+PDF behavior: Weekly, pay-period, and monthly PDF exports include an employee earnings summary with shifts, tips, gratuity, cash, total pay, and average shift. PDF total pay now includes cash so it matches the on-screen report.
+
+Verification status: `npm run lint`, `npm test`, and `npm run build` pass after the PDF export alignment. Browser automation could not reload localhost because of the in-app browser URL policy, so visual PDF/report review should be done manually.
+
+Next report priorities: review revenue/source accuracy across saved shift formats, tighten PDF visual formatting if needed, and decide whether report exports need admin-only permission checks beyond existing admin routing.
 
 ### v1.0.0-stable-release
 

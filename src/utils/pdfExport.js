@@ -1,7 +1,17 @@
-import { RUNNER_FLAT_RATE } from './constants';
-
 const PRIMARY_COLOR = [147, 51, 234]; // #9333ea (var(--primary))
 const BACKGROUND_COLOR = [30, 41, 59]; // Dark mode equivalent (slate-800)
+const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
+const ROLE_LABELS = {
+    captain: "CAPTAINS",
+    server: "SERVERS",
+    back: "BACKS",
+    assistant: "ASSISTANTS",
+    bartender: "BAR TEAM",
+    runner: "RUNNERS",
+};
+
+const n = (value) => Number(value) || 0;
+const currency = (value) => `$${n(value).toFixed(2)}`;
 
 /**
  * Helper to determine what week in the month a date belongs to for grouping
@@ -11,6 +21,108 @@ const getWeekLabel = (date) => {
     const day = d.getDate();
     const weekNum = Math.ceil(day / 7);
     return `Week ${weekNum}`;
+};
+
+const buildEmployeeTotals = (days = []) => {
+    const employeeTotals = {};
+
+    days.forEach(day => {
+        Object.entries(day.payouts || {}).forEach(([uid, pay]) => {
+            if (!employeeTotals[uid]) {
+                employeeTotals[uid] = {
+                    uid,
+                    name: pay.name || "Unknown",
+                    role: pay.role || "staff",
+                    shifts: 0,
+                    tips: 0,
+                    gratuity: 0,
+                    cash: 0,
+                    total: 0,
+                };
+            }
+
+            const tips = n(pay.tips);
+            const gratuity = n(pay.gratuity);
+            const cash = n(pay.cash);
+            const total = pay.total !== undefined ? n(pay.total) : tips + gratuity + cash;
+
+            employeeTotals[uid].tips += tips;
+            employeeTotals[uid].gratuity += gratuity;
+            employeeTotals[uid].cash += cash;
+            employeeTotals[uid].total += total;
+            employeeTotals[uid].shifts += total > 0 ? 1 : 0;
+        });
+    });
+
+    return Object.values(employeeTotals).sort((a, b) => {
+        const aRoleRank = ROLE_ORDER.includes(a.role) ? ROLE_ORDER.indexOf(a.role) : ROLE_ORDER.length;
+        const bRoleRank = ROLE_ORDER.includes(b.role) ? ROLE_ORDER.indexOf(b.role) : ROLE_ORDER.length;
+        const roleDiff = aRoleRank - bRoleRank;
+        if (roleDiff !== 0) return roleDiff;
+        if (b.total !== a.total) return b.total - a.total;
+        return a.name.localeCompare(b.name);
+    });
+};
+
+const buildEmployeeRows = (employeeTotals = []) => {
+    const rows = [];
+    const roles = [...ROLE_ORDER, ...new Set(employeeTotals.map(employee => employee.role).filter(role => !ROLE_ORDER.includes(role)))];
+
+    roles.forEach(role => {
+        const members = employeeTotals.filter(employee => employee.role === role);
+        if (members.length === 0) return;
+
+        rows.push([{
+            content: ROLE_LABELS[role] || role.toUpperCase(),
+            colSpan: 7,
+            styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+        }]);
+
+        members.forEach(employee => {
+            rows.push([
+                employee.name,
+                employee.shifts,
+                currency(employee.tips),
+                currency(employee.gratuity),
+                currency(employee.cash),
+                currency(employee.total),
+                currency(employee.shifts > 0 ? employee.total / employee.shifts : 0),
+            ]);
+        });
+    });
+
+    return rows;
+};
+
+const addEmployeeTotalsTable = (doc, autoTable, title, employeeTotals, startY) => {
+    const employeeRows = buildEmployeeRows(employeeTotals);
+    if (employeeRows.length === 0) return startY;
+
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let nextY = startY;
+    if (nextY > pageHeight - 140) {
+        doc.addPage();
+        nextY = 50;
+    }
+
+    doc.setFontSize(14);
+    doc.setTextColor(...PRIMARY_COLOR);
+    doc.text(title, 40, nextY);
+
+    autoTable(doc, {
+        startY: nextY + 15,
+        head: [['Employee', 'Shifts', 'Tips', 'Gratuity', 'Cash', 'Total Pay', 'Avg Shift']],
+        body: employeeRows,
+        theme: 'grid',
+        headStyles: { fillColor: BACKGROUND_COLOR, textColor: 255 },
+        styles: { fontSize: 9 },
+        columnStyles: {
+            0: { cellWidth: 120 },
+            5: { fontStyle: 'bold', textColor: [0, 100, 0] }
+        }
+    });
+
+    return doc.lastAutoTable.finalY;
 };
 
 /**
@@ -42,10 +154,10 @@ export const generateShiftReport = async (date, summary) => {
     doc.setTextColor(50);
 
     const summaryTexts = [
-        `Revenue: $${((summary.derivedValues?.totalTeamSales || 0) + (summary.derivedValues?.barSales || parseInt(summary.normalizedInputs?.barTeam?.pools?.sales || 0) || 0)).toFixed(2)}`,
-        `Tips: $${(summary.derivedValues?.ctpTotal || summary.normalizedInputs?.ctpTotal || 0).toFixed(2)}`,
-        `Gratuity: $${(summary.derivedValues?.grtTotal || 0).toFixed(2)}`,
-        `Cash: $${(summary.derivedValues?.baseTeamCash || summary.normalizedInputs?.cashTotal || 0).toFixed(2)}`
+        `Revenue: ${currency((summary.derivedValues?.totalTeamSales || 0) + (summary.derivedValues?.barSales || parseInt(summary.normalizedInputs?.barTeam?.pools?.sales || 0) || 0))}`,
+        `Tips: ${currency(summary.derivedValues?.ctpTotal || summary.normalizedInputs?.ctpTotal || 0)}`,
+        `Gratuity: ${currency(summary.derivedValues?.grtTotal || 0)}`,
+        `Cash: ${currency(summary.derivedValues?.baseTeamCash || summary.normalizedInputs?.cashTotal || 0)}`
     ];
 
     let xOffset = 55;
@@ -56,7 +168,7 @@ export const generateShiftReport = async (date, summary) => {
 
     if (summary.normalizedInputs?.contract26Gratuity > 0) {
         doc.setTextColor(...PRIMARY_COLOR);
-        doc.text(`Contract Shift (26% Grat: $${summary.normalizedInputs.contract26Gratuity})`, 40, 160);
+        doc.text(`Contract Shift (26% Grat: ${currency(summary.normalizedInputs.contract26Gratuity)})`, 40, 160);
     }
 
     // 4. Employee Payouts Table
@@ -79,10 +191,10 @@ export const generateShiftReport = async (date, summary) => {
                     tableBody.push([
                         m.name,
                         isRunner ? 'Runner' : m.teamId?.replace('team-', 'Team ') || 'Bar',
-                        `$${m.ctp}`,
-                        `$${m.grt}`,
-                        `$${m.cash || 0}`,
-                        `$${m.total || m.payoutAmount}`
+                        currency(m.ctp),
+                        currency(m.grt),
+                        currency(m.cash || 0),
+                        currency(m.total || m.payoutAmount)
                     ]);
                 });
             };
@@ -107,10 +219,10 @@ export const generateShiftReport = async (date, summary) => {
                         tableBody.push([
                             m.name,
                             m.points,
-                            `$${m.ctp}`,
-                            `$${m.grt}`,
-                            `$${m.cash}`,
-                            `$${m.total}`
+                            currency(m.ctp),
+                            currency(m.grt),
+                            currency(m.cash),
+                            currency(m.total)
                         ]);
                     });
                 });
@@ -131,10 +243,10 @@ export const generateShiftReport = async (date, summary) => {
                             tableBody.push([
                                 m.name,
                                 '—',
-                                `$${m.ctp}`,
-                                `$${m.grt}`,
+                                currency(m.ctp),
+                                currency(m.grt),
                                 '—',
-                                `$${m.total}`
+                                currency(m.total)
                             ]);
                         });
                     });
@@ -148,10 +260,10 @@ export const generateShiftReport = async (date, summary) => {
                         tableBody.push([
                             m.name,
                             '—',
-                            `$${m.ctp}`,
-                            `$${m.grt}`,
+                            currency(m.ctp),
+                            currency(m.grt),
                             '—',
-                            `$${m.total}`
+                            currency(m.total)
                         ]);
                     });
                 }
@@ -168,10 +280,10 @@ export const generateShiftReport = async (date, summary) => {
                     tableBody.push([
                         m.name,
                         m.points,
-                        `$${m.ctp}`,
-                        `$${m.grt}`,
-                        `$${m.cash || 0}`,
-                        `$${m.total}`
+                        currency(m.ctp),
+                        currency(m.grt),
+                        currency(m.cash || 0),
+                        currency(m.total)
                     ]);
                 });
             }
@@ -187,10 +299,10 @@ export const generateShiftReport = async (date, summary) => {
                     tableBody.push([
                         m.name,
                         'Flat/Split',
-                        `$${m.payoutAmount}`,
+                        currency(m.payoutAmount),
                         '—',
                         '—',
-                        `$${m.payoutAmount}`
+                        currency(m.payoutAmount)
                     ]);
                 });
             }
@@ -217,7 +329,7 @@ export const generateShiftReport = async (date, summary) => {
 /**
  * Generate a PDF report for a Week (Biweekly view fallback)
  */
-export const generateWeeklyReport = async (weekData, weekRangeLabel) => {
+export const generateWeeklyReport = async (weekData, weekRangeLabel, reportLabel = 'Weekly') => {
     const { jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
 
@@ -226,22 +338,21 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel) => {
     // Header
     doc.setTextColor(...PRIMARY_COLOR);
     doc.setFontSize(22);
-    doc.text('TipTracker Weekly Report', 40, 50);
+    doc.text(`TipTracker ${reportLabel} Report`, 40, 50);
 
     doc.setTextColor(100);
     doc.setFontSize(12);
-    doc.text(`Pay Period: ${weekRangeLabel}`, 40, 70);
+    doc.text(`Range: ${weekRangeLabel}`, 40, 70);
 
     // Calculate Totals and aggregate employee payouts
     let totalTips = 0, totalGrat = 0, totalCash = 0, totalRev = 0;
     const dayRows = [];
-    const employeeTotals = {}; // { uid: { name, role, tips, gratuity, cash, total } }
 
     weekData.forEach(day => {
-        const r = Number(day.revenue) || 0;
-        const g = Number(day.gratuity) || 0;
-        const t = Number(day.tip) || 0;
-        const c = Number(day.cash) || 0;
+        const r = n(day.revenue);
+        const g = n(day.gratuity);
+        const t = n(day.tip);
+        const c = n(day.cash);
         const sum = g + t + c;
 
         totalRev += r;
@@ -253,32 +364,16 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel) => {
 
         dayRows.push([
             dateStr,
-            `$${r.toFixed(2)}`,
-            `$${t.toFixed(2)}`,
-            `$${g.toFixed(2)}`,
-            `$${c.toFixed(2)}`,
-            `$${sum.toFixed(2)}`
+            currency(r),
+            currency(t),
+            currency(g),
+            currency(c),
+            currency(sum)
         ]);
-
-        // Aggregate employee payouts for the week
-        if (day.payouts) {
-            Object.entries(day.payouts).forEach(([uid, pay]) => {
-                if (!employeeTotals[uid]) {
-                    employeeTotals[uid] = {
-                        name: pay.name, role: pay.role,
-                        tips: 0, gratuity: 0, cash: 0, totalEarning: 0
-                    };
-                }
-                employeeTotals[uid].tips += Number(pay.tips) || 0;
-                employeeTotals[uid].gratuity += Number(pay.gratuity) || 0;
-                employeeTotals[uid].cash += Number(pay.cash) || 0;
-                // Exclude cash from total earnings as requested
-                employeeTotals[uid].totalEarning += (Number(pay.tips) || 0) + (Number(pay.gratuity) || 0);
-            });
-        }
     });
 
     const grandTotal = totalTips + totalGrat + totalCash;
+    const employeeTotals = buildEmployeeTotals(weekData);
 
     // Totals Box
     doc.setDrawColor(...PRIMARY_COLOR);
@@ -287,13 +382,13 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel) => {
 
     doc.setFontSize(10);
     doc.setTextColor(50);
-    doc.text(`Week Rev: $${totalRev.toFixed(2)}`, 55, 110);
-    doc.text(`Tips: $${totalTips.toFixed(2)}`, 165, 110);
-    doc.text(`Gratuity: $${totalGrat.toFixed(2)}`, 275, 110);
+    doc.text(`${reportLabel} Rev: ${currency(totalRev)}`, 55, 110);
+    doc.text(`Tips: ${currency(totalTips)}`, 165, 110);
+    doc.text(`Gratuity: ${currency(totalGrat)}`, 275, 110);
 
-    doc.text(`Cash: $${totalCash.toFixed(2)}`, 55, 125);
-    doc.text(`Week Pool: $${grandTotal.toFixed(2)}`, 165, 125);
-    doc.text(`Week Tips/Grat: $${(totalTips + totalGrat).toFixed(2)}`, 275, 125);
+    doc.text(`Cash: ${currency(totalCash)}`, 55, 125);
+    doc.text(`${reportLabel} Pool: ${currency(grandTotal)}`, 165, 125);
+    doc.text(`${reportLabel} Tips/Grat: ${currency(totalTips + totalGrat)}`, 275, 125);
 
     // 1. Daily Breakdown Table
     autoTable(doc, {
@@ -306,54 +401,9 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel) => {
         columnStyles: { 5: { fontStyle: 'bold' } }
     });
 
-    // 2. Employee Weekly Totals Table
-    const employeeRows = [];
-    const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
+    addEmployeeTotalsTable(doc, autoTable, "Employee Earnings Summary", employeeTotals, doc.lastAutoTable.finalY + 30);
 
-    // Group weekly totals by role
-    ROLE_ORDER.forEach(role => {
-        const members = Object.values(employeeTotals).filter(m => m.role === role);
-        if (members.length === 0) return;
-
-        // Role Section Header
-        employeeRows.push([{
-            content: role.toUpperCase(),
-            colSpan: 5,
-            styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
-        }]);
-
-        // Role Members
-        members.forEach(m => {
-            employeeRows.push([
-                m.name,
-                `$${m.tips.toFixed(2)}`,
-                `$${m.gratuity.toFixed(2)}`,
-                `$${m.cash.toFixed(2)}`,
-                `$${m.totalEarning.toFixed(2)}`
-            ]);
-        });
-    });
-
-    if (employeeRows.length > 0) {
-        doc.setFontSize(14);
-        doc.setTextColor(...PRIMARY_COLOR);
-        doc.text("Weekly Employee Payouts", 40, doc.lastAutoTable.finalY + 30);
-
-        autoTable(doc, {
-            startY: doc.lastAutoTable.finalY + 45,
-            head: [['Employee', 'Total Tips', 'Total Gratuity', 'Total Cash', 'Earnings (No Cash)']],
-            body: employeeRows,
-            theme: 'grid',
-            headStyles: { fillColor: BACKGROUND_COLOR, textColor: 255 },
-            styles: { fontSize: 9 },
-            columnStyles: {
-                0: { cellWidth: 120 },
-                4: { fontStyle: 'bold', textColor: [0, 100, 0] }
-            }
-        });
-    }
-
-    doc.save(`Weekly_Report_${weekRangeLabel.replace(/[/\s-]/g, '_')}.pdf`);
+    doc.save(`${reportLabel.replace(/\s/g, '_')}_Report_${weekRangeLabel.replace(/[/\s-]/g, '_')}.pdf`);
 };
 
 /**
@@ -377,12 +427,13 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
     // Calculate Month Totals and Group by week
     let mTips = 0, mGrat = 0, mCash = 0, mRev = 0;
     const groupedByWeek = {};
+    const employeeTotals = buildEmployeeTotals(daysInMonthData);
 
     daysInMonthData.forEach(day => {
-        const g = Number(day.gratuity) || 0;
-        const t = Number(day.tip) || 0;
-        const c = Number(day.cash) || 0;
-        const r = Number(day.revenue) || 0;
+        const g = n(day.gratuity);
+        const t = n(day.tip);
+        const c = n(day.cash);
+        const r = n(day.revenue);
 
         if (g === 0 && t === 0 && c === 0 && r === 0) return; // Skip empty days
 
@@ -410,12 +461,12 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
     doc.setFontSize(10);
     doc.setTextColor(50);
 
-    doc.text(`Month Rev: $${mRev.toFixed(2)}`, 55, 110);
-    doc.text(`Tips: $${mTips.toFixed(2)}`, 165, 110);
-    doc.text(`Gratuity: $${mGrat.toFixed(2)}`, 275, 110);
+    doc.text(`Month Rev: ${currency(mRev)}`, 55, 110);
+    doc.text(`Tips: ${currency(mTips)}`, 165, 110);
+    doc.text(`Gratuity: ${currency(mGrat)}`, 275, 110);
 
-    doc.text(`Cash: $${mCash.toFixed(2)}`, 55, 125);
-    doc.text(`Month Pool: $${mTotal.toFixed(2)}`, 165, 125);
+    doc.text(`Cash: ${currency(mCash)}`, 55, 125);
+    doc.text(`Month Pool: ${currency(mTotal)}`, 165, 125);
 
     let currentY = 160;
 
@@ -429,15 +480,15 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
 
         doc.setFontSize(12);
         doc.setTextColor(...PRIMARY_COLOR);
-        doc.text(`${week} Breakdown (Pool: $${wTotal.toFixed(2)})`, 40, currentY);
+        doc.text(`${week} Breakdown (Pool: ${currency(wTotal)})`, 40, currentY);
 
         const tableBody = days.map(d => [
             d.dateStr,
-            `$${d.r.toFixed(2)}`,
-            `$${d.t.toFixed(2)}`,
-            `$${d.g.toFixed(2)}`,
-            `$${d.c.toFixed(2)}`,
-            `$${d.sum.toFixed(2)}`
+            currency(d.r),
+            currency(d.t),
+            currency(d.g),
+            currency(d.c),
+            currency(d.sum)
         ]);
 
         autoTable(doc, {
@@ -459,6 +510,8 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
             currentY = 50;
         }
     });
+
+    addEmployeeTotalsTable(doc, autoTable, "Employee Earnings Summary", employeeTotals, currentY);
 
     doc.save(`Monthly_Report_${monthName.replace(/\s/g, '_')}.pdf`);
 };
