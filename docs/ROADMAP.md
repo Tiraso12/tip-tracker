@@ -6,10 +6,11 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 
 - Version name: `v0.6.0-reports`
 - Branch: `foundation-stabilization`
-- Status: In Progress
+- Status: Complete
 - Started: 2026-05-07
+- Completed: 2026-05-14
 - Goal: Improve admin report accuracy, employee period summaries, and report/PDF consistency.
-- Current working state: v0.5.0 is committed/pushed; v0.6.0 report work has started.
+- Current working state: All v0.6.0 items complete. `npm run lint`, `npm test`, and `npm run build` pass. App confirmed running at localhost:5173.
 
 ## Version History
 
@@ -20,7 +21,7 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 | `v0.3.0` | Employee Dashboard | Complete | Richer employee earnings summaries and clearer weekly/pay-period totals |
 | `v0.4.0` | User Management | Complete | Safer account status handling, temporary staff merge rules, better team setup |
 | `v0.5.0` | Admin Daily Workflow | Complete | One-screen shift workspace, live closeout totals, and safer payout review |
-| `v0.6.0` | Reports | In Progress | More accurate weekly/monthly/pay-period reports and exports |
+| `v0.6.0` | Reports | Complete | More accurate weekly/monthly/pay-period reports and exports |
 
 ## Guiding Principles
 
@@ -137,13 +138,13 @@ Committed and pushed as `360c33c Improve admin daily shift workflow`.
 
 ### v0.6.0-reports
 
-- Status: In Progress
+- Status: Complete
 - [x] Start admin report employee earnings summaries for selected week, month, or pay period.
 - [x] Align weekly/pay-period/monthly PDF exports with the on-screen employee earnings summary.
-- [ ] Improve weekly/monthly report accuracy.
-- [ ] Make PDF formatting consistent.
+- [x] Improve weekly/monthly report accuracy.
+- [x] Make PDF formatting consistent.
 - [x] Add admin reports that summarize total earnings per employee for each selected week, month, or pay period.
-- Review report export permissions.
+- [x] Review report export permissions.
 
 Current behavior: Admin Reports supports weekly, monthly, and pay-period views. The screen shows daily report totals plus an employee earnings summary for the selected range, including shifts worked, tips, gratuity, cash, and total pay.
 
@@ -151,7 +152,11 @@ PDF behavior: Weekly, pay-period, and monthly PDF exports include an employee ea
 
 Verification status: `npm run lint`, `npm test`, and `npm run build` pass after the PDF export alignment. Browser automation could not reload localhost because of the in-app browser URL policy, so visual PDF/report review should be done manually.
 
-Next report priorities: review revenue/source accuracy across saved shift formats, tighten PDF visual formatting if needed, and decide whether report exports need admin-only permission checks beyond existing admin routing.
+Accuracy fix (2026-05-14): daily tips/gratuity/cash now read from `summary.derivedValues` (ctpTotal, grtTotal, baseTeamCash) so the pool total reflects what was collected rather than only what employees received. Fallback to summing payouts for older shifts. Revenue calculation also gains a fallback using `normalizedInputs` team/bar sales for shifts saved before `derivedValues` existed.
+
+PDF fix (2026-05-14): monthly report page-break check now uses actual page height (`pageHeight - 80`) instead of a hardcoded 750 that was larger than A4 landscape height (595pt) and never triggered. Monthly totals box now includes a "Tips/Grat" line matching the weekly report.
+
+Permissions decision: report exports require no additional guards beyond existing admin routing. The Reports tab renders only inside AdminDashboard (admin-role gated). PDF generation is purely client-side from already-loaded data. Firestore shift reads are covered by existing security rules.
 
 ### v1.0.0-stable-release
 
@@ -163,6 +168,15 @@ Next report priorities: review revenue/source accuracy across saved shift format
 ### Later Ideas
 
 - Previous-period comparisons for employee dashboard trends.
+
+### v1.1.0-security-hardening
+
+Identified during testing phase (2026-05-14). Low risk during testing but should be addressed before production rollout.
+
+- [ ] **Firestore create rule: prevent self-elevation to admin.** `allow create` on `/users/{uid}` has no field validation — a user can call `setDoc` directly via the Firebase SDK and create their own doc with `role: "admin"`. Fix: enforce `role == "unassigned"` and `status == "pending"` on create.
+- [ ] **Tip records: restrict employee write access.** `/users/{userId}/tips/{document=**}` currently allows employees to write their own tip history, meaning they could inflate earnings via the SDK. Fix: change employee access to read-only; only admins write.
+- [ ] **Add explicit rule for `unregisteredStaff` collection.** Currently only protected by the catch-all rule — implicit. Add an explicit `allow read, write: if isAdmin()` rule so intent is clear and it's not silently affected by any future catch-all change.
+- [ ] **Fix username registration race condition.** Two simultaneous registrations for the same username both pass the client-side uniqueness check. The second write gets blocked by Firestore but leaves that user with a Firebase Auth account and no username doc. Fix: use a Firestore transaction for the username claim step.
 
 ## Session Notes
 

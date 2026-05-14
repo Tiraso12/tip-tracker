@@ -467,13 +467,20 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
 
     doc.text(`Cash: ${currency(mCash)}`, 55, 125);
     doc.text(`Month Pool: ${currency(mTotal)}`, 165, 125);
+    doc.text(`Month Tips/Grat: ${currency(mTips + mGrat)}`, 275, 125);
 
     let currentY = 160;
+    const pageHeight = doc.internal.pageSize.getHeight();
 
     // Render tables per week
     Object.keys(groupedByWeek).sort().forEach(week => {
         const days = groupedByWeek[week];
         if (days.length === 0) return;
+
+        if (currentY > pageHeight - 80) {
+            doc.addPage();
+            currentY = 50;
+        }
 
         // Week total
         const wTotal = days.reduce((acc, d) => acc + d.sum, 0);
@@ -503,12 +510,6 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
         });
 
         currentY = doc.lastAutoTable.finalY + 30;
-
-        // Add new page if getting too low
-        if (currentY > 750) {
-            doc.addPage();
-            currentY = 50;
-        }
     });
 
     addEmployeeTotalsTable(doc, autoTable, "Employee Earnings Summary", employeeTotals, currentY);

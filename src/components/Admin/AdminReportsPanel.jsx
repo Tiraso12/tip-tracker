@@ -19,8 +19,17 @@ const toMoney = (value) => Number(value) || 0;
 
 function getShiftRevenue(shiftData) {
     if (!shiftData) return 0;
-    return toMoney(shiftData.summary?.derivedValues?.totalTeamSales)
-        + toMoney(shiftData.summary?.derivedValues?.barSales);
+    const dv = shiftData.summary?.derivedValues;
+    if (dv) {
+        return toMoney(dv.totalTeamSales) + toMoney(dv.barSales);
+    }
+    const ni = shiftData.summary?.normalizedInputs;
+    if (ni) {
+        const teamSales = (ni.teams || []).reduce((sum, t) => sum + toMoney(t.pools?.sales || t.teamSales), 0);
+        const barSales = toMoney(ni.barTeam?.pools?.sales) || toMoney(ni.barSales);
+        return teamSales + barSales;
+    }
+    return 0;
 }
 
 function buildEmployeeTotals(reportData) {
@@ -135,7 +144,12 @@ function AdminReportsPanel() {
                     if (sd) {
                         rev = getShiftRevenue(sd);
 
-                        if (sd.payouts) {
+                        const dv = sd.summary?.derivedValues;
+                        if (dv) {
+                            t = toMoney(dv.ctpTotal);
+                            g = toMoney(dv.grtTotal);
+                            c = toMoney(dv.baseTeamCash);
+                        } else if (sd.payouts) {
                             Object.values(sd.payouts).forEach(p => {
                                 t += Number(p.tips) || 0;
                                 g += Number(p.gratuity) || 0;
