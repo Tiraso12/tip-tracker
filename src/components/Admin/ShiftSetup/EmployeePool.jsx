@@ -1,8 +1,20 @@
 import React, { useState } from 'react';
 import styles from './ShiftSetup.module.css';
 
-function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId, onAddUnregistered }) {
+const ROLE_FILTERS = [
+    { value: 'all', label: 'All' },
+    { value: 'captain', label: 'Captains' },
+    { value: 'server', label: 'Servers' },
+    { value: 'back', label: 'Backs' },
+    { value: 'assistant', label: 'Assistants' },
+    { value: 'bartender', label: 'Bar' },
+    { value: 'runner', label: 'Runners' },
+    { value: 'temp', label: 'Temp' },
+];
+
+function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId, selectedTargetLabel, onAddUnregistered }) {
     const [searchTerm, setSearchTerm] = useState('');
+    const [roleFilter, setRoleFilter] = useState('all');
     const [showUnregForm, setShowUnregForm] = useState(false);
     const [unregForm, setUnregForm] = useState({ name: '', role: 'server' });
 
@@ -10,7 +22,10 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
 
     const filtered = unassigned.filter(emp => {
         const term = searchTerm.toLowerCase();
-        return (emp.name?.toLowerCase().includes(term) || emp.username?.toLowerCase().includes(term));
+        const matchesSearch = emp.name?.toLowerCase().includes(term) || emp.username?.toLowerCase().includes(term);
+        const matchesRole = roleFilter === 'all'
+            || (roleFilter === 'temp' ? emp.isUnregistered : emp.role === roleFilter);
+        return matchesSearch && matchesRole;
     });
 
     const clickable = !!selectedTeamId;
@@ -36,14 +51,29 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
 
+            <div className={styles.roleFilters} aria-label="Filter available employees by role">
+                {ROLE_FILTERS.map(filter => (
+                    <button
+                        key={filter.value}
+                        type="button"
+                        className={`${styles.roleFilterBtn} ${roleFilter === filter.value ? styles.roleFilterActive : ''}`}
+                        onClick={() => setRoleFilter(filter.value)}
+                    >
+                        {filter.label}
+                    </button>
+                ))}
+            </div>
+
             {selectedTeamId && (
                 <div className={styles.clickHint}>
-                    Click an employee to assign →
+                    Assigning to {selectedTargetLabel || 'selected team'}. Click employees below.
                 </div>
             )}
 
             <div className={styles.employeeList}>
-                {filtered.map(emp => (
+                {filtered.length === 0 ? (
+                    <div className={styles.emptyMsg}>No available employees match this filter.</div>
+                ) : filtered.map(emp => (
                     <div
                         key={emp.uid}
                         className={`${styles.poolItem} ${clickable ? styles.poolItemClickable : ''}`}
@@ -60,7 +90,7 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
 
             {showUnregForm ? (
                 <div className={styles.addUnregForm}>
-                    <label>Temp Staff Name</label>
+                    <label>Temporary Staff Name</label>
                     <input
                         type="text"
                         placeholder="E.g., Guest Server"
@@ -68,6 +98,9 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
                         onChange={(e) => setUnregForm(prev => ({ ...prev, name: e.target.value }))}
                         autoFocus
                     />
+                    <p style={{ margin: '0.25rem 0 0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.35 }}>
+                        Use this for someone working today who has not created an account yet. Their history can be merged into a real account later.
+                    </p>
                     <label>Role</label>
                     <select
                         value={unregForm.role}
@@ -82,12 +115,12 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
                     </select>
                     <div className={styles.unregFormActions}>
                         <button className={styles.unregFormCancel} onClick={() => setShowUnregForm(false)}>Cancel</button>
-                        <button className={styles.unregFormSave} onClick={handleCreateUnregistered}>Create</button>
+                        <button className={styles.unregFormSave} onClick={handleCreateUnregistered}>Create Temporary Staff</button>
                     </div>
                 </div>
             ) : (
                 <button className={styles.addUnregBtn} onClick={() => setShowUnregForm(true)}>
-                    + Add Unregistered Staff
+                    + Add Temporary Staff
                 </button>
             )}
         </div>

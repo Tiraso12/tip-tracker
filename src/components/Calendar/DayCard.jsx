@@ -1,16 +1,29 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import styles from "./Calendar.module.css";
 
+const roleLabels = {
+    captain: "Captain",
+    server: "Server",
+    back: "Back Server",
+    assistant: "Assistant",
+    bartender: "Bartender",
+    runner: "Runner",
+};
 
+const fmt = (value) => (Number(value) || 0).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+});
 
-function DayCard({ data, variant = 'week', readOnly = true }) {
+function DayCard({ data, variant = 'week' }) {
     // Component is now purely read-only display. Admins use the dashboard to edit.
 
-    const currentTotal = (
+    const currentTotal =
         Number(data.gratuity || 0) +
         Number(data.tip || 0) +
-        Number(data.cash || 0)
-    ).toFixed(2);
+        Number(data.cash || 0);
+    const hasPayout = currentTotal > 0;
+    const roleLabel = data.role ? roleLabels[data.role] || data.role : null;
 
     const getTitle = () => {
         const d = new Date(data.date);
@@ -22,28 +35,37 @@ function DayCard({ data, variant = 'week', readOnly = true }) {
     };
 
     return (
-        <div className={styles.card}>
-            <h1>{getTitle()}</h1>
+        <div className={`${styles.card} ${!hasPayout ? styles.emptyCard : ""}`}>
+            <div className={styles.cardHeader}>
+                <h1>{getTitle()}</h1>
+                {roleLabel && <span className={styles.roleBadge}>{roleLabel}</span>}
+            </div>
 
             <div className={styles.row}>
                 <span>Gratuity</span>
-                <span className={styles.value}>${data.gratuity || "0"}</span>
+                <span className={styles.value}>{fmt(data.gratuity)}</span>
             </div>
 
             <div className={styles.row}>
                 <span>Tip</span>
-                <span className={styles.value}>${data.tip || "0"}</span>
+                <span className={styles.value}>{fmt(data.tip)}</span>
             </div>
 
             <div className={styles.row}>
                 <span>Cash</span>
-                <span className={styles.value}>${data.cash || "0"}</span>
+                <span className={styles.value}>{fmt(data.cash)}</span>
             </div>
 
-            <div className={styles.totalAmount}>
-                {/* <span className={styles.totalLabel}>Total</span> */}
-                <span className={styles.totalAmount}>${currentTotal}</span>
+            <div className={styles.totalRow}>
+                <span>Total</span>
+                <strong>{fmt(currentTotal)}</strong>
             </div>
+
+            {data.points !== undefined && data.points !== null && data.points !== "" && (
+                <div className={styles.pointsRow}>
+                    <span>{Number(data.points)} points</span>
+                </div>
+            )}
         </div>
     );
 }
@@ -58,7 +80,8 @@ export default React.memo(DayCard, (prevProps, nextProps) => {
         prevProps.data.gratuity === nextProps.data.gratuity &&
         prevProps.data.tip === nextProps.data.tip &&
         prevProps.data.cash === nextProps.data.cash &&
+        prevProps.data.role === nextProps.data.role &&
+        prevProps.data.points === nextProps.data.points &&
         prevProps.variant === nextProps.variant
     );
 });
-

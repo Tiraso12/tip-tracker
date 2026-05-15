@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styles from './TeamManagement.module.css';
 import { db } from '../../config/firebase';
-import { doc, updateDoc, deleteDoc, collection, getDocs, getDoc, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 
 const ROLES = ["captain", "server", "back", "assistant", "bartender", "runner"];
 const ROLE_LABELS = {
@@ -17,6 +17,8 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     const [loadingId, setLoadingId] = useState(null);
     const [unregisteredStaff, setUnregisteredStaff] = useState([]);
     const [linkTargetUpdates, setLinkTargetUpdates] = useState({}); // unregUid -> selected real uid
+    const [accountsWithData, setAccountsWithData] = useState({});
+    const [mergeEligibilityLoading, setMergeEligibilityLoading] = useState(true);
 
     const fetchUnregistered = async () => {
         try {
@@ -32,9 +34,79 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     }, []);
 
     // Split users into lists
-    const pendingUsers = allEmployees.filter(emp => emp.status === "pending");
-    const activeUsers = allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin");
-    const inactiveUsers = allEmployees.filter(emp => emp.status === "inactive" && emp.role !== "admin");
+    const pendingUsers = useMemo(() => allEmployees.filter(emp => emp.status === "pending"), [allEmployees]);
+    const activeUsers = useMemo(() => allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin"), [allEmployees]);
+    const inactiveUsers = useMemo(() => allEmployees.filter(emp => emp.status === "inactive" && emp.role !== "admin"), [allEmployees]);
+    const mergeTargetUsers = useMemo(
+        () => activeUsers.filter(emp => !accountsWithData[emp.uid]),
+        [activeUsers, accountsWithData]
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadMergeEligibility = async () => {
+            if (activeUsers.length === 0) {
+                setAccountsWithData({});
+                setMergeEligibilityLoading(false);
+                return;
+            }
+
+            setMergeEligibilityLoading(true);
+            try {
+                const nextAccountsWithData = {};
+
+                activeUsers.forEach(emp => {
+                    nextAccountsWithData[emp.uid] = false;
+                });
+
+                const shiftSnap = await getDocs(collection(db, "shifts"));
+                shiftSnap.docs.forEach(shiftDoc => {
+                    const shiftData = shiftDoc.data();
+
+                    activeUsers.forEach(emp => {
+                        if (nextAccountsWithData[emp.uid]) return;
+
+                        const inPayouts = !!shiftData.payouts?.[emp.uid];
+                        const inTeams = (shiftData.teams || []).some(team =>
+                            (team.members || []).some(member => member.uid === emp.uid)
+                        );
+                        const inBar = (shiftData.barTeam?.members || []).some(member => member.uid === emp.uid);
+                        const inRunners = (shiftData.runners || []).some(member => member.uid === emp.uid);
+
+                        if (inPayouts || inTeams || inBar || inRunners) {
+                            nextAccountsWithData[emp.uid] = true;
+                        }
+                    });
+                });
+
+                await Promise.all(activeUsers.map(async emp => {
+                    if (nextAccountsWithData[emp.uid]) return;
+
+                    const tipsSnap = await getDocs(collection(db, "users", emp.uid, "tips"));
+                    if (!tipsSnap.empty) {
+                        nextAccountsWithData[emp.uid] = true;
+                    }
+                }));
+
+                if (!cancelled) {
+                    setAccountsWithData(nextAccountsWithData);
+                }
+            } catch (error) {
+                console.error("Failed to check merge eligibility:", error);
+            } finally {
+                if (!cancelled) {
+                    setMergeEligibilityLoading(false);
+                }
+            }
+        };
+
+        loadMergeEligibility();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeUsers]);
 
     const handleUpdateUser = async (uid, updates) => {
         setLoadingId(uid);
@@ -49,30 +121,29 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         }
     };
 
-    const handleDeleteUser = async (uid) => {
-        if (!window.confirm("Are you sure you want to permanently delete this user?")) return;
-        setLoadingId(uid);
-        try {
-            await deleteDoc(doc(db, 'users', uid));
-            // Note: This only deletes the firestore doc, not the Firebase Auth account.
-            // A full deletion requires an admin SDK backend. For now, deleting the doc removes their access.
-            await refreshEmployees();
-        } catch (error) {
-            console.error("Failed to delete user:", error);
-            alert("Error deleting user.");
-        } finally {
-            setLoadingId(null);
-        }
+    const handleDeactivateUser = async (uid, confirmMessage) => {
+        if (!window.confirm(confirmMessage)) return;
+        await handleUpdateUser(uid, { status: 'inactive' });
     };
 
     const handleLinkAccount = async (unregUser) => {
         const targetRealUid = linkTargetUpdates[unregUser.uid];
-        if (!targetRealUid) return alert("Select a registered account to link to first.");
+        if (!targetRealUid) return alert("Select the real employee account to merge this temporary profile into.");
 
         const realUser = allEmployees.find(e => e.uid === targetRealUid);
         if (!realUser) return;
 
-        if (!window.confirm(`Merge records from '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis will transfer all past shift history and tips.`)) return;
+        if (mergeEligibilityLoading) {
+            alert("Wait until account data checks finish before merging.");
+            return;
+        }
+
+        if (accountsWithData[targetRealUid]) {
+            alert("This account already has saved shift or tip history, so it cannot be used as a merge target. Choose an empty active account instead.");
+            return;
+        }
+
+        if (!window.confirm(`Merge temporary profile '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis updates past shifts and moves saved tip history to the real account. The temporary profile will be removed after the merge.`)) return;
 
         setLoadingId(unregUser.uid);
         try {
@@ -150,7 +221,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 delete n[unregUser.uid];
                 return n;
             });
-            alert("Account successfully linked and shifts transferred!");
+            alert("Temporary profile merged into the real account.");
 
         } catch (error) {
             console.error("Failed to link account:", error);
@@ -161,7 +232,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     };
 
     const handleDeleteUnregistered = async (uid) => {
-        if (!window.confirm("Delete this Unregistered profile? Any shifts they were previously assigned to will keep their static UID string, but they will no longer appear in the system.")) return;
+        if (!window.confirm("Delete this temporary staff profile? Past shifts keep the saved name/UID, but this profile will no longer appear when assigning future shifts.")) return;
         setLoadingId(uid);
         try {
             await deleteDoc(doc(db, "unregisteredStaff", uid));
@@ -205,7 +276,10 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                         </button>
                         <button
                             className={`${styles.actionBtn} ${styles.denyBtn}`}
-                            onClick={() => handleDeleteUser(user.uid)}
+                            onClick={() => handleDeactivateUser(
+                                user.uid,
+                                "Deny this sign-up request? The account will be marked inactive, and the user will not be able to access the dashboard. Their username stays reserved so it cannot be reused by another account."
+                            )}
                             disabled={loadingId === user.uid}
                         >
                             Deny
@@ -215,19 +289,15 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     <>
                         <button
                             className={`${styles.actionBtn} ${user.status === 'active' ? styles.denyBtn : styles.approveBtn}`}
-                            onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'inactive' : 'active' })}
+                            onClick={() => user.status === 'active'
+                                ? handleDeactivateUser(
+                                    user.uid,
+                                    "Deactivate this employee? They will keep their account, username, and saved history, but they will not be able to access the dashboard until reactivated."
+                                )
+                                : handleUpdateUser(user.uid, { status: 'active' })}
                             disabled={loadingId === user.uid}
                         >
                             {user.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                        </button>
-                        <button
-                            className={`${styles.actionBtn} ${styles.denyBtn}`}
-                            onClick={() => handleDeleteUser(user.uid)}
-                            disabled={loadingId === user.uid}
-                            style={{ marginLeft: '0.5rem' }}
-                            title="Permanently remove user"
-                        >
-                            Delete
                         </button>
                     </>
                 )}
@@ -248,25 +318,31 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     style={{ maxWidth: '160px' }}
                     value={linkTargetUpdates[unregUser.uid] || ""}
                     onChange={(e) => setLinkTargetUpdates(prev => ({ ...prev, [unregUser.uid]: e.target.value }))}
+                    disabled={mergeEligibilityLoading || mergeTargetUsers.length === 0}
                 >
-                    <option value="" disabled>Link to account...</option>
-                    {allEmployees.filter(e => e.status === 'active' && e.role !== 'admin').map(emp => (
+                    <option value="" disabled>Merge into account...</option>
+                    {mergeTargetUsers.map(emp => (
                         <option key={emp.uid} value={emp.uid}>{emp.username || emp.name} ({emp.role})</option>
                     ))}
                 </select>
+                {mergeEligibilityLoading ? (
+                    <span className={styles.mergeHint}>Checking data...</span>
+                ) : mergeTargetUsers.length === 0 ? (
+                    <span className={styles.mergeHint}>No empty active accounts</span>
+                ) : null}
                 <button
                     className={`${styles.actionBtn} ${styles.approveBtn}`}
                     onClick={() => handleLinkAccount(unregUser)}
-                    disabled={loadingId === unregUser.uid || !linkTargetUpdates[unregUser.uid]}
-                    title="Merge shift history into real account"
+                    disabled={loadingId === unregUser.uid || mergeEligibilityLoading || !linkTargetUpdates[unregUser.uid]}
+                    title="Merge this temporary profile into a real account"
                 >
-                    Link 🔗
+                    Merge
                 </button>
                 <button
                     className={`${styles.actionBtn} ${styles.denyBtn}`}
                     onClick={() => handleDeleteUnregistered(unregUser.uid)}
                     disabled={loadingId === unregUser.uid}
-                    title="Delete placeholder"
+                    title="Delete temporary profile"
                 >
                     ✕
                 </button>
@@ -276,6 +352,9 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
 
     return (
         <div className={styles.container}>
+            <div className={styles.policyNote}>
+                <strong>Account safety:</strong> denied or deactivated employees keep their username and saved history reserved. Reactivate the same profile if they return.
+            </div>
 
             {/* Pending Approvals */}
             <div className={styles.sectionCard}>
@@ -310,13 +389,13 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 )}
             </div>
 
-            {/* Unregistered Accounts */}
+            {/* Temporary Staff Profiles */}
             {unregisteredStaff.length > 0 && (
                 <div className={styles.sectionCard} style={{ background: 'rgba(147, 51, 234, 0.03)', borderColor: 'rgba(147, 51, 234, 0.2)' }}>
                     <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Unregistered Staff</h3>
+                        <h3 className={styles.sectionTitle}>Temporary Staff Profiles</h3>
                         <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: 0 }}>
-                            Temporary accounts. Link them to real active accounts to merge shift history.
+                            Staff added during shift setup before they had an account. Merge one into a real active account to transfer saved history.
                         </p>
                     </div>
                     <div className={styles.userList}>
@@ -330,6 +409,9 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 <div className={styles.sectionCard} style={{ opacity: 0.8 }}>
                     <div className={styles.sectionHeader}>
                         <h3 className={styles.sectionTitle}>Inactive Employees</h3>
+                        <p className={styles.sectionDescription}>
+                            These profiles cannot access the app, but their usernames and historical payout records remain attached to the same account.
+                        </p>
                     </div>
                     <div className={styles.userList}>
                         {inactiveUsers.map(user => <UserRow key={user.uid} user={user} isPending={false} />)}

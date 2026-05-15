@@ -1,15 +1,16 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import styles from "./BiweeklySummary.module.css";
 import { getBiweeklyPeriod, formatDate } from "../../utils/dateUtils";
 import { generateWeeklyReport, generateMonthlyReport } from "../../utils/pdfExport";
 import { useAuth } from "../../context/AuthContext";
 
 function BiweeklySummary({ currentWeekData, currentWeekStart, viewMode, currentDate, allData }) {
-    const { isAdmin } = useAuth();
+    const { user } = useAuth();
+    const isAdmin = user?.role === "admin";
     const fmt = (n) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
     // Helper: sum gratuity/tip/cash from a list of date keys
-    const sumRange = (dateKeys) => {
+    const sumRange = useCallback((dateKeys) => {
         let gratuity = 0, tip = 0, cash = 0;
         dateKeys.forEach(dateKey => {
             const liveDay = currentWeekData?.find(d => d.dateKey === dateKey);
@@ -20,10 +21,10 @@ function BiweeklySummary({ currentWeekData, currentWeekStart, viewMode, currentD
             cash += Number(source.cash) || 0;
         });
         return { gratuity, tip, cash, total: gratuity + tip + cash };
-    };
+    }, [currentWeekData, allData]);
 
     // Generate date keys for a date range
-    const getDateKeys = (start, end) => {
+    const getDateKeys = useCallback((start, end) => {
         const keys = [];
         const dayCount = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
         for (let i = 0; i < dayCount; i++) {
@@ -32,11 +33,11 @@ function BiweeklySummary({ currentWeekData, currentWeekStart, viewMode, currentD
             keys.push(d.toISOString().split('T')[0]);
         }
         return keys;
-    };
+    }, []);
 
     // WEEK VIEW: weekly totals for displayed week, biweekly totals for pay period
     // MONTH VIEW: monthly totals for the displayed month
-    const { weekTotals, biweeklyTotals, weekStart, weekEnd, biStart, biEnd, displayStart, displayEnd } = useMemo(() => {
+    const { weekTotals, biweeklyTotals, biStart, biEnd, displayStart, displayEnd } = useMemo(() => {
         if (viewMode === 'month' && currentDate) {
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
@@ -86,7 +87,7 @@ function BiweeklySummary({ currentWeekData, currentWeekStart, viewMode, currentD
             displayStart: wStart,
             displayEnd: wEnd,
         };
-    }, [currentWeekData, currentWeekStart, viewMode, currentDate, allData]);
+    }, [currentWeekStart, viewMode, currentDate, getDateKeys, sumRange]);
 
     const dayCount = Math.round((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) + 1;
     const averageDaily = dayCount > 0 ? weekTotals.total / dayCount : 0;

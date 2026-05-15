@@ -14,8 +14,7 @@ function TeamDropZone({
     onDragLeave,
     onDrop,
     onDragStart,
-    onRemove,
-    onUpdateField
+    onRemove
 }) {
     return (
         <div
@@ -50,7 +49,6 @@ function TeamDropZone({
                         isRunner={isRunner}
                         onDragStart={(e) => onDragStart(e, member.uid, teamId)}
                         onRemove={() => onRemove(member.uid, teamId)}
-                        onUpdateField={(field, val) => onUpdateField(teamId, member.uid, field, val)}
                     />
                 ))
             )}
