@@ -1,6 +1,5 @@
 const PRIMARY_COLOR = [26, 61, 46]; // #1a3d2e — forest green accent (matches v0.7.0 UI theme)
 const PRIMARY_SOFT = [232, 239, 233]; // #e8efe9 — soft accent tint for section header backgrounds
-const BACKGROUND_COLOR = [30, 41, 59]; // legacy: kept for any consumers; PDFs no longer use the dark theme
 const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
 const ROLE_LABELS = {
     captain: "CAPTAINS",
@@ -115,7 +114,7 @@ const addEmployeeTotalsTable = (doc, autoTable, title, employeeTotals, startY) =
         head: [['Employee', 'Shifts', 'Tips', 'Gratuity', 'Cash', 'Total Pay', 'Avg Shift']],
         body: employeeRows,
         theme: 'grid',
-        headStyles: { fillColor: BACKGROUND_COLOR, textColor: 255 },
+        headStyles: { fillColor: PRIMARY_COLOR, textColor: 255 },
         styles: { fontSize: 9 },
         columnStyles: {
             0: { cellWidth: 120 },
