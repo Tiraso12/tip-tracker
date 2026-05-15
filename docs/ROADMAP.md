@@ -4,13 +4,12 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 
 ## Current Version
 
-- Version name: `v0.6.0-reports`
-- Branch: `foundation-stabilization`
-- Status: Complete
-- Started: 2026-05-07
-- Completed: 2026-05-14
-- Goal: Improve admin report accuracy, employee period summaries, and report/PDF consistency.
-- Current working state: All v0.6.0 items complete. `npm run lint`, `npm test`, and `npm run build` pass. App confirmed running at localhost:5173.
+- Version name: `v0.7.0-ui-polish`
+- Branch: `feature-ui-ux`
+- Status: In progress
+- Started: 2026-05-15
+- Goal: Move from hand-rolled dark CSS Modules to a refined minimalist light theme using Tailwind CSS v4. Replace ad-hoc styling with reusable UI primitives. Improve consistency and the perceived professionalism of the app.
+- Current working state: Foundation, primitives, and all 13 screens migrated. ShiftSetup drag-and-drop module still uses legacy CSS via the backwards-compat shim. `npm run lint`, `npm test`, and `npm run build` pass. App confirmed running at localhost:5173.
 
 ## Version History
 
@@ -22,6 +21,7 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 | `v0.4.0` | User Management | Complete | Safer account status handling, temporary staff merge rules, better team setup |
 | `v0.5.0` | Admin Daily Workflow | Complete | One-screen shift workspace, live closeout totals, and safer payout review |
 | `v0.6.0` | Reports | Complete | More accurate weekly/monthly/pay-period reports and exports |
+| `v0.7.0` | UI Polish | In progress | Refined minimalist light theme on Tailwind v4, reusable UI primitives |
 
 ## Guiding Principles
 
@@ -158,12 +158,40 @@ PDF fix (2026-05-14): monthly report page-break check now uses actual page heigh
 
 Permissions decision: report exports require no additional guards beyond existing admin routing. The Reports tab renders only inside AdminDashboard (admin-role gated). PDF generation is purely client-side from already-loaded data. Firestore shift reads are covered by existing security rules.
 
+### v0.7.0-ui-polish
+
+- Status: In progress
+- Branch: `feature-ui-ux`
+- Started: 2026-05-15
+- Goal: Move from hand-rolled dark CSS Modules to a refined minimalist light theme using Tailwind CSS v4. Replace ad-hoc styling with a small set of reusable UI primitives. Improve consistency, accessibility, and perceived professionalism.
+
+- [x] Add Tailwind CSS v4 + `@tailwindcss/vite`; define new design tokens via `@theme`.
+- [x] Rewrite `design-system.css` as a backwards-compat shim mapping legacy vars to the new light palette.
+- [x] Build UI primitives: Button, Card, Input, Select, Textarea, Table, Badge, PageHeader, Tabs.
+- [x] Re-skin Login and PendingApproval (auth screens).
+- [x] Re-skin Header (employee), AppLayout, WeekHeader.
+- [x] Re-skin Calendar (week), DayCard (week + month variants), MonthView.
+- [x] Re-skin EmployeePeriodSummary; delete orphaned BiweeklySummary component.
+- [x] Re-skin Charts with new palette (forest accent + sage + warm neutral, replacing violet/blue/cyan).
+- [x] Restructure AdminDashboard shell with thin left sidebar nav (Shifts / Team / Reports), sticky top app bar, PageHeader pattern for the right side.
+- [x] Re-skin DayPayoutPanel, TeamManagement, AdminReportsPanel, ShiftEditorPanel (incl. printable team sheet via Tailwind `print:` modifier).
+- [x] Update PDF export (`pdfExport.js`) primary color to forest green to match the new on-screen theme.
+- [x] Delete legacy CSS modules: AppLayout, Header, WeekHeader, Calendar, MonthView, EmployeePeriodSummary, Charts, AdminDashboard (2,004 lines), TeamManagement, Login, BiweeklySummary.
+- [ ] (Optional) Re-skin ShiftSetup drag-and-drop module (currently still on legacy CSS via shim — works in new palette but could be modernized in v0.8.0).
+- [ ] Accessibility + responsive polish pass (focus rings, keyboard tab order, mobile widths).
+
+Tooling decision: Tailwind CSS v4 with `@tailwindcss/vite`. Design tokens live in `src/styles/tailwind.css` under `@theme`; components use `var(--color-*)` references. CSS Modules are no longer used outside the legacy `ShiftSetup/` folder. No external UI library (no shadcn/ui, no Radix) — keeping the dependency surface small.
+
+Aesthetic: Refined minimalist light theme. Editorial typography (Fraunces display serif + Inter body + JetBrains Mono for money). Single restrained accent (forest green `#1a3d2e`). 1px borders preferred over shadows. Tighter radii (4/6/8px). Restrained motion (150ms hover transitions only, no page-load orchestration).
+
+Verification status: `npm run lint`, `npm test` (7/7), and `npm run build` all pass. Visual verification done in the browser on Login, employee dashboard (Header / WeekHeader / EmployeePeriodSummary / Calendar / Charts), and AdminDashboard shell. Admin child panels (DayPayoutPanel, ShiftEditorPanel, TeamManagement, AdminReportsPanel) compile-verified; full visual review pending real-data inspection.
+
 ### v1.0.0-stable-release
 
 - All foundation checks pass.
 - Core workflows are tested.
 - Security rules are reviewed.
-- Admin and employee experiences are polished enough for daily use.
+- Admin and employee experiences are polished enough for daily use. (v0.7.0 covers the visual polish criterion.)
 
 ### Later Ideas
 

@@ -1,0 +1,61 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+/* ----------------------------------------------------------------- */
+/*  v0.7.0-ui-polish — Refined Minimalist Light Theme                */
+/*  Editorial. Restrained. Trustworthy for a money / payroll tool.   */
+/* ----------------------------------------------------------------- */
+
+@theme {
+  /* Surfaces */
+  --color-bg: #fafaf9;            /* warm near-white, page background */
+  --color-surface: #ffffff;       /* cards, panels */
+  --color-surface-muted: #f5f5f4; /* subtle inset surfaces */
+
+  /* Text */
+  --color-ink: #0a0a0a;           /* primary text */
+  --color-ink-soft: #525252;      /* secondary text */
+  --color-ink-muted: #a3a3a3;     /* tertiary / placeholder text */
+
+  /* Accent — single restrained accent for primary actions */
+  --color-accent: #1a3d2e;        /* deep forest green */
+  --color-accent-hover: #15331f;
+  --color-accent-soft: #e8efe9;   /* subtle tint for backgrounds, hovers */
+
+  /* Borders */
+  --color-line: #e7e5e4;          /* hairline default */
+  --color-line-strong: #d6d3d1;   /* used on focus / hover */
+
+  /* Semantic */
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-success: #15803d;
+  --color-success-soft: #f0fdf4;
+  --color-warning: #b45309;
+  --color-warning-soft: #fffbeb;
+
+  /* Radius — tighter than the previous playful scale */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Typography */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Base resets */
+html, body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numerals everywhere money may render */
+.font-mono, code, kbd, samp, pre {
+  font-variant-numeric: tabular-nums;
+}

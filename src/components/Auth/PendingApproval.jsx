@@ -1,31 +1,50 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import styles from './Login.module.css';
+import { Button, Card } from '../ui';
 
 const PendingApproval = () => {
     const { user, logout } = useAuth();
     const isInactive = user?.status === 'inactive';
 
     return (
-        <div className={styles.container}>
-            <div className={styles.card} style={{ textAlign: 'center', padding: '3rem 2rem' }}>
-                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
-                <h2 className={styles.title} style={{ marginBottom: '1rem' }}>
-                    {isInactive ? 'Account Inactive' : 'Account Pending'}
-                </h2>
-                <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', lineHeight: '1.5' }}>
-                    {isInactive
-                        ? 'Your account is currently inactive. Contact your manager if you need access restored.'
-                        : 'Your account has been created successfully, but it needs to be approved by an administrator before you can access your dashboard.'}
-                </p>
-                <p style={{ color: 'var(--text-muted)', marginBottom: '2rem', fontSize: '0.875rem' }}>
-                    {isInactive ? 'You can log out and check back after your account is reactivated.' : 'Check back later or contact your manager.'}
-                </p>
-                <button onClick={logout} className={styles.button}>
-                    Log Out
-                </button>
+        <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-[var(--color-bg)]">
+            <div className="w-full max-w-md">
+                <div className="mb-8 text-center">
+                    <span className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
+                        TipTracker
+                    </span>
+                </div>
+
+                <Card className="!p-8 text-center">
+                    <div className="mx-auto mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                    </div>
+
+                    <h1 className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
+                        {isInactive ? 'Account Inactive' : 'Account Pending'}
+                    </h1>
+
+                    <p className="mt-3 text-sm text-[var(--color-ink-soft)] leading-relaxed">
+                        {isInactive
+                            ? 'Your account is currently inactive. Contact your manager if you need access restored.'
+                            : 'Your account has been created, but it needs to be approved by an administrator before you can access your dashboard.'}
+                    </p>
+
+                    <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
+                        {isInactive
+                            ? 'You can log out and check back after your account is reactivated.'
+                            : 'Check back later or contact your manager.'}
+                    </p>
+
+                    <Button onClick={logout} variant="secondary" className="mt-6">
+                        Log Out
+                    </Button>
+                </Card>
             </div>
-        </div>
+        </main>
     );
 };
 

@@ -3,7 +3,6 @@ import Header from "./components/Header/Header";
 import Calendar from "./components/Calendar/Calendar";
 import MonthView from "./components/Calendar/MonthView";
 import Charts from "./components/Charts/Charts";
-import layout from "./styles/AppLayout.module.css"
 
 import WeekHeader from "./components/WeekHeader/WeekHeader";
 import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
@@ -138,7 +137,11 @@ function App() {
   }, [user]);
 
   if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: 'var(--text-primary)' }}>Loading...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen text-sm text-[var(--color-ink-soft)]">
+        Loading…
+      </div>
+    );
   }
 
   if (!user) {
@@ -157,41 +160,29 @@ function App() {
   }
 
   return (
-    <main className={layout.app}>
-      <div className={layout.section}>
+    <main className="min-h-screen bg-[var(--color-bg)]">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10 space-y-8">
         <Header />
-      </div>
-      <WeekHeader
-        currentDate={baseDate}
-        startDate={currentWeekDates[0]}
-        endDate={currentWeekDates[6]}
-        onPrev={() => handleNavigation(-1)}
-        onNext={() => handleNavigation(1)}
-        viewMode={viewMode}
-        onViewChange={setViewMode}
-      />
-      <div className={layout.section}>
+        <WeekHeader
+          currentDate={baseDate}
+          startDate={currentWeekDates[0]}
+          endDate={currentWeekDates[6]}
+          onPrev={() => handleNavigation(-1)}
+          onNext={() => handleNavigation(1)}
+          viewMode={viewMode}
+          onViewChange={setViewMode}
+        />
         <EmployeePeriodSummary
           currentDate={baseDate}
           currentWeekStart={currentWeekDates[0]}
           currentWeekEnd={currentWeekDates[6]}
           allData={allData}
         />
-      </div>
-
-      <div className={layout.section}>
         {viewMode === 'week' ? (
           <Calendar weekData={weekData} />
         ) : (
-          <MonthView
-            currentDate={baseDate}
-            allData={allData}
-          />
+          <MonthView currentDate={baseDate} allData={allData} />
         )}
-
-      </div>
-
-      <div className={layout.section}>
         <Charts weekData={chartData} />
       </div>
     </main>
