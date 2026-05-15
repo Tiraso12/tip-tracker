@@ -171,12 +171,14 @@ Permissions decision: report exports require no additional guards beyond existin
 
 ### v1.1.0-security-hardening
 
-Identified during testing phase (2026-05-14). Low risk during testing but should be addressed before production rollout.
+Identified during testing phase (2026-05-14). Completed 2026-05-14.
 
-- [ ] **Firestore create rule: prevent self-elevation to admin.** `allow create` on `/users/{uid}` has no field validation — a user can call `setDoc` directly via the Firebase SDK and create their own doc with `role: "admin"`. Fix: enforce `role == "unassigned"` and `status == "pending"` on create.
-- [ ] **Tip records: restrict employee write access.** `/users/{userId}/tips/{document=**}` currently allows employees to write their own tip history, meaning they could inflate earnings via the SDK. Fix: change employee access to read-only; only admins write.
-- [ ] **Add explicit rule for `unregisteredStaff` collection.** Currently only protected by the catch-all rule — implicit. Add an explicit `allow read, write: if isAdmin()` rule so intent is clear and it's not silently affected by any future catch-all change.
-- [ ] **Fix username registration race condition.** Two simultaneous registrations for the same username both pass the client-side uniqueness check. The second write gets blocked by Firestore but leaves that user with a Firebase Auth account and no username doc. Fix: use a Firestore transaction for the username claim step.
+- [x] **Firestore create rule: prevent self-elevation to admin.** `allow create` on `/users/{uid}` now enforces `role == "unassigned"` and `status == "pending"` so a user cannot set their own role via the SDK.
+- [x] **Tip records: restrict employee write access.** `/users/{userId}/tips/{document=**}` is now read-only for employees; only admins write.
+- [x] **Add explicit rule for `unregisteredStaff` collection.** Explicit `allow read, write: if isAdmin()` rule added — no longer relying on the catch-all.
+- [x] **Fix username registration race condition.** `register()` in `AuthContext.jsx` now uses a Firestore `runTransaction` to atomically check-and-write the username doc and user doc. If the transaction loses the race, the newly-created Firebase Auth account is deleted and the error surfaces to the user.
+
+Verification: `npm run lint`, `npm test`, and `npm run build` all pass after the changes.
 
 ## Session Notes
 

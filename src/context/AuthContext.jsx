@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, setPersistence, browserSessionPersistence } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, getDoc, runTransaction } from "firebase/firestore";
 
 const AuthContext = createContext(null);
 const normalizeUsername = (username) => username.trim().toLowerCase();
@@ -105,22 +105,34 @@ export const AuthProvider = ({ children }) => {
 
         await updateProfile(firebaseUser, { displayName: cleanUsername });
 
-        // New users default to pending status
-        await setDoc(doc(db, 'users', firebaseUser.uid), {
-            uid: firebaseUser.uid,
-            username: cleanUsername,
-            email: cleanEmail,
-            role: "unassigned",
-            status: "pending",
-            createdAt: new Date().toISOString()
-        });
-
-        await setDoc(usernameRef, {
-            uid: firebaseUser.uid,
-            username: cleanUsername,
-            email: cleanEmail,
-            createdAt: new Date().toISOString()
-        });
+        // Atomically claim the username and create the user doc.
+        // If two registrations race for the same username, only one transaction
+        // succeeds; the loser deletes its Firebase Auth account and surfaces an error.
+        try {
+            await runTransaction(db, async (transaction) => {
+                const usernameSnap = await transaction.get(usernameRef);
+                if (usernameSnap.exists()) {
+                    throw new Error("Username already taken");
+                }
+                transaction.set(doc(db, 'users', firebaseUser.uid), {
+                    uid: firebaseUser.uid,
+                    username: cleanUsername,
+                    email: cleanEmail,
+                    role: "unassigned",
+                    status: "pending",
+                    createdAt: new Date().toISOString()
+                });
+                transaction.set(usernameRef, {
+                    uid: firebaseUser.uid,
+                    username: cleanUsername,
+                    email: cleanEmail,
+                    createdAt: new Date().toISOString()
+                });
+            });
+        } catch (err) {
+            await firebaseUser.delete();
+            throw err;
+        }
 
         setUser(prev => ({ ...prev, username: cleanUsername, role: "unassigned", status: "pending", emailVerified: true }));
         return firebaseUser;
