@@ -14,8 +14,24 @@ function TeamAssignmentPanel({
     onTeamClick,
     handlers
 }) {
+    const restaurantMemberCount = teams.reduce((total, team) => total + team.members.length, 0);
+
     return (
         <div className={styles.assignmentPanel}>
+            <div className={styles.assignmentSummary}>
+                <div>
+                    <span>Restaurant</span>
+                    <strong>{restaurantMemberCount}</strong>
+                </div>
+                <div>
+                    <span>Bar</span>
+                    <strong>{barTeam.members.length}</strong>
+                </div>
+                <div>
+                    <span>Runners</span>
+                    <strong>{runners.length}</strong>
+                </div>
+            </div>
 
             {/* Restaurant Teams Controls */}
             <div className={styles.teamControls}>

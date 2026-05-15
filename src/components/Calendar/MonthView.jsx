@@ -51,7 +51,9 @@ function MonthView({ currentDate, allData }) {
                         dateKey: dateKey,
                         gratuity: allData?.[dateKey]?.gratuity || "",
                         tip: allData?.[dateKey]?.tip || "",
-                        cash: allData?.[dateKey]?.cash || ""
+                        cash: allData?.[dateKey]?.cash || "",
+                        role: allData?.[dateKey]?.role || "",
+                        points: allData?.[dateKey]?.points || ""
                     };
 
                     return (

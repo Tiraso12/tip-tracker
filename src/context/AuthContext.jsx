@@ -1,9 +1,10 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, setPersistence, browserSessionPersistence } from "firebase/auth";
-import { doc, setDoc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, runTransaction } from "firebase/firestore";
 
 const AuthContext = createContext(null);
+const normalizeUsername = (username) => username.trim().toLowerCase();
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -15,7 +16,6 @@ export const AuthProvider = ({ children }) => {
         setPersistence(auth, browserSessionPersistence)
             .then(() => {
                 unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-                    console.log("Auth State Changed:", firebaseUser ? "User found" : "No user - Login needed");
                     if (firebaseUser) {
                         // Fetch role and status from Firestore
                         let role = "employee"; // default fallback
@@ -71,17 +71,17 @@ export const AuthProvider = ({ children }) => {
     };
 
     const login = async (identifier, password) => {
-        let emailToSignIn = identifier;
+        const trimmedIdentifier = identifier.trim();
+        let emailToSignIn = trimmedIdentifier;
 
-        if (!identifier.includes('@')) {
-            const usersRef = collection(db, 'users');
-            const q = query(usersRef, where('username', '==', identifier));
-            const querySnapshot = await getDocs(q);
+        if (!trimmedIdentifier.includes('@')) {
+            const usernameKey = normalizeUsername(trimmedIdentifier);
+            const usernameDoc = await getDoc(doc(db, 'usernames', usernameKey));
 
-            if (querySnapshot.empty) {
+            if (!usernameDoc.exists()) {
                 throw new Error("User not found");
             }
-            emailToSignIn = querySnapshot.docs[0].data().email;
+            emailToSignIn = usernameDoc.data().email;
         }
 
         await setPersistence(auth, browserSessionPersistence);
@@ -89,31 +89,52 @@ export const AuthProvider = ({ children }) => {
     };
 
     const register = async (email, password, username) => {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('username', '==', username));
-        const querySnapshot = await getDocs(q);
+        const cleanEmail = email.trim();
+        const cleanUsername = username.trim();
+        const usernameKey = normalizeUsername(cleanUsername);
+        const usernameRef = doc(db, 'usernames', usernameKey);
+        const usernameDoc = await getDoc(usernameRef);
 
-        if (!querySnapshot.empty) {
+        if (usernameDoc.exists()) {
             throw new Error("Username already taken");
         }
 
         await setPersistence(auth, browserSessionPersistence);
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         const firebaseUser = userCredential.user;
 
-        await updateProfile(firebaseUser, { displayName: username });
+        await updateProfile(firebaseUser, { displayName: cleanUsername });
 
-        // New users default to pending status
-        await setDoc(doc(db, 'users', firebaseUser.uid), {
-            uid: firebaseUser.uid,
-            username: username,
-            email: email,
-            role: "unassigned",
-            status: "pending",
-            createdAt: new Date().toISOString()
-        });
+        // Atomically claim the username and create the user doc.
+        // If two registrations race for the same username, only one transaction
+        // succeeds; the loser deletes its Firebase Auth account and surfaces an error.
+        try {
+            await runTransaction(db, async (transaction) => {
+                const usernameSnap = await transaction.get(usernameRef);
+                if (usernameSnap.exists()) {
+                    throw new Error("Username already taken");
+                }
+                transaction.set(doc(db, 'users', firebaseUser.uid), {
+                    uid: firebaseUser.uid,
+                    username: cleanUsername,
+                    email: cleanEmail,
+                    role: "unassigned",
+                    status: "pending",
+                    createdAt: new Date().toISOString()
+                });
+                transaction.set(usernameRef, {
+                    uid: firebaseUser.uid,
+                    username: cleanUsername,
+                    email: cleanEmail,
+                    createdAt: new Date().toISOString()
+                });
+            });
+        } catch (err) {
+            await firebaseUser.delete();
+            throw err;
+        }
 
-        setUser(prev => ({ ...prev, username: username, role: "unassigned", status: "pending", emailVerified: true }));
+        setUser(prev => ({ ...prev, username: cleanUsername, role: "unassigned", status: "pending", emailVerified: true }));
         return firebaseUser;
     };
 

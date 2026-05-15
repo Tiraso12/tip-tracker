@@ -18,21 +18,47 @@
   position: relative;
 }
 
+.emptyCard {
+  opacity: 0.72;
+}
+
 .card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--bg-tertiary);
 }
 
+.cardHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--bg-tertiary);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
+  min-height: 48px;
+}
+
 .card h1 {
   font-size: 0.875rem;
   color: var(--text-main);
   text-transform: uppercase;
-  margin: 0 0 0.5rem 0;
-  letter-spacing: 0.05em;
+  margin: 0;
+  letter-spacing: 0;
   font-weight: 600;
-  border-bottom: 1px solid var(--bg-tertiary);
-  padding-bottom: 0.5rem;
+}
+
+.roleBadge {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: normal;
+  line-height: 1.15;
 }
 
 .row {
@@ -52,9 +78,39 @@
   text-align: center;
 }
 
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--bg-tertiary);
+}
+
+.totalRow span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.totalRow strong {
+  color: var(--success);
+  font-size: 1rem;
+  text-align: right;
+}
+
+.pointsRow {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-align: right;
+  min-height: 1rem;
+}
+
 .value {
   display: inline-block;
-  width: 60px;
+  min-width: 76px;
   height: 28px;
   line-height: 28px;
   text-align: right;
@@ -88,12 +144,16 @@
     font-size: 0.75rem;
   }
 
+  .cardHeader {
+    min-height: 44px;
+  }
+
   .row {
     font-size: 0.8rem;
   }
 
   .value {
-    width: 50px;
+    min-width: 68px;
     font-size: 0.875rem;
   }
 
@@ -115,6 +175,10 @@
 
   .card h1 {
     font-size: 0.7rem;
+  }
+
+  .cardHeader {
+    min-height: unset;
     padding-bottom: 0.35rem;
     margin-bottom: 0.35rem;
   }
@@ -124,7 +188,7 @@
   }
 
   .value {
-    width: 46px;
+    min-width: 64px;
     font-size: 0.8rem;
     height: 24px;
     line-height: 24px;

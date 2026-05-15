@@ -8,7 +8,7 @@ import layout from "./styles/AppLayout.module.css"
 import WeekHeader from "./components/WeekHeader/WeekHeader";
 import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
 
-import BiweeklySummary from "./components/BiweeklySummary/BiweeklySummary";
+import EmployeePeriodSummary from "./components/EmployeePeriodSummary/EmployeePeriodSummary";
 import DataService from "./services/dataService";
 import Login from "./components/Auth/Login";
 import PendingApproval from "./components/Auth/PendingApproval";
@@ -98,7 +98,9 @@ function App() {
           dateKey: key,
           gratuity: allData?.[key]?.gratuity || "",
           tip: allData?.[key]?.tip || "",
-          cash: allData?.[key]?.cash || ""
+          cash: allData?.[key]?.cash || "",
+          role: allData?.[key]?.role || "",
+          points: allData?.[key]?.points || ""
         };
       });
       setWeekData(computedWeekData);
@@ -122,22 +124,17 @@ function App() {
 
 
 
-  // Fetch all data on user login
+  // Keep user tip history fresh after login.
   useEffect(() => {
-    const fetchAllData = async () => {
-      if (user) {
-        try {
-          const data = await DataService.getAllData();
-          setAllData(data);
-        } catch (error) {
-          console.error("Failed to fetch all data:", error);
-        }
-      } else {
-        setAllData({});
-      }
-    };
+    if (!user) {
+      setAllData({});
+      return undefined;
+    }
 
-    fetchAllData();
+    return DataService.subscribeToAllData(
+      setAllData,
+      () => setAllData({})
+    );
   }, [user]);
 
   if (loading) {
@@ -148,14 +145,15 @@ function App() {
     return <Login />;
   }
 
-  // Pending users cannot access the app until approved
-  if (user.status === "pending") {
-    return <PendingApproval />;
-  }
-
-  // Admins go directly to their own central panel — no tracker
+  // Admins go directly to their own central panel. Some legacy admin
+  // profiles may not have an explicit active status yet.
   if (isAdmin) {
     return <AdminDashboard />;
+  }
+
+  // Employees need an active profile before they can access the dashboard.
+  if (user.status !== "active") {
+    return <PendingApproval />;
   }
 
   return (
@@ -173,6 +171,15 @@ function App() {
         onViewChange={setViewMode}
       />
       <div className={layout.section}>
+        <EmployeePeriodSummary
+          currentDate={baseDate}
+          currentWeekStart={currentWeekDates[0]}
+          currentWeekEnd={currentWeekDates[6]}
+          allData={allData}
+        />
+      </div>
+
+      <div className={layout.section}>
         {viewMode === 'week' ? (
           <Calendar weekData={weekData} />
         ) : (
@@ -184,14 +191,7 @@ function App() {
 
       </div>
 
-      <div className={`${layout.section} ${layout.summaryContainer}`}>
-        <BiweeklySummary
-          currentWeekData={weekData}
-          currentWeekStart={currentWeekDates[0]}
-          viewMode={viewMode}
-          currentDate={baseDate}
-          allData={allData}
-        />
+      <div className={layout.section}>
         <Charts weekData={chartData} />
       </div>
     </main>

@@ -11,9 +11,22 @@ service cloud.firestore {
 
     // Users collection
     match /users/{uid} {
-      // Allow public read to enable username lookup before login/registration
+      allow read: if request.auth != null &&
+        (request.auth.uid == uid || isAdmin());
+      // Enforce safe defaults on self-registration — prevents SDK-level role elevation.
+      allow create: if request.auth != null &&
+        request.auth.uid == uid &&
+        request.resource.data.role == "unassigned" &&
+        request.resource.data.status == "pending";
+      allow update, delete: if isAdmin();
+    }
+
+    // Minimal public username lookup. This avoids exposing full user profiles
+    // while still allowing username-based login before authentication.
+    match /usernames/{username} {
       allow read: if true;
-      allow create: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
@@ -22,10 +35,16 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Per-user tip data (existing structure: users/{userId}/tips/{document=**})
+    // Per-user tip data — employees read-only; only admins write.
     match /users/{userId}/tips/{document=**} {
-      allow read, write: if request.auth != null &&
+      allow read: if request.auth != null &&
         (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Unregistered (temporary) staff — admin-only, explicit rule prevents silent catch-all dependence.
+    match /unregisteredStaff/{document=**} {
+      allow read, write: if isAdmin();
     }
 
     // Fallback: admins can access anything else

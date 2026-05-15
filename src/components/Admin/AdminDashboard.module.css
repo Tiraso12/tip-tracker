@@ -379,6 +379,116 @@
     transform: scale(1.1);
 }
 
+.reportControls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.reportSelect {
+    cursor: pointer;
+    padding: 0.4rem 0.8rem;
+}
+
+.reportDateControls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.reportBody {
+    padding: 1.5rem;
+}
+
+.reportHeaderRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.reportPeriodTitle {
+    color: var(--text-main);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.reportPeriodMeta {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin: 0.25rem 0 0;
+}
+
+.reportSummaryGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 2rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.reportSummaryGrid span {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.reportSummaryGrid strong {
+    color: var(--text-main);
+}
+
+.reportSummaryTotal {
+    grid-column: 1 / -1;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 0.6rem;
+    margin-top: 0.2rem;
+}
+
+.reportSummaryTotal strong {
+    color: var(--primary);
+}
+
+.reportSection {
+    margin-top: 1.5rem;
+}
+
+.reportSectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.reportSectionTitle {
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.reportSectionMeta {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.reportEmptyDayRow {
+    opacity: 0.5;
+}
+
+.reportDateCell {
+    font-weight: 600;
+}
+
 
 /* Editor Panel (was Modal) */
 .editorPanel {
@@ -405,6 +515,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    gap: 1rem;
     padding: 1.5rem 1.5rem 0;
 }
 
@@ -422,34 +533,26 @@
     display: block;
 }
 
-/* Tabs */
-.tabs {
+.editorActions {
     display: flex;
-    gap: 0;
-    padding: 1rem 1.5rem 0;
-    border-bottom: 1px solid var(--bg-tertiary);
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
 }
 
-.tab {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: var(--text-muted);
-    font-size: 0.875rem;
-    font-weight: 500;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    transition: all 0.15s;
-    margin-bottom: -1px;
-}
-
-.tab:hover {
+.printSetupBtn {
+    background: var(--bg-tertiary);
     color: var(--text-main);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.8rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
 }
 
-.tabActive {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
+.printSetupBtn:hover {
+    border-color: var(--primary);
 }
 
 .modalBody {
@@ -462,6 +565,55 @@
     padding: 2rem;
     text-align: center;
     color: var(--text-muted);
+}
+
+.shiftWorkspace {
+    display: grid;
+    gap: 1rem;
+}
+
+.workspaceSection {
+    background: var(--bg-primary);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+}
+
+.workspaceSectionHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+}
+
+.workspaceSectionTitle {
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 800;
+    margin: 0.1rem 0 0;
+}
+
+.validationPanel {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--danger);
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-md);
+    margin: 0 auto 1rem;
+    max-width: 800px;
+}
+
+.validationTitle {
+    color: var(--danger);
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+}
+
+.validationList {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--text-main);
+    font-size: 0.9rem;
 }
 
 /* Team blocks */
@@ -757,6 +909,88 @@ input[type="number"].noSpinners {
     color: var(--text-main);
 }
 
+.poolSummaryPanel {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto 1rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(14, 165, 233, 0.28);
+    border-radius: var(--radius-md);
+}
+
+.poolSummaryHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+}
+
+.poolSummaryEyebrow {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.poolSummaryTitle {
+    color: var(--success);
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-top: 0.15rem;
+}
+
+.poolSummaryMeta {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    text-align: right;
+}
+
+.poolSummaryGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
+    gap: 0.5rem;
+}
+
+.summaryMetric {
+    min-width: 0;
+    padding: 0.6rem;
+    background: var(--bg-primary);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-sm);
+}
+
+.summaryMetric span,
+.poolCardTotals span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.summaryMetric strong,
+.poolCardTotals strong {
+    display: block;
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 800;
+    margin-top: 0.2rem;
+}
+
+.poolSummaryNote {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
 /* Summary bar in payouts */
 .summaryBar {
     display: flex;
@@ -831,6 +1065,12 @@ input[type="number"].noSpinners {
     opacity: 0.85;
 }
 
+.nextBtn:disabled,
+.saveBtn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
 .saveRow {
     display: flex;
     align-items: center;
@@ -840,6 +1080,15 @@ input[type="number"].noSpinners {
 }
 
 /* ── Pool Inputs card grid ──────────────────────────── */
+.poolsLayout {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto 2rem;
+}
+
 .poolGrid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -878,6 +1127,474 @@ input[type="number"].noSpinners {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 0.4rem;
+}
+
+.poolCardTotals {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+    padding: 0.55rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+}
+
+.contractPanel {
+    border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.07));
+    margin-top: 0.2rem;
+    padding-top: 0.2rem;
+}
+
+.contractHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.45rem;
+}
+
+.contractHeaderOpen {
+    margin-bottom: 0.5rem;
+}
+
+.contractToggleButton {
+    background: none;
+    border: none;
+    color: var(--text-main);
+    font-weight: 700;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.contractChevron {
+    display: inline-block;
+    font-size: 0.72rem;
+    transition: transform 0.2s;
+}
+
+.contractChevronOpen {
+    transform: rotate(90deg);
+}
+
+.addContractButton {
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.contractList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+.contractItem {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    background: var(--bg-tertiary);
+    padding: 0.4rem;
+    border-radius: var(--radius-sm);
+}
+
+.contractIndex {
+    width: 22px;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-align: center;
+}
+
+.contractAmountCell {
+    flex: 1;
+    display: flex;
+    min-width: 0;
+}
+
+.contractCurrencyInput {
+    position: relative;
+    width: 100%;
+}
+
+.contractCurrencyPrefix {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.contractAmountInput {
+    width: 100%;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    font-size: 0.85rem;
+    padding: 0.32rem 0.35rem 0.32rem 1.2rem;
+    outline: none;
+}
+
+.contractAmountInput:focus {
+    border-color: var(--primary);
+}
+
+.removeContractButton {
+    background: transparent;
+    color: var(--danger);
+    border: none;
+    cursor: pointer;
+    padding: 0.2rem;
+    font-size: 1.15rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.contractEmpty {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-style: italic;
+    text-align: center;
+    padding: 0.5rem;
+    margin-top: 0.4rem;
+    border: 1px dashed var(--border-color, rgba(255, 255, 255, 0.14));
+    border-radius: var(--radius-sm);
+}
+
+.runnerReviewPanel {
+    width: 100%;
+    max-width: 800px;
+    margin: -1rem auto 1.25rem;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.07));
+    border-radius: var(--radius-md);
+}
+
+.pointReviewPanel {
+    width: 100%;
+    max-width: 800px;
+    margin: -1rem auto 1.25rem;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.07));
+    border-radius: var(--radius-md);
+}
+
+.pointTotals {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.pointTotals span {
+    padding: 0.15rem 0.45rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+}
+
+.pointReviewGroups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.65rem;
+}
+
+.pointGroup {
+    min-width: 0;
+    background: var(--bg-primary);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem;
+}
+
+.pointGroupTitle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.pointGroupTitle span {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.pointGroupTitle strong {
+    color: var(--text-main);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.pointRows {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.pointRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.45rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+}
+
+.pointMember {
+    display: grid;
+    gap: 0.12rem;
+    min-width: 0;
+}
+
+.pointMember strong {
+    color: var(--text-main);
+    font-size: 0.82rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pointMember span {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.pointControls {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.pointStepButton {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 800;
+}
+
+.pointStepButton:hover {
+    border-color: var(--primary);
+}
+
+.pointInput {
+    width: 58px;
+    text-align: center;
+    padding: 0.35rem 0.3rem;
+}
+
+.pointGroupEmpty {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    padding: 0.45rem;
+}
+
+.printSheet {
+    display: none;
+}
+
+.runnerReviewTotal {
+    color: var(--success);
+    font-size: 0.95rem;
+}
+
+.runnerReviewEmpty {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.runnerReviewList {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+}
+
+.runnerReviewRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.55rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+}
+
+.runnerReviewName {
+    min-width: 0;
+    color: var(--text-main);
+    font-weight: 700;
+}
+
+.runnerReviewInputWrap {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.runnerReviewInputWrap span {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.calculatedReviewPanel {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto 1.25rem;
+    padding: 1rem;
+    background: rgba(34, 197, 94, 0.07);
+    border: 1px solid rgba(34, 197, 94, 0.28);
+    border-radius: var(--radius-md);
+}
+
+.calculatedReviewHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+}
+
+.calculatedReviewTitle {
+    color: var(--success);
+    font-size: 1.65rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-top: 0.15rem;
+}
+
+.calculatedReviewBalance {
+    min-width: 110px;
+    text-align: right;
+}
+
+.calculatedReviewBalance span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.calculatedReviewBalance strong {
+    color: var(--text-main);
+    display: block;
+    font-size: 1rem;
+    margin-top: 0.2rem;
+}
+
+.calculatedReviewGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.roleTotalList {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+    gap: 0.45rem;
+    margin-bottom: 0.85rem;
+}
+
+.roleTotalList div {
+    padding: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+}
+
+.roleTotalList span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.roleTotalList strong {
+    display: block;
+    color: var(--text-main);
+    font-size: 0.85rem;
+    margin-top: 0.2rem;
+}
+
+.payoutPreviewList {
+    display: grid;
+    gap: 0.45rem;
+    max-height: 320px;
+    overflow: auto;
+}
+
+.payoutPreviewRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.55rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+}
+
+.payoutPreviewRow strong {
+    color: var(--text-main);
+}
+
+.payoutPreviewRow span {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.payoutPreviewRow>div:first-child {
+    display: grid;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.payoutPreviewAmounts {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    white-space: nowrap;
+}
+
+.payoutPreviewAmounts strong {
+    color: var(--success);
+    min-width: 70px;
+    text-align: right;
 }
 
 /* Per-team contract collapsible inside pool cards */
@@ -943,12 +1660,223 @@ details[open]>.teamContractSummary::before {
 }
 
 @media (max-width: 780px) {
+    .editorHeader,
+    .workspaceSectionHeader {
+        flex-direction: column;
+    }
+
+    .editorActions {
+        width: 100%;
+    }
+
+    .printSetupBtn {
+        width: 100%;
+    }
+
+    .poolSummaryHeader {
+        flex-direction: column;
+    }
+
+    .poolSummaryMeta {
+        text-align: left;
+    }
+
+    .poolsLayout,
     .poolGrid {
         grid-template-columns: 1fr;
     }
 
     .poolFieldGrid {
         grid-template-columns: 1fr;
+    }
+
+    .runnerReviewRow {
+        grid-template-columns: 1fr;
+    }
+
+    .pointReviewGroups,
+    .pointRow {
+        grid-template-columns: 1fr;
+    }
+
+    .pointControls {
+        justify-content: flex-start;
+    }
+
+    .calculatedReviewHeader,
+    .payoutPreviewRow {
+        grid-template-columns: 1fr;
+    }
+
+    .calculatedReviewHeader {
+        flex-direction: column;
+    }
+
+    .calculatedReviewBalance {
+        text-align: left;
+    }
+
+    .payoutPreviewAmounts {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.2rem;
+        white-space: normal;
+    }
+
+    .payoutPreviewAmounts strong {
+        text-align: left;
+    }
+}
+
+@media print {
+    :global(body *) {
+        visibility: hidden;
+    }
+
+    :global(body) {
+        background: #ffffff !important;
+    }
+
+    .printSheet,
+    .printSheet * {
+        visibility: visible;
+    }
+
+    .printSheet {
+        display: block;
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        min-height: 100vh;
+        padding: 0.35in;
+        background: #ffffff;
+        color: #111827;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .printSheetHeader {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.25in;
+        border-bottom: 2px solid #111827;
+        padding-bottom: 0.16in;
+        margin-bottom: 0.18in;
+    }
+
+    .printSheetEyebrow,
+    .printSheetDate span {
+        color: #4b5563;
+        font-size: 9pt;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .printSheet h1 {
+        color: #111827;
+        font-size: 24pt;
+        line-height: 1;
+        margin: 0.05in 0 0;
+    }
+
+    .printSheetDate {
+        text-align: right;
+    }
+
+    .printSheetDate strong {
+        display: block;
+        color: #111827;
+        font-size: 13pt;
+        margin-top: 0.04in;
+    }
+
+    .printSheetSummary {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.08in;
+        margin-bottom: 0.18in;
+    }
+
+    .printSheetSummary span {
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        padding: 0.08in;
+        color: #111827;
+        font-size: 10pt;
+        font-weight: 700;
+        text-align: center;
+    }
+
+    .printTeamGrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.14in;
+    }
+
+    .printTeamBlock {
+        break-inside: avoid;
+        border: 1.5px solid #111827;
+        border-radius: 6px;
+        min-height: 1.35in;
+        padding: 0.12in;
+    }
+
+    .printTeamTitle {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.1in;
+        border-bottom: 1px solid #d1d5db;
+        padding-bottom: 0.08in;
+        margin-bottom: 0.1in;
+    }
+
+    .printTeamTitle h2 {
+        color: #111827;
+        font-size: 15pt;
+        margin: 0;
+    }
+
+    .printTeamTitle span {
+        border: 1px solid #111827;
+        border-radius: 999px;
+        min-width: 0.28in;
+        height: 0.28in;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #111827;
+        font-size: 10pt;
+        font-weight: 800;
+    }
+
+    .printMemberList {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.06in;
+    }
+
+    .printMemberList li {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.12in;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 0.04in;
+        color: #111827;
+        font-size: 11pt;
+    }
+
+    .printMemberList strong {
+        color: #111827;
+    }
+
+    .printMemberList span,
+    .printEmpty {
+        color: #4b5563;
+        font-size: 10pt;
     }
 }
 

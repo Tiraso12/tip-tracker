@@ -1,8 +1,6 @@
 import { db } from "../config/firebase";
 import { doc, getDoc, setDoc, collection, getDocs, onSnapshot } from "firebase/firestore";
 
-const COLLECTION_NAME = "tips";
-
 const DataService = {
     currentUserId: null,
 
@@ -111,6 +109,31 @@ const DataService = {
     },
 
     /**
+     * Subscribe to all tip documents for the current user.
+     * @param {(data: Object) => void} onUpdate
+     * @param {(error: Error) => void} onError
+     * @returns {Function}
+     */
+    subscribeToAllData: (onUpdate, onError) => {
+        if (!DataService.currentUserId) return () => { };
+
+        return onSnapshot(
+            DataService.getCollection(),
+            (querySnapshot) => {
+                const result = {};
+                querySnapshot.forEach((doc) => {
+                    result[doc.id] = doc.data();
+                });
+                onUpdate(result);
+            },
+            (error) => {
+                console.error("Error subscribing to tip documents:", error);
+                if (onError) onError(error);
+            }
+        );
+    },
+
+    /**
      * Save data for a specific date
      * @param {string} dateKey 
      * @param {Object} data 
@@ -120,7 +143,6 @@ const DataService = {
         try {
             if (!DataService.currentUserId) throw new Error("No user logged in");
             await setDoc(doc(db, "users", DataService.currentUserId, "tips", dateKey), data);
-            console.log(`Saved data for ${dateKey}:`, data);
         } catch (error) {
             console.error("Error saving document: ", error);
             throw error;

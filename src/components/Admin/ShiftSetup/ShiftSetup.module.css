@@ -1,10 +1,16 @@
 .container {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: minmax(340px, 0.9fr) minmax(440px, 1.3fr);
+    grid-template-areas: "pool assignment";
     gap: 1rem;
-    height: 58vh;
+    height: min(68vh, 720px);
     min-height: 420px;
     align-items: stretch;
+}
+
+.poolWrapper {
+    grid-area: pool;
+    min-height: 0;
 }
 
 .poolPanel {
@@ -15,9 +21,11 @@
     flex-direction: column;
     gap: 0.6rem;
     overflow-y: auto;
+    max-height: 100%;
 }
 
 .assignmentPanel {
+    grid-area: assignment;
     background: var(--bg-secondary);
     border-radius: var(--radius-lg);
     padding: 0.75rem;
@@ -25,6 +33,7 @@
     flex-direction: column;
     gap: 0.6rem;
     overflow-y: auto;
+    max-height: 100%;
 }
 
 .panelTitle {
@@ -57,6 +66,7 @@
     flex-direction: column;
     gap: 0.3rem;
     overflow-y: auto;
+    min-height: 0;
 }
 
 .poolItem {
@@ -96,7 +106,39 @@
     color: var(--text-muted);
     font-size: 0.78rem;
     text-align: center;
-    margin-top: 0.5rem;
+    padding: 0.75rem;
+    border: 1px dashed rgba(255, 255, 255, 0.14);
+    border-radius: var(--radius-md);
+}
+
+.roleFilters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding-bottom: 0.1rem;
+}
+
+.roleFilterBtn {
+    flex: 0 0 auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    border-radius: var(--radius-sm);
+    padding: 0.28rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.roleFilterBtn:hover {
+    border-color: var(--primary);
+    color: var(--text-main);
+}
+
+.roleFilterActive {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
 }
 
 /* Common drop zone styling */
@@ -175,41 +217,18 @@
     flex-grow: 1;
     font-weight: 600;
     font-size: 0.8rem;
+    min-width: 0;
 }
 
-/* Points control */
-.pointsControl {
-    display: flex;
-    align-items: center;
-    background: var(--bg-primary);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.ptsBtn {
-    background: transparent;
-    border: none;
-    color: var(--text-main);
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    font-size: 0.95rem;
-    transition: background 0.15s;
-}
-
-.ptsBtn:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.ptsValue {
+.assignmentMeta {
+    color: var(--text-muted);
+    font-size: 0.7rem;
     font-weight: 700;
-    color: var(--primary);
-    min-width: 26px;
-    text-align: center;
-    font-size: 0.8rem;
+    white-space: nowrap;
+    background: var(--bg-primary);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+    padding: 0.16rem 0.4rem;
 }
 
 /* Runner Inputs */
@@ -279,6 +298,34 @@
     border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
 }
 
+.assignmentSummary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.assignmentSummary div {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.06));
+    border-radius: var(--radius-md);
+    padding: 0.55rem 0.65rem;
+}
+
+.assignmentSummary span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.assignmentSummary strong {
+    display: block;
+    color: var(--text-main);
+    font-size: 1rem;
+    margin-top: 0.15rem;
+}
+
 .tcLabel {
     font-size: 0.7rem;
     font-weight: 700;
@@ -335,10 +382,29 @@
 @media (max-width: 900px) {
     .container {
         grid-template-columns: 1fr;
+        grid-template-areas:
+            "assignment"
+            "pool";
         height: auto;
     }
 
+    .poolPanel,
+    .assignmentPanel {
+        max-height: none;
+    }
+
+    .roleFilters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+
     .teamGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .assignmentSummary {
         grid-template-columns: 1fr;
     }
 }
