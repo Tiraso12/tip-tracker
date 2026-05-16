@@ -28,7 +28,7 @@ export default function Tabs({
             className={
               "relative -mb-px py-3 text-sm font-medium tracking-tight " +
               "transition-colors duration-150 focus:outline-none " +
-              "focus-visible:text-[var(--color-accent)] " +
+              "focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40 focus-visible:ring-offset-1 rounded-sm " +
               (active
                 ? "text-[var(--color-ink)] " +
                   "after:absolute after:left-0 after:right-0 after:-bottom-px " +

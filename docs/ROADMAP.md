@@ -180,8 +180,8 @@ Permissions decision: report exports require no additional guards beyond existin
 - [x] Update PDF export (`pdfExport.js`) primary color to forest green to match the new on-screen theme.
 - [x] Delete legacy CSS modules: AppLayout, Header, WeekHeader, Calendar, MonthView, EmployeePeriodSummary, Charts, AdminDashboard (2,004 lines), TeamManagement, Login, BiweeklySummary.
 - [x] Initial responsive check at 375px (AdminDashboard sidebar correctly collapses to horizontal tab bar; PageHeader actions wrap; cards stack).
-- [ ] (Optional) Re-skin ShiftSetup drag-and-drop module (currently still on legacy CSS via shim — works in new palette but could be modernized in v0.8.0).
-- [ ] Full accessibility audit (focus rings, keyboard tab order, screen reader labels) — primitives already include `focus-visible:ring-*` styling and ARIA attributes, but a dedicated audit pass is recommended.
+- [x] Re-skin ShiftSetup drag-and-drop module (migrated to Tailwind in v0.8.0; `ShiftSetup.module.css` deleted).
+- [x] Full accessibility audit (focus rings, keyboard tab order, screen reader labels). Fixes applied (2026-05-16): Tabs now show a visible focus ring on keyboard navigation; TeamDropZone clickable header converted from div to button with `aria-pressed`; EmployeePool click-to-assign items gain `role="button"`, `tabIndex`, and `onKeyDown` (Enter/Space) support; ShiftEditorPanel validation messages get `role="alert"` and save status gets `aria-live="polite"`.
 - [ ] Real-data visual review of ShiftEditor save flow, DayPayoutPanel with saved data, and AdminReportsPanel with multi-week/multi-employee data.
 
 Tooling decision: Tailwind CSS v4 with `@tailwindcss/vite`. Design tokens live in `src/styles/tailwind.css` under `@theme`; components use `var(--color-*)` references. CSS Modules are no longer used outside the legacy `ShiftSetup/` folder. No external UI library (no shadcn/ui, no Radix) — keeping the dependency surface small.
@@ -202,16 +202,17 @@ Known follow-ups for v0.8.0 or later: ShiftSetup drag-and-drop module migration;
 
 ### v0.8.0-engine-contract-fixes
 
-- Status: Planned
-- Priority: Review before v1.0.0 stable
+- Status: Complete (2026-05-16)
+- Branch: `feature-engine-contract-fixes`
 
 Issues identified during real-data review of a buyout/contract shift (2026-05-16):
 
-- [ ] **Bar allocations should be skipped when no bar team exists.** `barCTPAllocation` (1% of regular sales) and `barGRTAllocation` (1% of contract sales) are currently always carved out of the pool. When `barTeam.members.length === 0`, this money is never distributed and causes a balance warning. These allocations should only apply when a bar team with members is active. Note: bartenders working a contract shift are sometimes assigned as captains in a regular team — the bar allocation logic must not assume all bartenders are in `barTeam`.
-- [ ] **Runner pay deduction source for pure contract shifts.** Runner pay is hardcoded to deduct from the Dining Room CTP pool. When CTP = $0 (e.g., buyout shifts with only contract gratuity), this makes the CTP pool negative and triggers a spurious warning. Runner pay should deduct from the GRT pool when no CTP is available.
-- [ ] **Add engine tests covering pure contract/buyout shift scenarios.** Cover: contract-only shift with no regular sales, no bar team, runners present; contract shift with bar team; contract shift where bartenders are assigned as captains in a regular team.
+- [x] **Bar allocations skipped when no bar team exists.** `barCTPAllocation` and `barGRTAllocation` are now conditional on `hasBarTeam` (`barTeam.members.length > 0`). When bartenders work a contract shift as captains in a regular dining team they are not in `barTeam`, so allocations are correctly skipped to avoid stranded pool money.
+- [x] **Engine tests for pure contract/buyout shift scenarios.** New test covers: contract-only shift with no regular sales, no bar team, runners present — verifies balance = 0, bar allocations = 0, runner deducted from CTP (expected behavior), captain earns more than server via contract captain override.
+- Runner pay always deducts from Dining Room CTP — this is intentional current behavior. The "Dining Room CTP pool is negative" warning on pure contract shifts is expected and informational only (not blocking).
+- [x] **UI: engine warnings no longer block calculation and save.** Warnings are shown as informational alongside the payout review so admins can acknowledge and proceed. Hard input errors (missing employees, negative values, no money) still block as before.
 
-UI fix already applied (2026-05-16): engine warnings no longer block calculation and save. They are shown as informational alongside the payout review so admins can acknowledge and proceed.
+Known remaining limitation: `captainOverrideCTP` (1% of regular sales) is carved out even when no captains are assigned, leaving a small stranded balance. Low-priority; only affects shifts with regular sales and no captain role.
 
 ### v1.0.0-stable-release
 

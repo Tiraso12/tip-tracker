@@ -296,17 +296,61 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
     );
 }
 
+function RunnerGroup({ runners, totalPay, onPayoutChange }) {
+    return (
+        <div className="border border-[var(--color-line)] rounded-[var(--radius-sm)] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-muted)]/40 border-b border-[var(--color-line)]">
+                <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
+                    Runners
+                </span>
+                <strong className="text-xs font-mono tabular-nums text-[var(--color-ink)]">
+                    {fmtMoney(totalPay)}
+                </strong>
+            </div>
+
+            {runners.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-[var(--color-ink-muted)] italic">
+                    No runners assigned to this shift.
+                </div>
+            ) : (
+                <div className="divide-y divide-[var(--color-line)]">
+                    {runners.map((runner) => (
+                        <div key={runner.uid} className="flex items-center justify-between gap-3 px-4 py-2">
+                            <strong className="text-sm text-[var(--color-ink)] truncate">{runner.name}</strong>
+                            <label className="flex items-center gap-2 shrink-0">
+                                <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Payout</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className={NUMERIC_INPUT + " !w-20 !h-7"}
+                                    value={runner.payoutAmount ?? ""}
+                                    onChange={(e) => onPayoutChange(runner.uid, e.target.value)}
+                                    placeholder="102"
+                                    aria-label={`${runner.name} runner payout`}
+                                />
+                            </label>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function PointAdjustmentsPanel({
     teams,
     barTeam,
+    runners,
     totals,
     onTeamPointChange,
     onTeamPointAdjust,
     onBarPointChange,
     onBarPointAdjust,
+    onRunnerPayoutChange,
 }) {
     const restaurantMembersCount = teams.reduce((sum, team) => sum + team.members.length, 0);
-    const hasPointAdjustments = restaurantMembersCount > 0 || barTeam.members.length > 0;
+    const hasAdjustments = restaurantMembersCount > 0 || barTeam.members.length > 0 || runners.length > 0;
 
     return (
         <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)]">
@@ -318,9 +362,9 @@ function PointAdjustmentsPanel({
                 </div>
             </div>
 
-            {!hasPointAdjustments ? (
+            {!hasAdjustments ? (
                 <div className="px-4 py-6 text-xs text-[var(--color-ink-muted)] italic">
-                    Assign restaurant or bar employees before adjusting points.
+                    Assign restaurant, bar, or runner employees before adjusting.
                 </div>
             ) : (
                 <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -342,6 +386,12 @@ function PointAdjustmentsPanel({
                         defaultPoints={1}
                         onPointChange={onBarPointChange}
                         onPointAdjust={onBarPointAdjust}
+                    />
+
+                    <RunnerGroup
+                        runners={runners}
+                        totalPay={totals.runnerPay}
+                        onPayoutChange={onRunnerPayoutChange}
                     />
                 </div>
             )}
@@ -808,7 +858,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             </div>
 
                             {validationMessages.length > 0 ? (
-                                <div className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
+                                <div role="alert" className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
                                     <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
                                         Review before saving
                                     </div>
@@ -973,60 +1023,21 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             <PointAdjustmentsPanel
                                 teams={teams}
                                 barTeam={barTeam}
-                                totals={{ restaurant: poolSummary.restaurantPoints, bar: poolSummary.barPoints }}
+                                runners={runners}
+                                totals={{ restaurant: poolSummary.restaurantPoints, bar: poolSummary.barPoints, runnerPay: poolSummary.totalRunnerPay }}
                                 onTeamPointChange={updateTeamMemberPoints}
                                 onTeamPointAdjust={adjustTeamMemberPoints}
                                 onBarPointChange={updateBarMemberPoints}
                                 onBarPointAdjust={adjustBarMemberPoints}
+                                onRunnerPayoutChange={updateRunnerPayout}
                             />
-
-                            {/* Runner review */}
-                            <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)]">
-                                <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
-                                    <span className="text-sm font-medium text-[var(--color-ink)]">
-                                        Runner Payout Review ({runners.length})
-                                    </span>
-                                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
-                                        {fmtMoney(poolSummary.totalRunnerPay)}
-                                    </strong>
-                                </div>
-
-                                {runners.length === 0 ? (
-                                    <div className="px-4 py-6 text-xs text-[var(--color-ink-muted)] italic">
-                                        No runners assigned to this shift.
-                                    </div>
-                                ) : (
-                                    <div className="divide-y divide-[var(--color-line)]">
-                                        {runners.map((runner) => (
-                                            <div key={runner.uid} className="flex items-center justify-between gap-3 px-4 py-3">
-                                                <span className="text-sm text-[var(--color-ink)] truncate">{runner.name}</span>
-                                                <label className="flex items-center gap-2">
-                                                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">
-                                                        Payout
-                                                    </span>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        step="0.01"
-                                                        className={NUMERIC_INPUT + " !w-28"}
-                                                        value={runner.payoutAmount ?? ""}
-                                                        onChange={(e) => updateRunnerPayout(runner.uid, e.target.value)}
-                                                        placeholder="102.00"
-                                                        aria-label={`${runner.name} runner payout`}
-                                                    />
-                                                </label>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
 
                             {calculatedReview ? <CalculatedPayoutReview review={calculatedReview} /> : null}
 
                             {/* Save row */}
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-2">
                                 {saveStatus ? (
-                                    <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
+                                    <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
                                 ) : null}
                                 {calculatedReview ? (
                                     <Button
