@@ -31,9 +31,11 @@ function TeamDropZone({
             onDragLeave={onDragLeave}
             onDrop={(e) => onDrop(e, teamId)}
         >
-            <div
-                className="flex justify-between items-center mb-1 cursor-pointer rounded-[4px] px-1 py-0.5 -mx-1 -my-0.5 transition-colors duration-150 hover:bg-[var(--color-surface-muted)]"
+            <button
+                type="button"
+                className="w-full flex justify-between items-center mb-1 cursor-pointer rounded-[4px] px-1 py-0.5 -mx-1 -my-0.5 transition-colors duration-150 hover:bg-[var(--color-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
                 onClick={() => onTeamClick(teamId)}
+                aria-pressed={isSelected}
                 title={isSelected ? 'Click to deselect' : 'Click to select this team, then click employees to assign'}
             >
                 <h4 className="text-[0.72rem] font-bold text-[var(--color-ink-muted)] m-0 uppercase tracking-[0.05em]">
@@ -43,7 +45,7 @@ function TeamDropZone({
                 <span className="text-[0.67rem] text-[var(--color-ink-muted)] opacity-70">
                     {members.length} {members.length === 1 ? 'member' : 'members'}
                 </span>
-            </div>
+            </button>
 
             {members.length === 0 ? (
                 <div className="text-[var(--color-ink-muted)] text-[0.75rem] text-center py-2 pointer-events-none opacity-60">

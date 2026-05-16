@@ -96,8 +96,11 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
                         key={emp.uid}
                         className={poolItemClass}
                         draggable
+                        role={clickable ? "button" : undefined}
+                        tabIndex={clickable ? 0 : undefined}
                         onDragStart={(e) => onDragStart(e, emp.uid, 'pool')}
                         onClick={() => clickable && onEmployeeClick(emp)}
+                        onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEmployeeClick(emp); } } : undefined}
                         title={clickable ? `Assign ${emp.username || emp.name} to selected team` : 'Drag to assign'}
                     >
                         <span className="font-semibold text-[0.8rem]">{emp.name || emp.username}</span>

@@ -181,7 +181,7 @@ Permissions decision: report exports require no additional guards beyond existin
 - [x] Delete legacy CSS modules: AppLayout, Header, WeekHeader, Calendar, MonthView, EmployeePeriodSummary, Charts, AdminDashboard (2,004 lines), TeamManagement, Login, BiweeklySummary.
 - [x] Initial responsive check at 375px (AdminDashboard sidebar correctly collapses to horizontal tab bar; PageHeader actions wrap; cards stack).
 - [x] Re-skin ShiftSetup drag-and-drop module (migrated to Tailwind in v0.8.0; `ShiftSetup.module.css` deleted).
-- [ ] Full accessibility audit (focus rings, keyboard tab order, screen reader labels) — primitives already include `focus-visible:ring-*` styling and ARIA attributes, but a dedicated audit pass is recommended.
+- [x] Full accessibility audit (focus rings, keyboard tab order, screen reader labels). Fixes applied (2026-05-16): Tabs now show a visible focus ring on keyboard navigation; TeamDropZone clickable header converted from div to button with `aria-pressed`; EmployeePool click-to-assign items gain `role="button"`, `tabIndex`, and `onKeyDown` (Enter/Space) support; ShiftEditorPanel validation messages get `role="alert"` and save status gets `aria-live="polite"`.
 - [ ] Real-data visual review of ShiftEditor save flow, DayPayoutPanel with saved data, and AdminReportsPanel with multi-week/multi-employee data.
 
 Tooling decision: Tailwind CSS v4 with `@tailwindcss/vite`. Design tokens live in `src/styles/tailwind.css` under `@theme`; components use `var(--color-*)` references. CSS Modules are no longer used outside the legacy `ShiftSetup/` folder. No external UI library (no shadcn/ui, no Radix) — keeping the dependency surface small.
