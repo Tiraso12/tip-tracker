@@ -115,7 +115,9 @@ test("balances contract gratuity, bar pools, runner payout, and bar transfer", (
     );
 });
 
-test("warns when bar allocation exists but no bar points are assigned", () => {
+test("skips bar allocations when no bar team exists, leaving only captain override stranded", () => {
+    // With no bar team, barCTPAllocation and barGRTAllocation must be 0 so no money
+    // is carved out for a bar that isn't working the shift.
     const result = calculateShift({
         teams: [
             {
@@ -129,10 +131,54 @@ test("warns when bar allocation exists but no bar points are assigned", () => {
         runners: [],
     });
 
-    assert.match(result.validations.join("\n"), /Positive bar pools exist but there are no bar points assigned/);
-    assert.equal(result.balances.poolBalances["Bar CTP"], 100);
+    assert.equal(result.allocations.barCTPAllocation, 0);
+    assert.equal(result.allocations.barGRTAllocation, 0);
+    assert.equal(result.balances.poolBalances["Bar CTP"], 0);
+    // captainOverrideCTP is still carved out (100) but no captain to receive it — known limitation
     assert.equal(result.balances.poolBalances["Cap Ov CTP"], 100);
-    assert.equal(result.balances.overallBalance, 200);
+    assert.equal(result.balances.overallBalance, 100);
+});
+
+test("pure contract/buyout shift: no regular sales, no bar team, runners paid from GRT", () => {
+    // Buyout scenario: only contract gratuity entered, no bar team, runners still present.
+    // contractSales = 2600 / 0.26 = 10000
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [
+                    { uid: "captain-1", name: "Captain", role: "captain" },
+                    { uid: "server-1", name: "Server One", role: "server" },
+                    { uid: "server-2", name: "Server Two", role: "server" },
+                ],
+                pools: { sales: 0, tips: 0, cash: 0, gratuity: 0 },
+                contracts: [{ gratuity: 2600 }],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [{ uid: "runner-1", name: "Runner One", role: "runner", payoutAmount: 102 }],
+    });
+
+    // Expected warnings for a pure buyout: contract sales exceed regular sales (0),
+    // and CTP pool is negative because runner pay always deducts from CTP.
+    assert.match(result.validations.join("\n"), /Contract sales exceed total team sales/);
+    assert.match(result.validations.join("\n"), /Dining Room CTP pool is negative/);
+    assert.equal(result.balances.overallBalance, 0);
+    assert.equal(result.balances.totalAvailable, 2600);
+    assert.equal(result.balances.totalDistributed, 2600);
+
+    // Bar allocations must be 0 (no bar team)
+    assert.equal(result.allocations.barCTPAllocation, 0);
+    assert.equal(result.allocations.barGRTAllocation, 0);
+
+    // Runner always deducts from CTP
+    assert.equal(result.allocations.totalRunnerPay, 102);
+    assert.equal(result.runnerDeductionsByPool["Dining Room CTP"], 102);
+
+    // Captain earns more than server due to captain override GRT
+    const captain = result.payouts.roleGrouped.captains[0];
+    const server = result.payouts.roleGrouped.servers[0];
+    assert.ok(captain.total > server.total);
 });
 
 test("reconciles rounding to keep distributed totals balanced", () => {

@@ -4,13 +4,13 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 
 ## Current Version
 
-- Version name: `v0.6.0-reports`
-- Branch: `foundation-stabilization`
-- Status: Complete
-- Started: 2026-05-07
-- Completed: 2026-05-14
-- Goal: Improve admin report accuracy, employee period summaries, and report/PDF consistency.
-- Current working state: All v0.6.0 items complete. `npm run lint`, `npm test`, and `npm run build` pass. App confirmed running at localhost:5173.
+- Version name: `v0.7.0-ui-polish`
+- Branch: `feature-ui-ux` (pushed to `origin/feature-ui-ux`, commit `296fce2`)
+- Status: Pushed for review (PR not yet opened)
+- Started: 2026-05-15
+- Completed: 2026-05-15
+- Goal: Move from hand-rolled dark CSS Modules to a refined minimalist light theme using Tailwind CSS v4. Replace ad-hoc styling with reusable UI primitives. Improve consistency and the perceived professionalism of the app.
+- Current working state: All 13 screens migrated to Tailwind. 11 legacy CSS modules deleted (~3,100 lines of CSS removed); only `ShiftSetup/ShiftSetup.module.css` remains, themed via the backwards-compat shim. `npm run lint`, `npm test` (7/7), and `npm run build` pass. Visually verified on Login, employee dashboard (full scroll), AdminDashboard shell at desktop 1280×900 and mobile 375×812. Admin child panels (DayPayoutPanel, ShiftEditor, TeamManagement, AdminReportsPanel) compile-verified; full visual review with real data still pending. PR to `develop` will be opened by the user.
 
 ## Version History
 
@@ -22,6 +22,7 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 | `v0.4.0` | User Management | Complete | Safer account status handling, temporary staff merge rules, better team setup |
 | `v0.5.0` | Admin Daily Workflow | Complete | One-screen shift workspace, live closeout totals, and safer payout review |
 | `v0.6.0` | Reports | Complete | More accurate weekly/monthly/pay-period reports and exports |
+| `v0.7.0` | UI Polish | Pushed for review | Refined minimalist light theme on Tailwind v4, reusable UI primitives |
 
 ## Guiding Principles
 
@@ -158,12 +159,67 @@ PDF fix (2026-05-14): monthly report page-break check now uses actual page heigh
 
 Permissions decision: report exports require no additional guards beyond existing admin routing. The Reports tab renders only inside AdminDashboard (admin-role gated). PDF generation is purely client-side from already-loaded data. Firestore shift reads are covered by existing security rules.
 
+### v0.7.0-ui-polish
+
+- Status: Pushed for review (commit `296fce2` on `origin/feature-ui-ux`)
+- Branch: `feature-ui-ux`
+- Started: 2026-05-15
+- Completed: 2026-05-15
+- Goal: Move from hand-rolled dark CSS Modules to a refined minimalist light theme using Tailwind CSS v4. Replace ad-hoc styling with a small set of reusable UI primitives. Improve consistency, accessibility, and perceived professionalism.
+
+- [x] Add Tailwind CSS v4 + `@tailwindcss/vite`; define new design tokens via `@theme`.
+- [x] Rewrite `design-system.css` as a backwards-compat shim mapping legacy vars to the new light palette.
+- [x] Build UI primitives: Button, Card, Input, Select, Textarea, Table, Badge, PageHeader, Tabs.
+- [x] Re-skin Login and PendingApproval (auth screens).
+- [x] Re-skin Header (employee), AppLayout, WeekHeader.
+- [x] Re-skin Calendar (week), DayCard (week + month variants), MonthView.
+- [x] Re-skin EmployeePeriodSummary; delete orphaned BiweeklySummary component.
+- [x] Re-skin Charts with new palette (forest accent + sage + warm neutral, replacing violet/blue/cyan).
+- [x] Restructure AdminDashboard shell with thin left sidebar nav (Shifts / Team / Reports), sticky top app bar, PageHeader pattern for the right side.
+- [x] Re-skin DayPayoutPanel, TeamManagement, AdminReportsPanel, ShiftEditorPanel (incl. printable team sheet via Tailwind `print:` modifier).
+- [x] Update PDF export (`pdfExport.js`) primary color to forest green to match the new on-screen theme.
+- [x] Delete legacy CSS modules: AppLayout, Header, WeekHeader, Calendar, MonthView, EmployeePeriodSummary, Charts, AdminDashboard (2,004 lines), TeamManagement, Login, BiweeklySummary.
+- [x] Initial responsive check at 375px (AdminDashboard sidebar correctly collapses to horizontal tab bar; PageHeader actions wrap; cards stack).
+- [x] Re-skin ShiftSetup drag-and-drop module (migrated to Tailwind in v0.8.0; `ShiftSetup.module.css` deleted).
+- [x] Full accessibility audit (focus rings, keyboard tab order, screen reader labels). Fixes applied (2026-05-16): Tabs now show a visible focus ring on keyboard navigation; TeamDropZone clickable header converted from div to button with `aria-pressed`; EmployeePool click-to-assign items gain `role="button"`, `tabIndex`, and `onKeyDown` (Enter/Space) support; ShiftEditorPanel validation messages get `role="alert"` and save status gets `aria-live="polite"`.
+- [ ] Real-data visual review of ShiftEditor save flow, DayPayoutPanel with saved data, and AdminReportsPanel with multi-week/multi-employee data.
+
+Tooling decision: Tailwind CSS v4 with `@tailwindcss/vite`. Design tokens live in `src/styles/tailwind.css` under `@theme`; components use `var(--color-*)` references. CSS Modules are no longer used outside the legacy `ShiftSetup/` folder. No external UI library (no shadcn/ui, no Radix) — keeping the dependency surface small.
+
+Aesthetic: Refined minimalist light theme. Editorial typography (Fraunces display serif + Inter body + JetBrains Mono for money). Single restrained accent (forest green `#1a3d2e`). 1px borders preferred over shadows. Tighter radii (4/6/8px). Restrained motion (150ms hover transitions only, no page-load orchestration).
+
+Layout decision (admin): the old left "Control Panel" rail wasted vertical space (3 tabs + date picker + Edit Shift button stacked in a tall column). Replaced with a thin persistent sidebar on `lg+` (Shifts / Team / Reports as nav items with icons) and a PageHeader pattern in the main column where the date picker + Edit Shift now live as toolbar actions. On `<lg` widths the sidebar collapses to a top tab bar. Sticky top app bar holds brand + Admin badge + username + Log Out across all admin views.
+
+Diff size: 45 files changed, +3,487 / −4,677 (net −1,190 lines). The 11 deleted CSS modules account for most of the reduction.
+
+Verification status: `npm run lint`, `npm test` (7/7), and `npm run build` all pass. Visual verification in the browser:
+- Login (logged out) — new editorial card, Fraunces title, password show/hide.
+- Employee dashboard — Header, WeekHeader, EmployeePeriodSummary, Calendar (week view), Charts empty-state confirmed at desktop width.
+- AdminDashboard shell — sidebar layout at 1440×900, sidebar-collapsed mobile layout at 375×812.
+- Admin child panels (DayPayoutPanel, ShiftEditor, TeamManagement, AdminReportsPanel) compile-verified and inspected in their empty states; full real-data review pending.
+
+Known follow-ups for v0.8.0 or later: ShiftSetup drag-and-drop module migration; optional dark theme toggle; keyboard accessibility audit.
+
+### v0.8.0-engine-contract-fixes
+
+- Status: Complete (2026-05-16)
+- Branch: `feature-engine-contract-fixes`
+
+Issues identified during real-data review of a buyout/contract shift (2026-05-16):
+
+- [x] **Bar allocations skipped when no bar team exists.** `barCTPAllocation` and `barGRTAllocation` are now conditional on `hasBarTeam` (`barTeam.members.length > 0`). When bartenders work a contract shift as captains in a regular dining team they are not in `barTeam`, so allocations are correctly skipped to avoid stranded pool money.
+- [x] **Engine tests for pure contract/buyout shift scenarios.** New test covers: contract-only shift with no regular sales, no bar team, runners present — verifies balance = 0, bar allocations = 0, runner deducted from CTP (expected behavior), captain earns more than server via contract captain override.
+- Runner pay always deducts from Dining Room CTP — this is intentional current behavior. The "Dining Room CTP pool is negative" warning on pure contract shifts is expected and informational only (not blocking).
+- [x] **UI: engine warnings no longer block calculation and save.** Warnings are shown as informational alongside the payout review so admins can acknowledge and proceed. Hard input errors (missing employees, negative values, no money) still block as before.
+
+Known remaining limitation: `captainOverrideCTP` (1% of regular sales) is carved out even when no captains are assigned, leaving a small stranded balance. Low-priority; only affects shifts with regular sales and no captain role.
+
 ### v1.0.0-stable-release
 
 - All foundation checks pass.
 - Core workflows are tested.
 - Security rules are reviewed.
-- Admin and employee experiences are polished enough for daily use.
+- Admin and employee experiences are polished enough for daily use. (v0.7.0 covers the visual polish criterion.)
 
 ### Later Ideas
 
@@ -181,6 +237,21 @@ Identified during testing phase (2026-05-14). Completed 2026-05-14.
 Verification: `npm run lint`, `npm test`, and `npm run build` all pass after the changes.
 
 ## Session Notes
+
+### 2026-05-15 v0.7.0-ui-polish
+
+- Created and switched to `feature-ui-ux` branch off `develop` for the UI/UX overhaul.
+- Aesthetic direction agreed: refined minimalist light theme (editorial, money-trustworthy). Tooling: Tailwind CSS v4 with `@tailwindcss/vite`. No shadcn/ui or Radix — keep deps small.
+- Phase 0: installed Tailwind v4.3.0 + `@tailwindcss/vite`, wired into `vite.config.js`, created `src/styles/tailwind.css` with `@theme` block (Fraunces serif + Inter body + JetBrains Mono for money; warm near-white surfaces; deep forest green `#1a3d2e` accent; tighter 4/6/8/12px radii). Rewrote `design-system.css` as a backwards-compat shim mapping legacy `--bg-primary` / `--primary` / `--text-main` etc. to the new light tokens, so unmigrated screens automatically render in the new palette without touching their files.
+- Phase 1: built 9 reusable UI primitives at `src/components/ui/` (Button, Card, Input, Select, Textarea, Table, Badge, PageHeader, Tabs). All Tailwind-only, accept `className` for overrides, no per-primitive CSS modules.
+- Phase 2 (screen migrations): Login, PendingApproval, Header, AppLayout, WeekHeader, Calendar, DayCard (week + month variants), MonthView, EmployeePeriodSummary, Charts, AdminDashboard shell, DayPayoutPanel, TeamManagement, AdminReportsPanel, ShiftEditorPanel. Each migration deleted the corresponding `.module.css` file when nothing else referenced it.
+- Layout restructure (admin): replaced the wasteful left "Control Panel" with a thin sidebar (Shifts / Team / Reports nav items with icons + accent-soft active state) + sticky top app bar + PageHeader pattern. Date picker and Edit Shift moved into PageHeader actions. Sidebar collapses to horizontal tabs on `<lg` widths.
+- Removed orphaned `BiweeklySummary` component (replaced by `EmployeePeriodSummary` in v0.3.0 per session notes).
+- ShiftEditorPanel (1012 lines, the biggest one) fully Tailwind, including the printable team sheet via Tailwind's `print:` modifier. The drag-and-drop `ShiftSetupDnd` subcomponent and its `ShiftSetup.module.css` were intentionally left untouched — they render correctly via the shim and the drag interactions are sensitive enough that we deferred their migration to v0.8.0.
+- PDF exports (`pdfExport.js`) updated: `PRIMARY_COLOR` from violet `#9333ea` → forest green `#1a3d2e`, soft tint from light violet → sage `#e8efe9`, so generated PDFs match the new on-screen theme.
+- Verification at every stage: `npm run lint`, `npm test` (7/7), `npm run build` all pass. Browser-verified Login, employee dashboard (Header / WeekHeader / EmployeePeriodSummary / Calendar / Charts) at desktop, and AdminDashboard at desktop 1440×900 + mobile 375×812.
+- Final diff: 45 files changed, +3,487 / −4,677 (net −1,190 lines, mostly from deleting ~3,100 lines of CSS modules).
+- Committed as `296fce2 v0.7.0: Refined minimalist UI on Tailwind v4` and pushed to `origin/feature-ui-ux`. PR will be opened by the user against `develop` (or `main`) later.
 
 ### 2026-05-14 Handoff
 

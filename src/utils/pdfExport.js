@@ -1,5 +1,5 @@
-const PRIMARY_COLOR = [147, 51, 234]; // #9333ea (var(--primary))
-const BACKGROUND_COLOR = [30, 41, 59]; // Dark mode equivalent (slate-800)
+const PRIMARY_COLOR = [26, 61, 46]; // #1a3d2e — forest green accent (matches v0.7.0 UI theme)
+const PRIMARY_SOFT = [232, 239, 233]; // #e8efe9 — soft accent tint for section header backgrounds
 const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
 const ROLE_LABELS = {
     captain: "CAPTAINS",
@@ -75,7 +75,7 @@ const buildEmployeeRows = (employeeTotals = []) => {
         rows.push([{
             content: ROLE_LABELS[role] || role.toUpperCase(),
             colSpan: 7,
-            styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+            styles: { fillColor: PRIMARY_SOFT, textColor: PRIMARY_COLOR, fontStyle: 'bold' }
         }]);
 
         members.forEach(employee => {
@@ -114,7 +114,7 @@ const addEmployeeTotalsTable = (doc, autoTable, title, employeeTotals, startY) =
         head: [['Employee', 'Shifts', 'Tips', 'Gratuity', 'Cash', 'Total Pay', 'Avg Shift']],
         body: employeeRows,
         theme: 'grid',
-        headStyles: { fillColor: BACKGROUND_COLOR, textColor: 255 },
+        headStyles: { fillColor: PRIMARY_COLOR, textColor: 255 },
         styles: { fontSize: 9 },
         columnStyles: {
             0: { cellWidth: 120 },
@@ -185,7 +185,7 @@ export const generateShiftReport = async (date, summary) => {
                 tableBody.push([{
                     content: title,
                     colSpan: 6,
-                    styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                    styles: { fillColor: PRIMARY_SOFT, textColor: PRIMARY_COLOR, fontStyle: 'bold' }
                 }]);
                 arr.forEach(m => {
                     tableBody.push([
@@ -213,7 +213,7 @@ export const generateShiftReport = async (date, summary) => {
                     tableBody.push([{
                         content: `TEAM ${idx + 1}`,
                         colSpan: 6,
-                        styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                        styles: { fillColor: PRIMARY_SOFT, textColor: PRIMARY_COLOR, fontStyle: 'bold' }
                     }]);
                     teamGroup.payouts.forEach(m => {
                         tableBody.push([
@@ -274,7 +274,7 @@ export const generateShiftReport = async (date, summary) => {
                 tableBody.push([{
                     content: 'BAR TEAM',
                     colSpan: 6,
-                    styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                    styles: { fillColor: PRIMARY_SOFT, textColor: PRIMARY_COLOR, fontStyle: 'bold' }
                 }]);
                 summary.payouts.barPayouts.forEach(m => {
                     tableBody.push([
@@ -293,7 +293,7 @@ export const generateShiftReport = async (date, summary) => {
                 tableBody.push([{
                     content: 'RUNNERS',
                     colSpan: 6,
-                    styles: { fillColor: [243, 232, 255], textColor: PRIMARY_COLOR, fontStyle: 'bold' }
+                    styles: { fillColor: PRIMARY_SOFT, textColor: PRIMARY_COLOR, fontStyle: 'bold' }
                 }]);
                 summary.payouts.runners.forEach(m => {
                     tableBody.push([

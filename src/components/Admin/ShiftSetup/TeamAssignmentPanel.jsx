@@ -1,5 +1,4 @@
 import React from 'react';
-import styles from './ShiftSetup.module.css';
 import TeamDropZone from './TeamDropZone';
 import { RUNNER_FLAT_RATE } from '../../../utils/constants';
 
@@ -17,35 +16,35 @@ function TeamAssignmentPanel({
     const restaurantMemberCount = teams.reduce((total, team) => total + team.members.length, 0);
 
     return (
-        <div className={styles.assignmentPanel}>
-            <div className={styles.assignmentSummary}>
-                <div>
-                    <span>Restaurant</span>
-                    <strong>{restaurantMemberCount}</strong>
+        <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-3 flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:order-1 max-[900px]:max-h-none">
+            <div className="grid grid-cols-3 gap-2 max-[560px]:grid-cols-1">
+                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem]">
+                    <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Restaurant</span>
+                    <strong className="block text-[var(--color-ink)] text-base mt-[0.15rem]">{restaurantMemberCount}</strong>
                 </div>
-                <div>
-                    <span>Bar</span>
-                    <strong>{barTeam.members.length}</strong>
+                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem]">
+                    <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Bar</span>
+                    <strong className="block text-[var(--color-ink)] text-base mt-[0.15rem]">{barTeam.members.length}</strong>
                 </div>
-                <div>
-                    <span>Runners</span>
-                    <strong>{runners.length}</strong>
+                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem]">
+                    <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Runners</span>
+                    <strong className="block text-[var(--color-ink)] text-base mt-[0.15rem]">{runners.length}</strong>
                 </div>
             </div>
 
             {/* Restaurant Teams Controls */}
-            <div className={styles.teamControls}>
-                <span className={styles.tcLabel}>Restaurant Teams</span>
-                <div className={styles.tcStepper}>
+            <div className="flex justify-between items-center bg-[var(--color-bg)] px-3 py-[0.45rem] rounded-[var(--radius-md)] border border-[var(--color-line)]">
+                <span className="text-[0.7rem] font-bold text-[var(--color-ink-muted)] uppercase tracking-[0.07em]">Restaurant Teams</span>
+                <div className="flex items-center gap-1.5">
                     <button
-                        className={styles.tcBtn}
+                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                         onClick={onRemoveTeam}
                         disabled={teams.length <= 1}
                         title="Remove last team"
                     >−</button>
-                    <span className={styles.tcValue}>{teams.length}</span>
+                    <span className="font-bold text-[0.9rem] min-w-[18px] text-center">{teams.length}</span>
                     <button
-                        className={styles.tcBtn}
+                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                         onClick={onAddTeam}
                         title="Add team"
                         disabled={teams.length >= 6}
@@ -54,7 +53,7 @@ function TeamAssignmentPanel({
             </div>
 
             {/* All team cards in a 2-column card grid */}
-            <div className={styles.teamGrid}>
+            <div className="grid grid-cols-2 gap-2.5 items-start max-[900px]:grid-cols-1">
                 {teams.map((t, index) => (
                     <TeamDropZone
                         key={t.teamId}
