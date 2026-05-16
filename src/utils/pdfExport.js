@@ -327,6 +327,150 @@ export const generateShiftReport = async (date, summary) => {
 };
 
 /**
+ * Generate a team sheet PDF for posting on the board.
+ * Card-based layout — just names, grouped by team, 2-column grid.
+ */
+export const generateTeamSheetPDF = async (date, teams, barTeam, runners) => {
+    const { jsPDF } = await import('jspdf');
+
+    const doc = new jsPDF('p', 'pt', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const MARGIN = 40;
+    const CARD_GAP = 14;
+    const COL_GAP = 14;
+    const COL_WIDTH = (pageWidth - MARGIN * 2 - COL_GAP) / 2;
+    const CARD_PADDING = 12;
+    const ROW_HEIGHT = 22;
+    const HEADER_H = 28;
+    const BORDER_COLOR = [200, 200, 200];
+    const LABEL_COLOR = [130, 130, 130];
+    const NAME_COLOR = [20, 20, 20];
+
+    // ── Page header ────────────────────────────────────────────────
+    doc.setTextColor(...PRIMARY_COLOR);
+    doc.setFontSize(28);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Team Sheet', MARGIN, 52);
+
+    const formattedDate = new Date(date + 'T12:00:00').toLocaleDateString([], {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 80, 80);
+    doc.text(formattedDate, MARGIN, 70);
+
+    const diningCount = teams.reduce((sum, t) => sum + t.members.length, 0);
+    const totalCount = diningCount + barTeam.members.length + runners.length;
+    doc.setFontSize(9);
+    doc.setTextColor(...LABEL_COLOR);
+    doc.text(
+        `${diningCount} dining room  ·  ${barTeam.members.length} bar  ·  ${runners.length} runners  ·  ${totalCount} total`,
+        MARGIN, 86
+    );
+
+    doc.setDrawColor(...PRIMARY_COLOR);
+    doc.setLineWidth(1);
+    doc.line(MARGIN, 94, pageWidth - MARGIN, 94);
+
+    // ── Card drawing helper ─────────────────────────────────────────
+    const cardHeight = (memberCount) =>
+        HEADER_H + CARD_PADDING + Math.max(memberCount, 1) * ROW_HEIGHT + CARD_PADDING;
+
+    const drawCard = (title, members, x, y) => {
+        const h = cardHeight(members.length);
+
+        // Dashed border
+        doc.setDrawColor(...BORDER_COLOR);
+        doc.setLineWidth(0.6);
+        doc.setLineDashPattern([3, 3], 0);
+        doc.roundedRect(x, y, COL_WIDTH, h, 4, 4, 'S');
+        doc.setLineDashPattern([], 0);
+
+        // Team label (uppercase, muted)
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(...LABEL_COLOR);
+        doc.text(title.toUpperCase(), x + CARD_PADDING, y + HEADER_H - 8);
+
+        // Member count (right-aligned)
+        const countLabel = `${members.length} member${members.length !== 1 ? 's' : ''}`;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(...LABEL_COLOR);
+        doc.text(countLabel, x + COL_WIDTH - CARD_PADDING, y + HEADER_H - 8, { align: 'right' });
+
+        // Thin divider under header
+        doc.setDrawColor(...BORDER_COLOR);
+        doc.setLineWidth(0.4);
+        doc.line(x + CARD_PADDING, y + HEADER_H, x + COL_WIDTH - CARD_PADDING, y + HEADER_H);
+
+        // Names
+        if (members.length === 0) {
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(10);
+            doc.setTextColor(170, 170, 170);
+            doc.text('No members assigned', x + CARD_PADDING, y + HEADER_H + CARD_PADDING + ROW_HEIGHT * 0.65);
+        } else {
+            members.forEach((m, i) => {
+                const nameY = y + HEADER_H + CARD_PADDING + i * ROW_HEIGHT + ROW_HEIGHT * 0.65;
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(...NAME_COLOR);
+                doc.text(m.name, x + CARD_PADDING, nameY);
+
+                // Thin row divider (not after last)
+                if (i < members.length - 1) {
+                    doc.setDrawColor(230, 230, 230);
+                    doc.setLineWidth(0.3);
+                    doc.line(x + CARD_PADDING, nameY + 6, x + COL_WIDTH - CARD_PADDING, nameY + 6);
+                }
+            });
+        }
+
+        return h;
+    };
+
+    // ── Layout: 2-column grid ───────────────────────────────────────
+    const sections = [
+        ...teams.map((t, i) => ({ title: `Team ${i + 1}`, members: t.members })),
+        { title: 'Bar Team', members: barTeam.members },
+        { title: 'Runners', members: runners },
+    ];
+
+    let col = 0;
+    let rowTopY = 108;
+    let leftY = rowTopY;
+    let rightY = rowTopY;
+
+    sections.forEach((section) => {
+        const x = col === 0 ? MARGIN : MARGIN + COL_WIDTH + COL_GAP;
+        const y = col === 0 ? leftY : rightY;
+        const h = drawCard(section.title, section.members, x, y);
+
+        if (col === 0) {
+            leftY += h + CARD_GAP;
+            col = 1;
+        } else {
+            rightY += h + CARD_GAP;
+            col = 0;
+        }
+
+        // If next card won't fit, add page
+        const nextY = col === 0 ? leftY : rightY;
+        if (nextY > pageHeight - 80) {
+            doc.addPage();
+            leftY = 50;
+            rightY = 50;
+            col = 0;
+        }
+    });
+
+    doc.save(`Team_Sheet_${date}.pdf`);
+};
+
+/**
  * Generate a PDF report for a Week (Biweekly view fallback)
  */
 export const generateWeeklyReport = async (weekData, weekRangeLabel, reportLabel = 'Weekly') => {
