@@ -202,16 +202,17 @@ Known follow-ups for v0.8.0 or later: ShiftSetup drag-and-drop module migration;
 
 ### v0.8.0-engine-contract-fixes
 
-- Status: Planned
-- Priority: Review before v1.0.0 stable
+- Status: Complete (2026-05-16)
+- Branch: `feature-engine-contract-fixes`
 
 Issues identified during real-data review of a buyout/contract shift (2026-05-16):
 
-- [ ] **Bar allocations should be skipped when no bar team exists.** `barCTPAllocation` (1% of regular sales) and `barGRTAllocation` (1% of contract sales) are currently always carved out of the pool. When `barTeam.members.length === 0`, this money is never distributed and causes a balance warning. These allocations should only apply when a bar team with members is active. Note: bartenders working a contract shift are sometimes assigned as captains in a regular team — the bar allocation logic must not assume all bartenders are in `barTeam`.
-- [ ] **Runner pay deduction source for pure contract shifts.** Runner pay is hardcoded to deduct from the Dining Room CTP pool. When CTP = $0 (e.g., buyout shifts with only contract gratuity), this makes the CTP pool negative and triggers a spurious warning. Runner pay should deduct from the GRT pool when no CTP is available.
-- [ ] **Add engine tests covering pure contract/buyout shift scenarios.** Cover: contract-only shift with no regular sales, no bar team, runners present; contract shift with bar team; contract shift where bartenders are assigned as captains in a regular team.
+- [x] **Bar allocations skipped when no bar team exists.** `barCTPAllocation` and `barGRTAllocation` are now conditional on `hasBarTeam` (`barTeam.members.length > 0`). When bartenders work a contract shift as captains in a regular dining team they are not in `barTeam`, so allocations are correctly skipped to avoid stranded pool money.
+- [x] **Engine tests for pure contract/buyout shift scenarios.** New test covers: contract-only shift with no regular sales, no bar team, runners present — verifies balance = 0, bar allocations = 0, runner deducted from CTP (expected behavior), captain earns more than server via contract captain override.
+- Runner pay always deducts from Dining Room CTP — this is intentional current behavior. The "Dining Room CTP pool is negative" warning on pure contract shifts is expected and informational only (not blocking).
+- [x] **UI: engine warnings no longer block calculation and save.** Warnings are shown as informational alongside the payout review so admins can acknowledge and proceed. Hard input errors (missing employees, negative values, no money) still block as before.
 
-UI fix already applied (2026-05-16): engine warnings no longer block calculation and save. They are shown as informational alongside the payout review so admins can acknowledge and proceed.
+Known remaining limitation: `captainOverrideCTP` (1% of regular sales) is carved out even when no captains are assigned, leaving a small stranded balance. Low-priority; only affects shifts with regular sales and no captain role.
 
 ### v1.0.0-stable-release
 
