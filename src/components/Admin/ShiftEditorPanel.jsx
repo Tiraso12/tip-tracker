@@ -679,14 +679,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
         const result = calculateShift({ teams, barTeam, runners });
 
-        if (result.validations?.length > 0 || Math.abs(result.balances?.overallBalance || 0) > 0.05) {
-            setValidationMessages(result.validations?.length > 0
-                ? result.validations
-                : [`Shift does not balance. Difference: $${(Number(result.balances?.overallBalance) || 0).toFixed(2)}`]
-            );
-            setSaveStatus("Calculation needs review before saving.");
-            setCalculatedReview(null);
-            return;
+        if (result.validations?.length > 0) {
+            setValidationMessages(result.validations);
+            setSaveStatus("Review warnings and calculated payouts before saving.");
+        } else {
+            setValidationMessages([]);
+            setSaveStatus("Review calculated payouts before saving.");
         }
 
         const mappedPayoutsForFirebase = mapPayoutsForFirebase(result);
@@ -700,7 +698,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         }
 
         setCalculatedReview(buildPayoutReview(result, mappedPayoutsForFirebase));
-        setSaveStatus("Review calculated payouts before saving.");
     };
 
     const handleConfirmSave = async () => {
