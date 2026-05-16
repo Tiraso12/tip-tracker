@@ -180,7 +180,7 @@ Permissions decision: report exports require no additional guards beyond existin
 - [x] Update PDF export (`pdfExport.js`) primary color to forest green to match the new on-screen theme.
 - [x] Delete legacy CSS modules: AppLayout, Header, WeekHeader, Calendar, MonthView, EmployeePeriodSummary, Charts, AdminDashboard (2,004 lines), TeamManagement, Login, BiweeklySummary.
 - [x] Initial responsive check at 375px (AdminDashboard sidebar correctly collapses to horizontal tab bar; PageHeader actions wrap; cards stack).
-- [ ] (Optional) Re-skin ShiftSetup drag-and-drop module (currently still on legacy CSS via shim — works in new palette but could be modernized in v0.8.0).
+- [x] Re-skin ShiftSetup drag-and-drop module (migrated to Tailwind in v0.8.0; `ShiftSetup.module.css` deleted).
 - [ ] Full accessibility audit (focus rings, keyboard tab order, screen reader labels) — primitives already include `focus-visible:ring-*` styling and ARIA attributes, but a dedicated audit pass is recommended.
 - [ ] Real-data visual review of ShiftEditor save flow, DayPayoutPanel with saved data, and AdminReportsPanel with multi-week/multi-employee data.
 
