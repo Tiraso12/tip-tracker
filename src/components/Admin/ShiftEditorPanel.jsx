@@ -4,6 +4,7 @@ import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import { Button, Card } from "../ui";
+import { generateTeamSheetPDF } from "../../utils/pdfExport";
 
 const toMoney = (value) => Number(value) || 0;
 const hasNegative = (value) => Number(value) < 0;
@@ -469,74 +470,6 @@ function CalculatedPayoutReview({ review }) {
     );
 }
 
-function PrintTeamBlock({ title, members, emptyMessage, isRunner }) {
-    return (
-        <div className="break-inside-avoid border border-black/40 p-3 mb-3">
-            <div className="flex items-center justify-between border-b border-black/30 pb-1 mb-2">
-                <h2 className="text-sm font-bold uppercase tracking-wide">{title}</h2>
-                <span className="text-xs">{members.length}</span>
-            </div>
-            {members.length === 0 ? (
-                <div className="text-xs italic text-black/60">{emptyMessage}</div>
-            ) : (
-                <ul className="space-y-1 text-xs">
-                    {members.map((member) => (
-                        <li key={member.uid} className="flex items-center justify-between gap-3 border-b border-dashed border-black/20 pb-1">
-                            <strong>{member.name}</strong>
-                            <span className="text-black/70">
-                                {isRunner ? "Runner" : roleLabels[member.role] || member.role || "Staff"}
-                            </span>
-                        </li>
-                    ))}
-                </ul>
-            )}
-        </div>
-    );
-}
-
-function PrintableTeamSheet({ date, teams, barTeam, runners }) {
-    const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
-    const totalCount = diningCount + barTeam.members.length + runners.length;
-
-    return (
-        <section
-            aria-hidden="true"
-            className="hidden print:block fixed inset-0 bg-white text-black p-6 font-sans"
-            style={{ zIndex: 9999 }}
-        >
-            <div className="flex items-end justify-between border-b-2 border-black pb-2 mb-4">
-                <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em]">Tip Tracker</div>
-                    <h1 className="font-display text-3xl font-bold mt-1">Team Setup</h1>
-                </div>
-                <div className="text-right">
-                    <span className="block text-[10px] uppercase tracking-wide">Date</span>
-                    <strong className="font-mono text-lg">{date}</strong>
-                </div>
-            </div>
-
-            <div className="flex justify-between text-xs font-medium mb-4">
-                <span>{diningCount} dining room</span>
-                <span>{barTeam.members.length} bar</span>
-                <span>{runners.length} runners</span>
-                <span>{totalCount} total</span>
-            </div>
-
-            <div className="columns-2 gap-4">
-                {teams.map((team, index) => (
-                    <PrintTeamBlock
-                        key={team.teamId}
-                        title={`Team ${index + 1}`}
-                        members={team.members}
-                        emptyMessage="No team assigned"
-                    />
-                ))}
-                <PrintTeamBlock title="Bar Team" members={barTeam.members} emptyMessage="No bar team assigned" />
-                <PrintTeamBlock title="Runners" members={runners} emptyMessage="No runners assigned" isRunner />
-            </div>
-        </section>
-    );
-}
 
 function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [teams, setTeams] = useState([
@@ -800,7 +733,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
 
     return (
-        <div className="space-y-6 print:hidden">
+        <div className="space-y-6">
             {/* Workspace header */}
             <Card className="!p-0">
                 <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4 border-b border-[var(--color-line)]">
@@ -812,7 +745,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
                         ) : null}
                     </div>
-                    <Button variant="secondary" size="sm" onClick={() => window.print()}>
+                    <Button variant="secondary" size="sm" onClick={() => generateTeamSheetPDF(date, teams, barTeam, runners)}>
                         Print Team Sheet
                     </Button>
                 </header>
@@ -1064,12 +997,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 )}
             </Card>
 
-            <PrintableTeamSheet
-                date={date}
-                teams={teams}
-                barTeam={barTeam}
-                runners={runners}
-            />
         </div>
     );
 }
