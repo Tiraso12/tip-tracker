@@ -4,13 +4,10 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 
 ## Current Version
 
-- Version name: `v0.7.0-ui-polish`
-- Branch: `feature-ui-ux` (pushed to `origin/feature-ui-ux`, commit `296fce2`)
-- Status: Pushed for review (PR not yet opened)
-- Started: 2026-05-15
-- Completed: 2026-05-15
-- Goal: Move from hand-rolled dark CSS Modules to a refined minimalist light theme using Tailwind CSS v4. Replace ad-hoc styling with reusable UI primitives. Improve consistency and the perceived professionalism of the app.
-- Current working state: All 13 screens migrated to Tailwind. 11 legacy CSS modules deleted (~3,100 lines of CSS removed); only `ShiftSetup/ShiftSetup.module.css` remains, themed via the backwards-compat shim. `npm run lint`, `npm test` (7/7), and `npm run build` pass. Visually verified on Login, employee dashboard (full scroll), AdminDashboard shell at desktop 1280×900 and mobile 375×812. Admin child panels (DayPayoutPanel, ShiftEditor, TeamManagement, AdminReportsPanel) compile-verified; full visual review with real data still pending. PR to `develop` will be opened by the user.
+- Version name: `v1.0.0-stable`
+- Branch: `main`
+- Status: Released — deployed to Firebase Hosting (2026-05-16)
+- Goal: Production-ready stable release. All core workflows tested, payout math trustworthy, UI polished and accessible, zero legacy CSS modules.
 
 ## Version History
 
@@ -22,7 +19,9 @@ This file is the shared project memory for Tip Tracker improvements. It keeps ve
 | `v0.4.0` | User Management | Complete | Safer account status handling, temporary staff merge rules, better team setup |
 | `v0.5.0` | Admin Daily Workflow | Complete | One-screen shift workspace, live closeout totals, and safer payout review |
 | `v0.6.0` | Reports | Complete | More accurate weekly/monthly/pay-period reports and exports |
-| `v0.7.0` | UI Polish | Pushed for review | Refined minimalist light theme on Tailwind v4, reusable UI primitives |
+| `v0.7.0` | UI Polish | Complete | Refined minimalist light theme on Tailwind v4, reusable UI primitives |
+| `v0.8.0` | Engine & Polish | Complete | Contract shift engine fixes, DnD migration, accessibility audit |
+| `v1.0.0` | Stable Release | Released | Production-ready; deployed 2026-05-16 |
 
 ## Guiding Principles
 
@@ -216,10 +215,14 @@ Known remaining limitation: `captainOverrideCTP` (1% of regular sales) is carved
 
 ### v1.0.0-stable-release
 
-- All foundation checks pass.
-- Core workflows are tested.
-- Security rules are reviewed.
-- Admin and employee experiences are polished enough for daily use. (v0.7.0 covers the visual polish criterion.)
+- Status: Released 2026-05-16 — deployed to `https://tip-tracker-44de1.web.app`
+- [x] All foundation checks pass (`npm test` 8/8, `npm run lint`, `npm run build`)
+- [x] Core workflows tested (shift entry, payout calculation, PDF export, reports)
+- [x] Security rules reviewed and hardened
+- [x] Admin and employee experiences polished and accessible
+- [x] Zero legacy CSS modules — full Tailwind v4 migration complete
+- [x] Contract/buyout shift engine correct (bar allocations, informational warnings)
+- [x] Accessibility audit complete (focus rings, keyboard nav, ARIA live regions)
 
 ### Later Ideas
 
