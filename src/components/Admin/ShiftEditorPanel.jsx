@@ -471,6 +471,57 @@ function CalculatedPayoutReview({ review }) {
 }
 
 
+function CollapsibleSection({ title, subtitle, badge, isOpen, onToggle, children }) {
+    return (
+        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] overflow-hidden">
+            <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={isOpen}
+                className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]/50 transition-colors duration-150 text-left"
+            >
+                <div className="flex flex-col gap-0.5">
+                    {subtitle ? (
+                        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                            {subtitle}
+                        </span>
+                    ) : null}
+                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)]">
+                        {title}
+                    </h3>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                    {badge ? (
+                        <span className="text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
+                            {badge}
+                        </span>
+                    ) : null}
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={`text-[var(--color-ink-muted)] transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+                        aria-hidden="true"
+                    >
+                        <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                </div>
+            </button>
+            {isOpen ? (
+                <div className="border-t border-[var(--color-line)]">
+                    {children}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [teams, setTeams] = useState([
         { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
@@ -482,6 +533,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [calculatedReview, setCalculatedReview] = useState(null);
+    const [teamSetupOpen, setTeamSetupOpen] = useState(true);
+    const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
 
     const poolSummary = useMemo(() => {
         const teamSummaries = teams.map(getTeamSummary);
@@ -637,6 +690,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         });
                     }
                     if (d.runners) setRunners(d.runners);
+                    setTeamSetupOpen(false);
+                    setMoneyCloseoutOpen(true);
                 }
             } catch (e) {
                 console.error("Failed to load shift:", e);
@@ -755,40 +810,34 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         Loading shift data…
                     </div>
                 ) : (
-                    <div className="px-6 py-6 space-y-8">
+                    <div className="p-4 sm:p-6 space-y-3">
                         {/* Team setup */}
-                        <section className="space-y-3">
-                            <div className="flex items-end justify-between gap-3">
-                                <div>
-                                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                        Opening setup
-                                    </div>
-                                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)]">
-                                        Team Floor Setup
-                                    </h3>
-                                </div>
-                                <div className="text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
-                                    {diningCount} dining · {barTeam.members.length} bar · {runners.length} runners
-                                </div>
+                        <CollapsibleSection
+                            title="Team Floor Setup"
+                            subtitle="Opening setup"
+                            badge={`${diningCount}d · ${barTeam.members.length}b · ${runners.length}r`}
+                            isOpen={teamSetupOpen}
+                            onToggle={() => setTeamSetupOpen(o => !o)}
+                        >
+                            <div className="p-4 sm:p-6">
+                                <ShiftSetupDnd
+                                    allEmployees={allEmployees}
+                                    teams={teams} setTeams={setTeams}
+                                    barTeam={barTeam} setBarTeam={setBarTeam}
+                                    runners={runners} setRunners={setRunners}
+                                />
                             </div>
-                            <ShiftSetupDnd
-                                allEmployees={allEmployees}
-                                teams={teams} setTeams={setTeams}
-                                barTeam={barTeam} setBarTeam={setBarTeam}
-                                runners={runners} setRunners={setRunners}
-                            />
-                        </section>
+                        </CollapsibleSection>
 
                         {/* Money closeout */}
-                        <section className="space-y-4">
-                            <div>
-                                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                    End of shift
-                                </div>
-                                <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)]">
-                                    Money Closeout
-                                </h3>
-                            </div>
+                        <CollapsibleSection
+                            title="Money Closeout"
+                            subtitle="End of shift"
+                            badge={!moneyCloseoutOpen ? fmtMoney(poolSummary.payoutPool) : null}
+                            isOpen={moneyCloseoutOpen}
+                            onToggle={() => setMoneyCloseoutOpen(o => !o)}
+                        >
+                        <section className="p-4 sm:p-6 space-y-4">
 
                             {validationMessages.length > 0 ? (
                                 <div role="alert" className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
@@ -993,6 +1042,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                 </Button>
                             </div>
                         </section>
+                        </CollapsibleSection>
                     </div>
                 )}
             </Card>
