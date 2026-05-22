@@ -5,6 +5,7 @@ import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import { Button, Card } from "../ui";
 import { generateTeamSheetPDF } from "../../utils/pdfExport";
+import { buildClosedShiftPayload, buildShiftSetupDraft } from "../../utils/shiftPersistence";
 
 const toMoney = (value) => Number(value) || 0;
 const hasNegative = (value) => Number(value) < 0;
@@ -104,6 +105,20 @@ function validateShiftInputs({ teams, barTeam, runners }) {
     }
 
     return errors;
+}
+
+function getAssignedCount({ teams, barTeam, runners }) {
+    return teams.reduce((sum, team) => sum + team.members.length, 0)
+        + barTeam.members.length
+        + runners.length;
+}
+
+function validateTeamSetup({ teams, barTeam, runners }) {
+    if (getAssignedCount({ teams, barTeam, runners }) === 0) {
+        return ["Assign at least one employee before saving the team setup."];
+    }
+
+    return [];
 }
 
 function mapPayoutsForFirebase(result) {
@@ -533,6 +548,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [calculatedReview, setCalculatedReview] = useState(null);
+    const [shiftStatus, setShiftStatus] = useState(null);
     const [teamSetupOpen, setTeamSetupOpen] = useState(true);
     const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
 
@@ -672,6 +688,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     useEffect(() => {
         const loadShift = async () => {
             try {
+                setLoading(true);
+                setShiftStatus(null);
                 const shiftDoc = await getDoc(doc(db, "shifts", date));
                 if (shiftDoc.exists()) {
                     const d = shiftDoc.data();
@@ -690,6 +708,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         });
                     }
                     if (d.runners) setRunners(d.runners);
+                    setShiftStatus(d.status || (d.summary || d.payouts ? "closed" : "setup"));
                     setTeamSetupOpen(false);
                     setMoneyCloseoutOpen(true);
                 }
@@ -701,6 +720,35 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         };
         loadShift();
     }, [date]);
+
+    const handleSaveTeamSetup = async () => {
+        if (isSaving) return;
+
+        const inputErrors = validateTeamSetup({ teams, barTeam, runners });
+        if (inputErrors.length > 0) {
+            setValidationMessages(inputErrors);
+            setSaveStatus("Assign staff before saving setup.");
+            return;
+        }
+
+        setIsSaving(true);
+        setValidationMessages([]);
+        setSaveStatus("Saving team setup...");
+
+        try {
+            await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({ date, teams, barTeam, runners }));
+            setShiftStatus("setup");
+            setSaveStatus("Team setup saved.");
+            setMoneyCloseoutOpen(true);
+            setTimeout(() => setSaveStatus(""), 3000);
+        } catch (e) {
+            console.error(e);
+            setSaveStatus("Failed to save team setup.");
+            setValidationMessages(["The team setup could not be saved. Please try again."]);
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const handleCalculateForReview = () => {
         if (isSaving) return;
@@ -747,15 +795,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         setIsSaving(true);
         setSaveStatus("Saving…");
         try {
-            await setDoc(doc(db, "shifts", date), {
+            await setDoc(doc(db, "shifts", date), buildClosedShiftPayload({
                 date,
                 teams,
                 barTeam,
                 runners,
                 payouts: mappedPayoutsForFirebase,
                 summary: result,
-                updatedAt: new Date().toISOString(),
-            });
+            }));
 
             const saves = Object.entries(mappedPayoutsForFirebase).map(([uid, payout]) =>
                 setDoc(doc(db, "users", uid, "tips", date), {
@@ -772,6 +819,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             );
             await Promise.all(saves);
             setSaveStatus("Saved.");
+            setShiftStatus("closed");
             setCalculatedReview(null);
 
             setTimeout(() => {
@@ -796,6 +844,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
                             Shift Workspace — {date}
                         </h2>
+                        {shiftStatus ? (
+                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                                {shiftStatus === "closed" ? "Closed shift" : "Team setup saved"}
+                            </span>
+                        ) : null}
                         {saveStatus ? (
                             <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
                         ) : null}
@@ -826,6 +879,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                     barTeam={barTeam} setBarTeam={setBarTeam}
                                     runners={runners} setRunners={setRunners}
                                 />
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-5">
+                                    <Button
+                                        variant="secondary"
+                                        onClick={handleSaveTeamSetup}
+                                        disabled={isSaving}
+                                    >
+                                        {isSaving ? "Saving..." : "Save Team Setup"}
+                                    </Button>
+                                </div>
                             </div>
                         </CollapsibleSection>
 
