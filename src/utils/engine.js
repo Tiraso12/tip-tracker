@@ -72,6 +72,7 @@ export function calculateShift(inputs) {
     const barCTP = Math.max(0, n(config.barTeam.pools?.tips));
     const barGRT = Math.max(0, n(config.barTeam.pools?.gratuity));
     const barToTeamTransfer = Math.max(0, n(config.barTeam.pools?.runners));
+    const hasBarTeam = config.barTeam.members.length > 0;
 
     // If new format is active, firmly ignore global inputs to prevent ghost totals
     const baseTeamCTP = totalTeamCTP;
@@ -110,19 +111,22 @@ export function calculateShift(inputs) {
 
     const totalRunnerPay = r2(sumProp(runnerPayouts, 'payoutAmount'));
 
-    const runnerDeductions = {
-        'Dining Room CTP': totalRunnerPay
-    };
-
     // 2. PRE-DISTRIBUTIONS
-    const barCTPAllocation = r2(regularSalesBase * 0.01);
+    // Bar allocations only apply when a bar team with members is active. When bartenders
+    // work a contract shift as captains in a regular team they are not in barTeam, so
+    // hasBarTeam = false and these allocations are skipped to avoid stranded pool money.
+    const barCTPAllocation = hasBarTeam ? r2(regularSalesBase * 0.01) : 0;
     const doorCTPAllocation = r2(regularSalesBase * 0.005);
     const captainOverrideCTP = r2(regularSalesBase * 0.01);
     const captainOverrideGRT = r2(contractSales * 0.01);
-    const barGRTAllocation = r2(contractSales * 0.01);
+    const barGRTAllocation = hasBarTeam ? r2(contractSales * 0.01) : 0;
     const doorGRTAllocation = r2(contractSales * 0.02);
     const peCoordinatorGRT = r2(contractSales * 0.02);
     const houseAllocation = r2(contractSales * 0.03);
+
+    const runnerDeductions = {
+        'Dining Room CTP': totalRunnerPay
+    };
 
     // 4. TEAM POOLS
     const rawTeamCTPPool = baseTeamCTP - barCTPAllocation - doorCTPAllocation - captainOverrideCTP - totalRunnerPay;
@@ -320,7 +324,7 @@ export function calculateShift(inputs) {
     // The global balance check should simply be:
     // Total Available (Input) - Total Distributed (Everyone's Payouts + External Fees)
     const totalPaymentsToStaff = out_TeamCASH + out_TeamCTP + out_TeamGRT + out_BarCTP + out_BarGRT + totalRunnerPay;
-    const totalExternalFees = doorCTPAllocation + doorGRTAllocation + peCoordinatorGRT + houseAllocation;
+    const totalExternalFees = out_Allocations;
 
     // Note: Captain Overrides are ALREADY included inside out_TeamCTP/GRT since we merged them in the role loop.
     const totalDistributed = totalPaymentsToStaff + totalExternalFees;
@@ -334,9 +338,9 @@ export function calculateShift(inputs) {
 
     const balances = {
         poolBalances: {
-            'Dining Room CTP': r2(adjustedTeamCTPPool - (out_TeamCTP - out_CapOverrideCTP)),
+            'Dining Room CTP': r2(adjustedTeamCTPPool - clean_TeamCTP),
             'Team CASH': r2(adjustedTeamCashPool - out_TeamCASH),
-            'Team GRT': r2(adjustedTeamGRTPool - (out_TeamGRT - out_CapOverrideGRT)),
+            'Team GRT': r2(adjustedTeamGRTPool - clean_TeamGRT),
             'Bar CTP': r2(adjustedBarCTPPool - out_BarCTP),
             'Bar GRT': r2(adjustedBarGRTPool - out_BarGRT),
             'Cap Ov CTP': r2(captainOverrideCTPPool - out_CapOverrideCTP),
@@ -355,6 +359,7 @@ export function calculateShift(inputs) {
             grtTotal: r2(grtTotalAvailable),
             contractSales: r2(contractSales),
             regularSalesBase: r2(regularSalesBase),
+            barSales: r2(barSales),
             baseTeamCTP: r2(baseTeamCTP),
             baseTeamCash: r2(baseTeamCash),
             ctpTotal: r2(ctpTotal),

@@ -1,45 +1,31 @@
 import React from 'react';
-import styles from './ShiftSetup.module.css';
 
-function AssignedEmployeeRow({ member, onDragStart, onRemove, onUpdateField, isRunner }) {
+function AssignedEmployeeRow({ member, onDragStart, onRemove, isRunner }) {
+    const pointsLabel = member.points === null || member.points === undefined || member.points === ""
+        ? "Auto pts"
+        : `${member.points} pts`;
+
     return (
         <div
-            className={styles.assignedRow}
+            className="bg-[var(--color-surface-muted)] px-[0.45rem] py-[0.28rem] rounded-[var(--radius-xs)] flex items-center gap-[0.45rem] cursor-grab active:cursor-grabbing"
             draggable
             onDragStart={onDragStart}
         >
-            <div className={styles.rowHandle}>⋮⋮</div>
-            <div className={styles.rowName}>
+            <div className="text-[var(--color-ink-muted)] opacity-35 text-[0.8rem] leading-none">⋮⋮</div>
+            <div className="flex-1 font-semibold text-[0.8rem] min-w-0">
                 {member.name}
             </div>
 
             {isRunner ? (
-                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Payout:</span>
-                    <input
-                        type="number"
-                        placeholder="Payout $"
-                        className={`${styles.runnerInput} ${styles.noSpinners}`}
-                        style={{ width: '60px', borderRadius: '4px' }}
-                        value={member.payoutAmount || ''}
-                        onChange={(e) => onUpdateField('payoutAmount', e.target.value)}
-                    />
-                </div>
+                <span className="text-[var(--color-ink-muted)] text-[0.7rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.4rem] py-[0.16rem]">Runner</span>
             ) : (
-                <div className={styles.pointsControl}>
-                    <button
-                        className={styles.ptsBtn}
-                        onClick={() => onUpdateField('points', Math.max(0, (Number(member.points) || 0) - 0.5))}
-                    >−</button>
-                    <span className={styles.ptsValue}>{member.points}</span>
-                    <button
-                        className={styles.ptsBtn}
-                        onClick={() => onUpdateField('points', (Number(member.points) || 0) + 0.5)}
-                    >+</button>
-                </div>
+                <span className="text-[var(--color-ink-muted)] text-[0.7rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.4rem] py-[0.16rem]">{pointsLabel}</span>
             )}
 
-            <button className={styles.removeBtn} onClick={onRemove}>✕</button>
+            <button
+                className="bg-transparent border-0 text-[var(--color-ink-muted)] w-5 h-5 rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 text-[0.72rem] shrink-0 hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
+                onClick={onRemove}
+            >✕</button>
         </div>
     );
 }

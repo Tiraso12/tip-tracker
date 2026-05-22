@@ -1,72 +1,130 @@
-# Tip Tracker (Professional)
+# TipTracker
 
-A sophisticated, enterprise-grade **Shift & Payout Management System** designed for high-volume hospitality venues. This application streamlines complex tip-out distributions, multi-team allocations, and financial auditing with a high-performance calculation engine.
+A full-stack shift and tip distribution management system built for restaurant operations. Managers configure teams, enter shift financials, and the app automatically calculates individual payouts — handling multi-team splits, contract gratuity, captain overrides, bar allocations, and runners — with every cent accounted for.
 
-## Core Features
+**Live app:** https://tip-tracker-44de1.web.app
 
-### 🚀 Advanced Calculation Engine (`engine.js`)
-- **Automated Payouts**: Real-time distribution based on weighted role points.
-- **Role-Based Logic**: Specialized handling for Captains, Servers, Backs, Assistants, Bartenders, and Runners.
-- **Dynamic Balancing**: Built-in "Double-Entry" audit logic to ensure every cent is accounted for across all pools.
+---
 
-### 👥 Team & Pool Management
-- **Multi-Team Support**: Distribution across multiple teams.
-- **Integrated Bar Pools**: Automated sales-based allocations.
-- **Manual Runner Overrides**: Flexible payout controls for support staff.
+## The Problem It Solves
 
-### ⚖️ Professional Allocations & Deductions
-- **Contract Sales Logic**: Automated gratuity calculation and tracking.
-- **Systematic Cuts**: Pre-distribution "skims" for:
-  - CTP and GRT allocations.
-  - Performance-based incentives.
-  - Venue-specific administrative deductions.
-- **Logical Splits**: Logical tip distribution based on individual or team sales performance.
+Distributing tips in a restaurant is surprisingly complex. Multiple teams with different sales, role-based point weights, contract gratuity at a fixed percentage, bar team allocations, flat-rate runners, and captain bonuses — all of it has to balance to the penny. This app replaces manual spreadsheets with an automated engine that does it instantly and generates a printable payout sheet for every shift.
 
-### 📊 Financial Contexts & Reporting
-- **PDF Exporting**: Generate professional shift summaries and payout reports using `jsPDF`.
-- **Biweekly Summaries**: Long-term financial tracking and pay-period analytics.
-- **Calendar Visualization**: Week and month views for historical shift data access.
+---
+
+## Features
+
+**Shift Management**
+- Drag-and-drop team builder — assign employees to teams, bar, or runners before the shift
+- Per-team sales, tips, gratuity, and cash pools
+- Contract shift support with automated 26% gratuity tracking
+- Captain override bonus (1% of sales), split across all active captains
+- Runner flat-rate payouts ($102 default) deducted from the dining room pool
+- Bar-to-team transfer support for flexible nightly configurations
+
+**Calculation Engine**
+- Pure JavaScript engine with zero UI dependencies — fully unit tested
+- Point-based distribution by role (Captain: 4pts, Server: 4pts, Back: 2.5pts, Assistant: 2pts)
+- Pre-distribution allocations: bar (1%), door (0.5%), PE coordinator (2%), house (3%)
+- Rounding reconciliation — micro-adjustments ensure totals match exactly with no floating-point drift
+- Double-entry balance check on every calculation — warns if the shift doesn't balance
+
+**Reports & Exports**
+- Shift PDF report — full payout breakdown per employee
+- Weekly and biweekly PDF reports with daily breakdowns and employee earnings summaries
+- Monthly report grouped by week
+- Team sheet PDF — card-layout printout to post on the board before service
+
+**Admin Dashboard**
+- Role-based access with admin approval flow for new users
+- Team management — add/edit employees and their roles
+- Calendar view — navigate and open any past shift
+- Charts — visual earnings trends by employee and period
+- Real-time Firestore sync — data updates instantly across sessions
+
+---
 
 ## Tech Stack
 
-- **Frontend**: React 19 + Vite 7 (Latest)
-- **Database**: Firebase Firestore (Real-time sync)
-- **Auth**: Firebase Auth (User-specific data isolation)
-- **Reporting**: [jsPDF](https://github.com/parallax/jsPDF) & [jsPDF-autotable](https://github.com/simonbengtsson/jsPDF-AutoTable)
-- **Analytics**: Recharts 3.5
-
-## Getting Started
-
-### Prerequisites
-- Node.js (v18+)
-- Firebase Account & Project
-
-### Installation
-1. Clone & `npm install`.
-2. Configure `.env.local` with Firebase credentials.
-3. Run `npm run dev`.
-
-## Project Architecture
-
-```
-tip-tracker/
-├── src/
-│   ├── components/
-│   │   ├── Admin/          # Shift configuration & pool management
-│   │   ├── BiweeklySummary/ # Pay period financial tracking
-│   │   └── Calendar/       # Historical shift navigation
-│   ├── utils/
-│   │   ├── engine.js       # The "Brain": Core payout logic
-│   │   └── constants.js    # Role weights & allocation rules
-│   └── services/           # Firestore data synchronization layer
-├── firestore.rules         # Enterprise-grade security protocols
-└── package.json
-```
-
-## Security & Reliability
-- **Data Isolation**: User-specific Firestore rules ensure privacy between venues/managers.
-- **Audit Logs**: The calculation engine generates detailed validation warnings for unbalanced shifts.
-- **Rounding Reconciliation**: Micro-adjustment logic ensures mathematical precision in decimal-based tip payouts.
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Vite 7 |
+| Styling | Tailwind CSS v4 |
+| Database | Firebase Firestore |
+| Auth | Firebase Authentication |
+| Hosting | Firebase Hosting |
+| PDF Generation | jsPDF + jsPDF-AutoTable |
+| Charts | Recharts |
 
 ---
-Built with ❤️ for professional service teams.
+
+## Architecture
+
+```
+src/
+├── components/
+│   ├── Admin/
+│   │   ├── ShiftEditorPanel.jsx     # Main shift workspace
+│   │   ├── ShiftSetup/              # Drag-and-drop team builder
+│   │   ├── DayPayoutPanel.jsx       # Payout review and save
+│   │   ├── AdminReportsPanel.jsx    # Report generation UI
+│   │   └── TeamManagement.jsx       # Employee roster management
+│   ├── Calendar/                    # Month/week navigation
+│   ├── Charts/                      # Earnings visualizations
+│   └── Auth/                        # Login and approval flow
+├── utils/
+│   ├── engine.js                    # Core calculation engine (pure JS)
+│   ├── pdfExport.js                 # All PDF generation logic
+│   └── constants.js                 # Role point weights and flat rates
+├── services/
+│   └── dataService.js               # Firestore read/write/subscribe layer
+└── context/
+    └── AuthContext.jsx              # Auth state and user role management
+```
+
+---
+
+## Local Setup
+
+**Prerequisites:** Node.js 20+, a Firebase project with Firestore and Authentication enabled.
+
+```bash
+git clone https://github.com/Tiraso12/tip-tracker.git
+cd tip-tracker
+npm install
+```
+
+Create a `.env.local` file with your Firebase config:
+
+```
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
+```bash
+npm run dev       # Start dev server
+npm test          # Run engine unit tests
+npm run build     # Production build
+```
+
+---
+
+## How the Calculation Engine Works
+
+The engine (`src/utils/engine.js`) is a pure function — it takes a normalized shift config and returns a complete payout result with no side effects.
+
+1. **Derive totals** from per-team pool inputs (sales, tips, gratuity, cash)
+2. **Pre-distribute** — calculate bar allocation (1%), door (0.5%), captain override pool (1%), house/coordinator cuts for contract sales
+3. **Adjust pools** — apply bar-to-team transfers, deduct runner payouts from dining room CTP
+4. **Distribute by points** — each employee's share = `(their points / total points) * adjusted pool`
+5. **Captain override** — split evenly across all active captains and merged into their payout
+6. **Reconcile** — correct any floating-point drift so pool totals match exactly
+7. **Balance check** — verify `total available == total distributed + external allocations`
+
+---
+
+Built by Gonzalo Tiraso

@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import styles from './ShiftSetup.module.css';
 import EmployeePool from './EmployeePool';
 import TeamAssignmentPanel from './TeamAssignmentPanel';
 import { ROLE_POINTS } from '../../../utils/constants';
@@ -69,6 +68,41 @@ function ShiftSetupDnd({
         return Array.from(uids);
     }, [teams, barTeam.members, runners]);
 
+    const selectedTargetLabel = useMemo(() => {
+        if (!selectedTeamId) return "";
+        if (selectedTeamId === "bar") return "Bar Team";
+        if (selectedTeamId === "runner") return "Runners";
+        const teamIndex = teams.findIndex(t => t.teamId === selectedTeamId);
+        return teamIndex >= 0 ? `Team ${teamIndex + 1}` : "";
+    }, [selectedTeamId, teams]);
+
+    // ── Core helpers ─────────────────────────────────────
+    const removeEmployee = useCallback((uid, teamId) => {
+        if (teamId === 'pool') return;
+        if (teamId === 'bar') {
+            setBarTeam(prev => ({ ...prev, members: prev.members.filter(m => m.uid !== uid) }));
+        } else if (teamId === 'runner') {
+            setRunners(prev => prev.filter(m => m.uid !== uid));
+        } else {
+            setTeams(prev => prev.map(t =>
+                t.teamId === teamId ? { ...t, members: t.members.filter(m => m.uid !== uid) } : t
+            ));
+        }
+    }, [setBarTeam, setRunners, setTeams]);
+
+    const addEmployee = useCallback((emp, targetTeamId, pts) => {
+        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: emp.role || null, points: pts };
+        if (targetTeamId === 'bar') {
+            setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
+        } else if (targetTeamId === 'runner') {
+            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null, payoutAmount: 102 }]);
+        } else {
+            setTeams(prev => prev.map(t =>
+                t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t
+            ));
+        }
+    }, [setBarTeam, setRunners, setTeams]);
+
     // ── Drag handlers ────────────────────────────────────
     const handleDragStart = useCallback((e, uid, sourceTeamId) => {
         setDraggedData({ uid, sourceTeamId });
@@ -96,7 +130,7 @@ function ShiftSetupDnd({
         const { uid, sourceTeamId } = draggedData;
         if (sourceTeamId !== 'pool') removeEmployee(uid, sourceTeamId);
         setDraggedData(null);
-    }, [draggedData]);
+    }, [draggedData, removeEmployee]);
 
     const handleDropTeam = useCallback((e, targetTeamId) => {
         e.preventDefault();
@@ -117,7 +151,7 @@ function ShiftSetupDnd({
 
         addEmployee(emp, targetTeamId, pts);
         setDraggedData(null);
-    }, [draggedData, combinedEmployees]);
+    }, [draggedData, combinedEmployees, removeEmployee, addEmployee]);
 
     // ── Click-to-assign ──────────────────────────────────
     const handleTeamClick = useCallback((teamId) => {
@@ -134,48 +168,7 @@ function ShiftSetupDnd({
 
         addEmployee(emp, selectedTeamId, pts);
         // keep team selected so user can keep clicking more employees
-    }, [selectedTeamId]);
-
-    // ── Core helpers ─────────────────────────────────────
-    const removeEmployee = (uid, teamId) => {
-        if (teamId === 'pool') return;
-        if (teamId === 'bar') {
-            setBarTeam(prev => ({ ...prev, members: prev.members.filter(m => m.uid !== uid) }));
-        } else if (teamId === 'runner') {
-            setRunners(prev => prev.filter(m => m.uid !== uid));
-        } else {
-            setTeams(prev => prev.map(t =>
-                t.teamId === teamId ? { ...t, members: t.members.filter(m => m.uid !== uid) } : t
-            ));
-        }
-    };
-
-    const addEmployee = (emp, targetTeamId, pts) => {
-        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: emp.role || null, points: pts };
-        if (targetTeamId === 'bar') {
-            setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
-        } else if (targetTeamId === 'runner') {
-            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null, payoutAmount: 102 }]);
-        } else {
-            setTeams(prev => prev.map(t =>
-                t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t
-            ));
-        }
-    };
-
-    const handleUpdateField = useCallback((teamId, uid, field, newPts) => {
-        if (teamId === 'runner') {
-            setRunners(prev => prev.map(m => m.uid === uid ? { ...m, [field]: newPts } : m));
-        } else if (teamId === 'bar') {
-            setBarTeam(prev => ({ ...prev, members: prev.members.map(m => m.uid === uid ? { ...m, [field]: newPts } : m) }));
-        } else {
-            setTeams(prev => prev.map(t =>
-                t.teamId === teamId
-                    ? { ...t, members: t.members.map(m => m.uid === uid ? { ...m, [field]: newPts } : m) }
-                    : t
-            ));
-        }
-    }, [setTeams, setRunners, setBarTeam]);
+    }, [selectedTeamId, addEmployee]);
 
     const handleAddTeam = useCallback(() => {
         if (teams.length >= 6) return;
@@ -198,18 +191,16 @@ function ShiftSetupDnd({
         onDragLeave: handleDragLeave,
         onDrop: handleDropTeam,
         onDragStart: handleDragStart,
-        onRemove: removeEmployee,
-        onUpdateField: handleUpdateField
-    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, handleUpdateField]);
+        onRemove: removeEmployee
+    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee]);
 
     return (
-        <div className={styles.container}>
+        <div className="grid grid-cols-[minmax(340px,0.9fr)_minmax(440px,1.3fr)] gap-4 h-[min(68vh,720px)] min-h-[420px] items-stretch max-[900px]:grid-cols-1 max-[900px]:h-auto">
             <div
-                className={styles.poolWrapper}
+                className="min-h-0 h-full flex flex-col max-[900px]:order-2"
                 onDragOver={(e) => { e.preventDefault(); if (dragOverId !== 'pool') setDragOverId('pool'); }}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDropPool}
-                style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
             >
                 <EmployeePool
                     employees={combinedEmployees}
@@ -217,6 +208,7 @@ function ShiftSetupDnd({
                     onDragStart={handleDragStart}
                     onEmployeeClick={handlePoolEmployeeClick}
                     selectedTeamId={selectedTeamId}
+                    selectedTargetLabel={selectedTargetLabel}
                     onAddUnregistered={handleAddUnregistered}
                 />
             </div>
