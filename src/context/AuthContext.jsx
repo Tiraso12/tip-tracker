@@ -1,7 +1,7 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import { auth, db } from '../config/firebase';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, setPersistence, browserSessionPersistence } from "firebase/auth";
-import { doc, getDoc, runTransaction } from "firebase/firestore";
+import { doc, getDoc, writeBatch } from "firebase/firestore";
 
 const AuthContext = createContext(null);
 const normalizeUsername = (username) => username.trim().toLowerCase();
@@ -9,6 +9,7 @@ const normalizeUsername = (username) => username.trim().toLowerCase();
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const registrationInProgressRef = useRef(false);
 
     useEffect(() => {
         let unsubscribe;
@@ -25,6 +26,9 @@ export const AuthProvider = ({ children }) => {
                             if (userDoc.exists()) {
                                 role = userDoc.data().role || "employee";
                                 status = userDoc.data().status || "active";
+                            } else if (registrationInProgressRef.current) {
+                                role = "unassigned";
+                                status = "pending";
                             } else {
                                 // User was deleted from Firestore by an Admin
                                 console.warn("User document not found. Auto-logging out.");
@@ -93,45 +97,48 @@ export const AuthProvider = ({ children }) => {
         const cleanUsername = username.trim();
         const usernameKey = normalizeUsername(cleanUsername);
         const usernameRef = doc(db, 'usernames', usernameKey);
-        const usernameDoc = await getDoc(usernameRef);
 
-        if (usernameDoc.exists()) {
-            throw new Error("Username already taken");
-        }
-
-        await setPersistence(auth, browserSessionPersistence);
-        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-        const firebaseUser = userCredential.user;
-
-        await updateProfile(firebaseUser, { displayName: cleanUsername });
-
-        // Atomically claim the username and create the user doc.
-        // If two registrations race for the same username, only one transaction
-        // succeeds; the loser deletes its Firebase Auth account and surfaces an error.
+        let firebaseUser = null;
         try {
-            await runTransaction(db, async (transaction) => {
-                const usernameSnap = await transaction.get(usernameRef);
-                if (usernameSnap.exists()) {
-                    throw new Error("Username already taken");
-                }
-                transaction.set(doc(db, 'users', firebaseUser.uid), {
-                    uid: firebaseUser.uid,
-                    username: cleanUsername,
-                    email: cleanEmail,
-                    role: "unassigned",
-                    status: "pending",
-                    createdAt: new Date().toISOString()
-                });
-                transaction.set(usernameRef, {
-                    uid: firebaseUser.uid,
-                    username: cleanUsername,
-                    email: cleanEmail,
-                    createdAt: new Date().toISOString()
-                });
+            registrationInProgressRef.current = true;
+            await setPersistence(auth, browserSessionPersistence);
+            const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+            firebaseUser = userCredential.user;
+
+            await updateProfile(firebaseUser, { displayName: cleanUsername });
+
+            // Atomically claim the username and create the user doc without a
+            // client-side username read. Firestore rules allow creating the
+            // username mapping, but deny updating it, so an existing username
+            // fails the batch instead of being overwritten.
+            const batch = writeBatch(db);
+            batch.set(doc(db, 'users', firebaseUser.uid), {
+                uid: firebaseUser.uid,
+                username: cleanUsername,
+                email: cleanEmail,
+                role: "unassigned",
+                status: "pending",
+                createdAt: new Date().toISOString()
             });
+            batch.set(usernameRef, {
+                uid: firebaseUser.uid,
+                username: cleanUsername,
+                email: cleanEmail,
+                createdAt: new Date().toISOString()
+            });
+            await batch.commit();
         } catch (err) {
-            await firebaseUser.delete();
+            if (firebaseUser) {
+                try {
+                    await firebaseUser.delete();
+                } catch (deleteErr) {
+                    console.warn("Could not delete partially registered auth user:", deleteErr);
+                    await signOut(auth);
+                }
+            }
             throw err;
+        } finally {
+            registrationInProgressRef.current = false;
         }
 
         setUser(prev => ({ ...prev, username: cleanUsername, role: "unassigned", status: "pending", emailVerified: true }));
