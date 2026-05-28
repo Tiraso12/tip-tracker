@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildClosedShiftPayload, buildShiftSetupDraft } from "./shiftPersistence.js";
+import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "./shiftPersistence.js";
 
 test("builds a setup draft without payout data", () => {
     const teams = [
@@ -61,4 +61,18 @@ test("builds a closed shift payload with payout data", () => {
     assert.deepEqual(payload.summary, summary);
     assert.equal(payload.closedAt, "2026-05-23T02:00:00.000Z");
     assert.equal(payload.updatedAt, "2026-05-23T02:00:00.000Z");
+});
+
+test("finds employees removed from a recalculated shift payout", () => {
+    const previousPayouts = {
+        dina: { total: 120 },
+        alex: { total: 95 },
+        sam: { total: 80 },
+    };
+    const nextPayouts = {
+        alex: { total: 110 },
+        sam: { total: 85 },
+    };
+
+    assert.deepEqual(getRemovedPayoutUids(previousPayouts, nextPayouts), ["dina"]);
 });
