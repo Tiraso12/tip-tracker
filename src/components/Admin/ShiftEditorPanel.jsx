@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import { Button, Card } from "../ui";
 import { generateTeamSheetPDF } from "../../utils/pdfExport";
-import { buildClosedShiftPayload, buildShiftSetupDraft } from "../../utils/shiftPersistence";
+import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "../../utils/shiftPersistence";
 
 const toMoney = (value) => Number(value) || 0;
 const hasNegative = (value) => Number(value) < 0;
@@ -795,7 +795,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         setIsSaving(true);
         setSaveStatus("Saving…");
         try {
-            await setDoc(doc(db, "shifts", date), buildClosedShiftPayload({
+            const shiftRef = doc(db, "shifts", date);
+            const existingShiftDoc = await getDoc(shiftRef);
+            const previousPayouts = existingShiftDoc.exists() ? existingShiftDoc.data().payouts || {} : {};
+            const removedPayoutUids = getRemovedPayoutUids(previousPayouts, mappedPayoutsForFirebase);
+
+            await setDoc(shiftRef, buildClosedShiftPayload({
                 date,
                 teams,
                 barTeam,
@@ -815,9 +820,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     role: payout.role,
                     shiftDate: date,
                     updatedAt: new Date().toISOString(),
-                }, { merge: true })
+                })
             );
-            await Promise.all(saves);
+            const deletes = removedPayoutUids.map(uid =>
+                deleteDoc(doc(db, "users", uid, "tips", date))
+            );
+            await Promise.all([...saves, ...deletes]);
             setSaveStatus("Saved.");
             setShiftStatus("closed");
             setCalculatedReview(null);

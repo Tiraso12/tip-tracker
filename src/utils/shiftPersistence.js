@@ -29,3 +29,7 @@ export function buildClosedShiftPayload({ date, teams, barTeam, runners, payouts
         updatedAt: savedAt,
     };
 }
+
+export function getRemovedPayoutUids(previousPayouts = {}, nextPayouts = {}) {
+    return Object.keys(previousPayouts).filter(uid => !(uid in nextPayouts));
+}
