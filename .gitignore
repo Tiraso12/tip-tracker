@@ -29,6 +29,7 @@ dist-ssr
 
 # Local test credentials - keep off GitHub
 TEST_CREDENTIALS.md
+ENGINE_LOGIC.md
 CONTEXT_ENGINE.md
 
 # Claude Code local config

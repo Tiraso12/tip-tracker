@@ -74,6 +74,7 @@ function AdminDashboard() {
     const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
     const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor" | "reports"
     const [daySummary, setDaySummary] = useState(null);
+    const [dayShiftStatus, setDayShiftStatus] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
 
     const fetchEmployees = useCallback(async () => {
@@ -92,11 +93,13 @@ function AdminDashboard() {
     const fetchDayPayouts = useCallback(async (date) => {
         setDayLoading(true);
         setDaySummary(null);
+        setDayShiftStatus(null);
         try {
             const shiftDoc = await getDoc(doc(db, "shifts", date));
             if (shiftDoc.exists()) {
                 const d = shiftDoc.data();
                 setDaySummary(d.summary || null);
+                setDayShiftStatus(d.status || (d.summary || d.payouts ? "closed" : "setup"));
             }
         } catch (e) {
             console.error("Failed to fetch day payouts:", e);
@@ -261,6 +264,7 @@ function AdminDashboard() {
                             <DayPayoutPanel
                                 date={selectedDate}
                                 summary={daySummary}
+                                status={dayShiftStatus}
                                 loading={dayLoading}
                             />
                         ) : activeTab === "editor" ? (

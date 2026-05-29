@@ -102,7 +102,7 @@ function PayoutTable({ summary }) {
     );
 }
 
-function DayPayoutPanel({ date, summary, loading }) {
+function DayPayoutPanel({ date, summary, status, loading }) {
     const displayDate = (() => {
         const [y, m, d] = date.split("-");
         return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
@@ -133,6 +133,21 @@ function DayPayoutPanel({ date, summary, loading }) {
             {loading ? (
                 <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
                     Loading…
+                </div>
+            ) : !summary && status === "setup" ? (
+                <div className="px-6 py-16 text-center">
+                    <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                    </div>
+                    <p className="text-sm text-[var(--color-ink)]">Team setup saved for this date.</p>
+                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                        Open the shift editor to adjust the team or complete money closeout.
+                    </p>
                 </div>
             ) : !summary ? (
                 <div className="px-6 py-16 text-center">
