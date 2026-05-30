@@ -54,13 +54,14 @@ function buildEmployeeTotals(reportData) {
             const tips = toMoney(payout.tips);
             const gratuity = toMoney(payout.gratuity);
             const cash = toMoney(payout.cash);
-            const total = payout.total !== undefined ? toMoney(payout.total) : tips + gratuity + cash;
+            const total = tips + gratuity;
+            const activityTotal = total + cash;
 
             employeeMap[uid].tips += tips;
             employeeMap[uid].gratuity += gratuity;
             employeeMap[uid].cash += cash;
             employeeMap[uid].total += total;
-            employeeMap[uid].shifts += total > 0 ? 1 : 0;
+            employeeMap[uid].shifts += activityTotal > 0 ? 1 : 0;
         });
     });
 
@@ -211,7 +212,7 @@ function AdminReportsPanel() {
         gratuity: acc.gratuity + d.gratuity,
         cash: acc.cash + d.cash,
         revenue: acc.revenue + d.revenue,
-        total: acc.total + d.tip + d.gratuity + d.cash
+        total: acc.total + d.tip + d.gratuity
     }), { tips: 0, gratuity: 0, cash: 0, revenue: 0, total: 0 });
 
     const employeeTotals = React.useMemo(() => buildEmployeeTotals(reportData), [reportData]);
@@ -308,13 +309,13 @@ function AdminReportsPanel() {
                                     <TH numeric>Tips</TH>
                                     <TH numeric>Gratuity</TH>
                                     <TH numeric>Cash</TH>
-                                    <TH numeric>Daily Pool</TH>
+                                    <TH numeric>Daily Pool (CTP+GRT)</TH>
                                 </tr>
                             </THead>
                             <TBody>
                                 {reportData.map(d => {
-                                    const dailyTotal = d.tip + d.gratuity + d.cash;
-                                    const noData = dailyTotal === 0 && Object.keys(d.payouts).length === 0;
+                                    const dailyTotal = d.tip + d.gratuity;
+                                    const noData = dailyTotal === 0 && d.cash === 0 && Object.keys(d.payouts).length === 0;
                                     return (
                                         <TR
                                             key={d.date}
