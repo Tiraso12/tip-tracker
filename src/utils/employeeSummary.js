@@ -28,6 +28,10 @@ export function getDayTotal(day = {}) {
     return toNumber(day.gratuity) + toNumber(day.tip) + toNumber(day.cash);
 }
 
+export function getNonCashDayTotal(day = {}) {
+    return toNumber(day.gratuity) + toNumber(day.tip);
+}
+
 export function buildEmployeePeriodSummary(allData = {}, dateKeys = []) {
     const entries = dateKeys.map((dateKey) => ({
         dateKey,

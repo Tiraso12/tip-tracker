@@ -1,4 +1,5 @@
 import React from "react";
+import { getNonCashDayTotal } from "../../utils/employeeSummary";
 
 const roleLabels = {
     captain: "Captain",
@@ -54,7 +55,7 @@ function WeekCard({ data, total, hasPayout, roleLabel, title }) {
 
             <div className="mt-3 pt-3 border-t border-[var(--color-line)] flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
-                    Total
+                    Total (G+T)
                 </span>
                 <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
                     {fmt(total)}
@@ -102,11 +103,11 @@ function MonthCell({ total, hasPayout, title, roleLabel }) {
 }
 
 function DayCard({ data, variant = "week" }) {
-    const total =
+    const total = getNonCashDayTotal(data);
+    const hasPayout =
         Number(data.gratuity || 0) +
         Number(data.tip || 0) +
-        Number(data.cash || 0);
-    const hasPayout = total > 0;
+        Number(data.cash || 0) > 0;
     const roleLabel = data.role ? roleLabels[data.role] || data.role : null;
 
     const d = new Date(data.date);
