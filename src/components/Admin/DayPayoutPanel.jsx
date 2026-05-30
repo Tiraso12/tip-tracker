@@ -3,6 +3,7 @@ import { generateShiftReport } from "../../utils/pdfExport";
 import { Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
 
 const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+const getNonCashPayoutTotal = (payout = {}) => (Number(payout.ctp) || 0) + (Number(payout.grt) || 0);
 
 function StatColumn({ label, children }) {
     return (
@@ -55,7 +56,7 @@ function PayoutTable({ summary }) {
                     <TH numeric>CTP</TH>
                     <TH numeric>GRT</TH>
                     <TH numeric>Cash</TH>
-                    <TH numeric>Total</TH>
+                    <TH numeric>Total (CTP+GRT)</TH>
                 </tr>
             </THead>
             <TBody>
@@ -90,7 +91,7 @@ function PayoutTable({ summary }) {
                                         </>
                                     )}
                                     <TD numeric className="font-semibold">
-                                        {fmt(isRunner ? p.payoutAmount : p.total)}
+                                        {fmt(isRunner ? p.payoutAmount : getNonCashPayoutTotal(p))}
                                     </TD>
                                 </TR>
                             ))}
