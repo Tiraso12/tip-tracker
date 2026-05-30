@@ -4,7 +4,7 @@ import {
     buildEmployeePeriodSummary,
     fmtMoney,
     getDateKeys,
-    getDayTotal,
+    getNonCashDayTotal,
 } from "../../utils/employeeSummary";
 import { Card } from "../ui";
 
@@ -63,6 +63,20 @@ function EmployeePeriodSummary({ currentDate, currentWeekStart, currentWeekEnd, 
         const keys = getDateKeys(currentWeekStart, currentWeekEnd);
         return buildEmployeePeriodSummary(allData, keys);
     }, [allData, currentWeekEnd, currentWeekStart]);
+    const thisWeekNonCashTotal = weekSummary.workedEntries.reduce(
+        (sum, entry) => sum + getNonCashDayTotal(entry),
+        0
+    );
+    const payPeriodNonCashTotal = summary.workedEntries.reduce(
+        (sum, entry) => sum + getNonCashDayTotal(entry),
+        0
+    );
+    const averageNonCashShift =
+        summary.workedEntries.length > 0 ? payPeriodNonCashTotal / summary.workedEntries.length : 0;
+    const bestNonCashDay = summary.workedEntries.reduce((best, entry) => {
+        if (!best || getNonCashDayTotal(entry) > getNonCashDayTotal(best)) return entry;
+        return best;
+    }, null);
 
     const topRoles = Object.entries(summary.roleCounts)
         .sort((a, b) => b[1] - a[1])
@@ -94,14 +108,14 @@ function EmployeePeriodSummary({ currentDate, currentWeekStart, currentWeekEnd, 
                 <div className="px-6 py-5">
                     <StatBlock
                         label="This Week"
-                        value={fmtMoney(weekSummary.totals.total)}
+                        value={fmtMoney(thisWeekNonCashTotal)}
                         hint={weekLabel}
                     />
                 </div>
                 <div className="px-6 py-5">
                     <StatBlock
                         label="Pay Period"
-                        value={fmtMoney(summary.totals.total)}
+                        value={fmtMoney(payPeriodNonCashTotal)}
                         hint={periodLabel}
                         accent
                     />
@@ -114,12 +128,12 @@ function EmployeePeriodSummary({ currentDate, currentWeekStart, currentWeekEnd, 
                     <StatBlock label="Worked Shifts" value={summary.workedDays} />
                 </div>
                 <div className="px-6 py-4">
-                    <StatBlock label="Average Shift" value={fmtMoney(summary.averageShift)} />
+                    <StatBlock label="Average Shift" value={fmtMoney(averageNonCashShift)} />
                 </div>
                 <div className="px-6 py-4">
                     <StatBlock
                         label="Best Day"
-                        value={summary.bestDay ? fmtMoney(getDayTotal(summary.bestDay)) : "$0.00"}
+                        value={bestNonCashDay ? fmtMoney(getNonCashDayTotal(bestNonCashDay)) : "$0.00"}
                     />
                 </div>
             </div>

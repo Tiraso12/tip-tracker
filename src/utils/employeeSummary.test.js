@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildEmployeePeriodSummary, getDateKeys, getDayTotal } from "./employeeSummary.js";
+import {
+    buildEmployeePeriodSummary,
+    getDateKeys,
+    getDayTotal,
+    getNonCashDayTotal,
+} from "./employeeSummary.js";
 
 test("builds totals and shift stats for an employee period", () => {
     const keys = ["2026-05-01", "2026-05-02", "2026-05-03"];
@@ -22,11 +27,16 @@ test("builds totals and shift stats for an employee period", () => {
 
 test("treats missing or empty day data as zero", () => {
     assert.equal(getDayTotal({ gratuity: "", tip: null, cash: undefined }), 0);
+    assert.equal(getNonCashDayTotal({ gratuity: "", tip: null, cash: 25 }), 0);
 
     const summary = buildEmployeePeriodSummary({}, ["2026-05-01"]);
     assert.equal(summary.workedDays, 0);
     assert.equal(summary.totals.total, 0);
     assert.equal(summary.bestDay, null);
+});
+
+test("calculates non-cash day total from gratuity and tip only", () => {
+    assert.equal(getNonCashDayTotal({ gratuity: 50, tip: 75, cash: 25 }), 125);
 });
 
 test("generates inclusive date keys", () => {
