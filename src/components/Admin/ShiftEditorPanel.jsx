@@ -11,6 +11,8 @@ const toMoney = (value) => Number(value) || 0;
 const hasNegative = (value) => Number(value) < 0;
 const moneyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const fmtMoney = (value) => moneyFormatter.format(toMoney(value));
+const getPayoutNonCashTotal = (payout = {}) =>
+    toMoney(payout.tips ?? payout.ctp ?? payout.payoutAmount) + toMoney(payout.gratuity ?? payout.grt);
 const roleLabels = {
     captain: "Captain",
     server: "Server",
@@ -164,7 +166,7 @@ function buildPayoutReview(result, mappedPayouts) {
 
     const roleTotals = payoutRows.reduce((totals, payout) => {
         const role = payout.role || "other";
-        totals[role] = (totals[role] || 0) + toMoney(payout.total);
+        totals[role] = (totals[role] || 0) + getPayoutNonCashTotal(payout);
         return totals;
     }, {});
 
@@ -173,7 +175,7 @@ function buildPayoutReview(result, mappedPayouts) {
         mappedPayouts,
         payoutRows,
         roleTotals,
-        staffTotal: payoutRows.reduce((sum, payout) => sum + toMoney(payout.total), 0),
+        staffTotal: payoutRows.reduce((sum, payout) => sum + getPayoutNonCashTotal(payout), 0),
     };
 }
 
@@ -476,7 +478,9 @@ function CalculatedPayoutReview({ review }) {
                             <span>CTP {fmtMoney(payout.tips)}</span>
                             <span>GRT {fmtMoney(payout.gratuity)}</span>
                             <span>Cash {fmtMoney(payout.cash)}</span>
-                            <strong className="text-sm text-[var(--color-ink)]">{fmtMoney(payout.total)}</strong>
+                            <strong className="text-sm text-[var(--color-ink)]">
+                                Total (CTP+GRT) {fmtMoney(getPayoutNonCashTotal(payout))}
+                            </strong>
                         </div>
                     </div>
                 ))}
