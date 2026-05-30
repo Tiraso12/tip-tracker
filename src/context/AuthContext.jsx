@@ -1,6 +1,16 @@
 import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import { auth, db } from '../config/firebase';
-import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, setPersistence, browserSessionPersistence } from "firebase/auth";
+import {
+    browserLocalPersistence,
+    browserSessionPersistence,
+    createUserWithEmailAndPassword,
+    onAuthStateChanged,
+    sendPasswordResetEmail,
+    setPersistence,
+    signInWithEmailAndPassword,
+    signOut,
+    updateProfile,
+} from "firebase/auth";
 import { doc, getDoc, writeBatch } from "firebase/firestore";
 
 const AuthContext = createContext(null);
@@ -14,52 +24,45 @@ export const AuthProvider = ({ children }) => {
     useEffect(() => {
         let unsubscribe;
 
-        setPersistence(auth, browserSessionPersistence)
-            .then(() => {
-                unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-                    if (firebaseUser) {
-                        // Fetch role and status from Firestore
-                        let role = "employee"; // default fallback
-                        let status = "active"; // default fallback
-                        try {
-                            const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-                            if (userDoc.exists()) {
-                                role = userDoc.data().role || "employee";
-                                status = userDoc.data().status || "active";
-                            } else if (registrationInProgressRef.current) {
-                                role = "unassigned";
-                                status = "pending";
-                            } else {
-                                // User was deleted from Firestore by an Admin
-                                console.warn("User document not found. Auto-logging out.");
-                                await signOut(auth);
-                                setUser(null);
-                                setLoading(false);
-                                return;
-                            }
-                        } catch (e) {
-                            console.warn("Could not fetch user data:", e);
-                        }
-
-                        const mappedUser = {
-                            uid: firebaseUser.uid,
-                            username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-                            email: firebaseUser.email,
-                            emailVerified: true, // Default to true as we're removing verification step
-                            role,
-                            status,
-                        };
-                        setUser(mappedUser);
+        unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                // Fetch role and status from Firestore
+                let role = "employee"; // default fallback
+                let status = "active"; // default fallback
+                try {
+                    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+                    if (userDoc.exists()) {
+                        role = userDoc.data().role || "employee";
+                        status = userDoc.data().status || "active";
+                    } else if (registrationInProgressRef.current) {
+                        role = "unassigned";
+                        status = "pending";
                     } else {
+                        // User was deleted from Firestore by an Admin
+                        console.warn("User document not found. Auto-logging out.");
+                        await signOut(auth);
                         setUser(null);
+                        setLoading(false);
+                        return;
                     }
-                    setLoading(false);
-                });
-            })
-            .catch((error) => {
-                console.error("Auth persistence error:", error);
-                setLoading(false);
-            });
+                } catch (e) {
+                    console.warn("Could not fetch user data:", e);
+                }
+
+                const mappedUser = {
+                    uid: firebaseUser.uid,
+                    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+                    email: firebaseUser.email,
+                    emailVerified: true, // Default to true as we're removing verification step
+                    role,
+                    status,
+                };
+                setUser(mappedUser);
+            } else {
+                setUser(null);
+            }
+            setLoading(false);
+        });
 
         return () => {
             if (unsubscribe) unsubscribe();
@@ -74,7 +77,7 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const login = async (identifier, password) => {
+    const login = async (identifier, password, rememberMe = false) => {
         const trimmedIdentifier = identifier.trim();
         let emailToSignIn = trimmedIdentifier;
 
@@ -88,7 +91,7 @@ export const AuthProvider = ({ children }) => {
             emailToSignIn = usernameDoc.data().email;
         }
 
-        await setPersistence(auth, browserSessionPersistence);
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
         return await signInWithEmailAndPassword(auth, emailToSignIn, password);
     };
 
