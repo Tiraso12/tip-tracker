@@ -40,12 +40,19 @@ function StatBlock({ label, value, hint, accent = false }) {
     );
 }
 
-function MetricRow({ label, value }) {
+function MetricRow({ label, value, hint }) {
     return (
         <div className="flex items-baseline justify-between gap-3 py-2 border-b border-[var(--color-line)] last:border-0">
-            <span className="text-xs uppercase tracking-wide text-[var(--color-ink-soft)]">
-                {label}
-            </span>
+            <div className="flex flex-col gap-0.5">
+                <span className="text-xs uppercase tracking-wide text-[var(--color-ink-soft)]">
+                    {label}
+                </span>
+                {hint ? (
+                    <span className="text-[11px] text-[var(--color-ink-muted)]">
+                        {hint}
+                    </span>
+                ) : null}
+            </div>
             <span className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
                 {value}
             </span>
@@ -140,9 +147,21 @@ function EmployeePeriodSummary({ currentDate, currentWeekStart, currentWeekEnd, 
 
             {/* Source breakdown */}
             <div className="px-6 py-4 border-t border-[var(--color-line)]">
-                <MetricRow label="Gratuity" value={fmtMoney(summary.totals.gratuity)} />
-                <MetricRow label="Tip" value={fmtMoney(summary.totals.tip)} />
-                <MetricRow label="Cash" value={fmtMoney(summary.totals.cash)} />
+                <MetricRow
+                    label="Gratuity"
+                    value={fmtMoney(summary.totals.gratuity)}
+                    hint={`Pay period: ${periodLabel}`}
+                />
+                <MetricRow
+                    label="Tip"
+                    value={fmtMoney(summary.totals.tip)}
+                    hint={`Pay period: ${periodLabel}`}
+                />
+                <MetricRow
+                    label="Cash"
+                    value={fmtMoney(weekSummary.totals.cash)}
+                    hint={`Current week: ${weekLabel}`}
+                />
             </div>
 
             {/* Footer line */}
