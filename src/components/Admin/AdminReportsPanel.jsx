@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../config/firebase";
-import { getBiweeklyPeriod, getCurrentWeek } from "../../utils/dateUtils";
+import { getBiweeklyPeriod, getCurrentWeek, toDateKey } from "../../utils/dateUtils";
 import { generateMonthlyReport, generateWeeklyReport } from "../../utils/pdfExport";
 import { Button, Card, Select, Table, THead, TBody, TR, TH, TD } from "../ui";
 
@@ -109,7 +109,7 @@ function NavIconButton({ onClick, label, children }) {
 
 function AdminReportsPanel() {
     const [viewMode, setViewMode] = useState("week");
-    const [baseDateStr, setBaseDateStr] = useState(() => new Date().toISOString().split("T")[0]);
+    const [baseDateStr, setBaseDateStr] = useState(() => toDateKey(new Date()));
     const [reportData, setReportData] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -122,7 +122,7 @@ function AdminReportsPanel() {
             const weekDates = getCurrentWeek(d);
             start = weekDates[0];
             end = weekDates[6];
-            keys = weekDates.map(wd => wd.toISOString().split("T")[0]);
+            keys = weekDates.map(toDateKey);
             label = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
         } else if (viewMode === "period") {
             const period = getBiweeklyPeriod(d);
@@ -130,7 +130,7 @@ function AdminReportsPanel() {
             end = period.end;
             const cursor = new Date(start);
             while (cursor <= end) {
-                keys.push(cursor.toISOString().split("T")[0]);
+                keys.push(toDateKey(cursor));
                 cursor.setDate(cursor.getDate() + 1);
             }
             label = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
@@ -142,14 +142,14 @@ function AdminReportsPanel() {
             const dayCount = end.getDate();
             for (let i = 1; i <= dayCount; i++) {
                 const md = new Date(year, month, i);
-                keys.push(md.toISOString().split("T")[0]);
+                keys.push(toDateKey(md));
             }
             label = d.toLocaleString('default', { month: 'long', year: 'numeric' });
         }
 
         return {
-            startStr: start.toISOString().split("T")[0],
-            endStr: end.toISOString().split("T")[0],
+            startStr: toDateKey(start),
+            endStr: toDateKey(end),
             displayLabel: label,
             dateKeys: keys
         };
@@ -223,7 +223,7 @@ function AdminReportsPanel() {
         if (viewMode === 'week') d.setDate(d.getDate() + (delta * 7));
         else if (viewMode === 'period') d.setDate(d.getDate() + (delta * 14));
         else d.setMonth(d.getMonth() + delta);
-        setBaseDateStr(d.toISOString().split("T")[0]);
+        setBaseDateStr(toDateKey(d));
     };
 
     return (

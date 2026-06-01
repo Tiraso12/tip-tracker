@@ -7,6 +7,7 @@ import DayPayoutPanel from "./DayPayoutPanel";
 import ShiftEditorPanel from "./ShiftEditorPanel";
 import AdminReportsPanel from "./AdminReportsPanel";
 import { Badge, Button } from "../ui";
+import { toDateKey } from "../../utils/dateUtils";
 
 const NAV_ITEMS = [
     {
@@ -71,7 +72,7 @@ function SideNavItem({ item, active, onClick }) {
 function AdminDashboard() {
     const { logout, user } = useAuth();
     const [allEmployees, setAllEmployees] = useState([]);
-    const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
+    const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
     const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor" | "reports"
     const [daySummary, setDaySummary] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
@@ -115,7 +116,7 @@ function AdminDashboard() {
     const changeDate = (delta) => {
         const d = new Date(selectedDate + "T12:00:00");
         d.setDate(d.getDate() + delta);
-        setSelectedDate(d.toISOString().split("T")[0]);
+        setSelectedDate(toDateKey(d));
     };
 
     const handleEditorClose = () => {

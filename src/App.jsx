@@ -5,7 +5,7 @@ import MonthView from "./components/Calendar/MonthView";
 import Charts from "./components/Charts/Charts";
 
 import WeekHeader from "./components/WeekHeader/WeekHeader";
-import { getCurrentWeek, getCalendarMonth } from "./utils/dateUtils";
+import { getCurrentWeek, getCalendarMonth, toDateKey } from "./utils/dateUtils";
 
 import EmployeePeriodSummary from "./components/EmployeePeriodSummary/EmployeePeriodSummary";
 import DataService from "./services/dataService";
@@ -46,7 +46,7 @@ function App() {
       let grat = 0, tip = 0, cash = 0;
 
       daysInMonth.forEach(day => {
-        const key = day.toISOString().split('T')[0];
+        const key = toDateKey(day);
         const data = allData[key] || { gratuity: 0, tip: 0, cash: 0 };
 
         grat += Number(data.gratuity) || 0;
@@ -91,7 +91,7 @@ function App() {
 
       // Compute static weekData from allData
       const computedWeekData = dates.map(date => {
-        const key = date.toISOString().split('T')[0];
+        const key = toDateKey(date);
         return {
           date: date,
           dateKey: key,
@@ -171,6 +171,7 @@ function App() {
           onNext={() => handleNavigation(1)}
           viewMode={viewMode}
           onViewChange={setViewMode}
+          onDateChange={setBaseDate}
         />
         <EmployeePeriodSummary
           currentDate={baseDate}

@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { isSameDay } from "../../utils/dateUtils";
+import { isSameDay, toDateKey } from "../../utils/dateUtils";
 import DayCard from "./DayCard";
 
 const HEADERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -43,7 +43,7 @@ function MonthView({ currentDate, allData }) {
             </div>
             <div className="grid grid-cols-7">
                 {days.map((day, idx) => {
-                    const dateKey = day.toISOString().split("T")[0];
+                    const dateKey = toDateKey(day);
                     const isToday = isSameDay(day, new Date());
                     const isCurrentMonth = day.getMonth() === currentDate.getMonth();
 

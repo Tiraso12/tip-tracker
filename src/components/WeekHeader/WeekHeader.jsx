@@ -1,5 +1,4 @@
 import React from "react";
-import { formatDate } from "../../utils/dateUtils";
 
 function ToggleButton({ active, onClick, children }) {
   return (
@@ -34,30 +33,56 @@ function NavButton({ onClick, label, children }) {
   );
 }
 
-function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange, currentDate }) {
+const toDateInputValue = (date) => {
+  if (!date) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const fromDateInputValue = (value) => {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const fromMonthInputValue = (value) => {
+  if (!value) return null;
+  const [year, month] = value.split("-").map(Number);
+  return new Date(year, month - 1, 1);
+};
+
+function WeekHeader({ startDate, endDate, onPrev, onNext, viewMode, onViewChange, currentDate, onDateChange }) {
   if (viewMode === "week" && (!startDate || !endDate)) return null;
   if (viewMode === "month" && !currentDate) return null;
 
-  const monthYear = viewMode === "month"
-    ? currentDate.toLocaleString("default", { month: "long", year: "numeric" })
-    : startDate.toLocaleString("default", { month: "long", year: "numeric" });
+  const pickerValue = viewMode === "month"
+    ? toDateInputValue(currentDate).slice(0, 7)
+    : toDateInputValue(startDate);
+
+  const handlePickerChange = (event) => {
+    const selectedDate = viewMode === "month"
+      ? fromMonthInputValue(event.target.value)
+      : fromDateInputValue(event.target.value);
+    if (selectedDate) onDateChange(selectedDate);
+  };
 
   return (
     <section className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <NavButton onClick={onPrev} label="Previous">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
         </NavButton>
-        <div className="min-w-[10rem]">
-          <h2 className="font-display text-xl sm:text-2xl font-medium tracking-tight text-[var(--color-ink)] leading-none">
-            {monthYear}
-          </h2>
-          {viewMode === "week" ? (
-            <p className="mt-1 text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
-              {formatDate(startDate)} – {formatDate(endDate)}
-            </p>
-          ) : null}
-        </div>
+        <label className="min-h-9 min-w-[13rem] inline-flex items-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3.5 py-2 text-left text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus-within:ring-2 focus-within:ring-[var(--color-accent)]/30">
+            <input
+              type={viewMode === "month" ? "month" : "date"}
+              value={pickerValue}
+              onChange={handlePickerChange}
+              aria-label={viewMode === "month" ? "Select month" : "Select week date"}
+              className="w-full bg-transparent p-0 font-mono text-base tabular-nums text-[var(--color-ink)] outline-none"
+            />
+        </label>
         <NavButton onClick={onNext} label="Next">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
         </NavButton>
