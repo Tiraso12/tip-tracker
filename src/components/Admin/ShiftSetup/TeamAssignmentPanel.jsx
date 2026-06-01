@@ -16,41 +16,46 @@ function TeamAssignmentPanel({
     const restaurantMemberCount = teams.reduce((total, team) => total + team.members.length, 0);
 
     return (
-        <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-3 flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:order-1 max-[900px]:max-h-none">
-            <div className="grid grid-cols-3 gap-2 max-[560px]:grid-cols-1">
-                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem]">
+        <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-3 flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:order-1 max-[900px]:max-h-none max-[560px]:rounded-none max-[560px]:px-0 max-[560px]:py-1">
+            <div className="grid grid-cols-3 gap-2 max-[560px]:gap-1.5">
+                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] max-[560px]:min-w-0 max-[560px]:px-2 max-[560px]:py-2">
                     <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Restaurant</span>
                     <strong className="block text-[var(--color-ink)] text-base mt-[0.15rem]">{restaurantMemberCount}</strong>
                 </div>
-                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem]">
+                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] max-[560px]:min-w-0 max-[560px]:px-2 max-[560px]:py-2">
                     <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Bar</span>
                     <strong className="block text-[var(--color-ink)] text-base mt-[0.15rem]">{barTeam.members.length}</strong>
                 </div>
-                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem]">
+                <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] max-[560px]:min-w-0 max-[560px]:px-2 max-[560px]:py-2">
                     <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Runners</span>
                     <strong className="block text-[var(--color-ink)] text-base mt-[0.15rem]">{runners.length}</strong>
                 </div>
             </div>
 
             {/* Restaurant Teams Controls */}
-            <div className="flex justify-between items-center bg-[var(--color-bg)] px-3 py-[0.45rem] rounded-[var(--radius-md)] border border-[var(--color-line)]">
+            <div className="flex justify-between items-center bg-[var(--color-bg)] px-3 py-[0.45rem] rounded-[var(--radius-md)] border border-[var(--color-line)] max-[560px]:py-2">
                 <span className="text-[0.7rem] font-bold text-[var(--color-ink-muted)] uppercase tracking-[0.07em]">Restaurant Teams</span>
                 <div className="flex items-center gap-1.5">
                     <button
-                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-10 max-[560px]:w-10"
                         onClick={onRemoveTeam}
                         disabled={teams.length <= 1}
                         title="Remove last team"
+                        aria-label="Remove last restaurant team"
                     >−</button>
                     <span className="font-bold text-[0.9rem] min-w-[18px] text-center">{teams.length}</span>
                     <button
-                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-10 max-[560px]:w-10"
                         onClick={onAddTeam}
                         title="Add team"
+                        aria-label="Add restaurant team"
                         disabled={teams.length >= 6}
                     >+</button>
                 </div>
             </div>
+            <p className="hidden max-[560px]:block m-0 text-[0.75rem] leading-5 text-[var(--color-ink-muted)]">
+                Tap a team, then tap employees below to assign them.
+            </p>
 
             {/* All team cards in a 2-column card grid */}
             <div className="grid grid-cols-2 gap-2.5 items-start max-[900px]:grid-cols-1">
