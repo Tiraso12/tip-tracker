@@ -1,3 +1,5 @@
+import { toDateKey } from "./dateUtils.js";
+
 const toNumber = (value) => Number(value) || 0;
 
 export const fmtMoney = (value) =>
@@ -17,7 +19,7 @@ export function getDateKeys(start, end) {
     finalDate.setHours(0, 0, 0, 0);
 
     while (cursor <= finalDate) {
-        keys.push(cursor.toISOString().split("T")[0]);
+        keys.push(toDateKey(cursor));
         cursor.setDate(cursor.getDate() + 1);
     }
 

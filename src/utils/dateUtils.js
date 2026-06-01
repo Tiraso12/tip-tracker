@@ -25,6 +25,17 @@ export function getCurrentWeek(baseDate = new Date()) {
 }
 
 /**
+ * Formats a Date as a local calendar key, "YYYY-MM-DD".
+ * Avoid using toISOString() for day keys because it converts to UTC first.
+ */
+export function toDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+/**
  * Formats a date as "MM/DD/YY"
  */
 export function formatDate(date) {
@@ -33,6 +44,24 @@ export function formatDate(date) {
         day: '2-digit',
         year: '2-digit',
     }).format(date);
+}
+
+/**
+ * Formats a date as "May 22".
+ */
+export function formatMonthDay(date) {
+    return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+    }).format(date);
+}
+
+/**
+ * Formats a date range as "May 22 - Jun 4".
+ */
+export function formatMonthDayRange(start, end) {
+    if (!start || !end) return "";
+    return `${formatMonthDay(start)} - ${formatMonthDay(end)}`;
 }
 
 /**

@@ -14,9 +14,6 @@ function Header() {
                 <h1 className="font-display text-3xl sm:text-4xl font-medium tracking-tight text-[var(--color-ink)]">
                     Tip Tracker
                 </h1>
-                <p className="text-sm text-[var(--color-ink-soft)]">
-                    Manage your money, design your dream life.
-                </p>
             </div>
             {user && (
                 <Button onClick={logout} variant="secondary" size="sm">
