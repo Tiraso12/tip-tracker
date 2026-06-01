@@ -111,13 +111,21 @@ function App() {
 
   const handleNavigation = (direction) => {
     setBaseDate(prev => {
-      const newDate = new Date(prev);
       if (viewMode === 'month') {
+        const newDate = new Date(prev);
         newDate.setMonth(prev.getMonth() + direction);
-      } else {
-        newDate.setDate(prev.getDate() + (direction * 7));
+        return newDate;
       }
-      return newDate;
+
+      if (currentWeekDates[0]) {
+        const newDate = new Date(currentWeekDates[0]);
+        newDate.setDate(currentWeekDates[0].getDate() + (direction * 7));
+        return newDate;
+      } else {
+        const newDate = new Date(prev);
+        newDate.setDate(prev.getDate() + (direction * 7));
+        return newDate;
+      }
     });
   };
 
