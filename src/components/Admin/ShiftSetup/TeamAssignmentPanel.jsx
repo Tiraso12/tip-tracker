@@ -16,7 +16,7 @@ function TeamAssignmentPanel({
     const restaurantMemberCount = teams.reduce((total, team) => total + team.members.length, 0);
 
     return (
-        <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-3 flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:order-1 max-[900px]:max-h-none max-[560px]:rounded-none max-[560px]:px-0 max-[560px]:py-1">
+        <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-3 flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:order-1 max-[900px]:max-h-none max-[560px]:rounded-none max-[560px]:px-0 max-[560px]:py-1 max-[560px]:gap-2">
             <div className="grid grid-cols-3 gap-2 max-[560px]:gap-1.5">
                 <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] max-[560px]:min-w-0 max-[560px]:px-2 max-[560px]:py-2">
                     <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Restaurant</span>
@@ -54,7 +54,7 @@ function TeamAssignmentPanel({
                 </div>
             </div>
             <p className="hidden max-[560px]:block m-0 text-[0.75rem] leading-5 text-[var(--color-ink-muted)]">
-                Tap a team, then tap employees below to assign them.
+                Tap a team to add employees.
             </p>
 
             {/* All team cards in a 2-column card grid */}

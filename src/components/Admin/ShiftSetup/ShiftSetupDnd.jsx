@@ -14,6 +14,8 @@ function ShiftSetupDnd({
     const [draggedData, setDraggedData] = useState(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [selectedTeamId, setSelectedTeamId] = useState(null); // click-to-assign target
+    const [mobilePickerOpen, setMobilePickerOpen] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
 
     // ── Unregistered Staff ──
     const [unregisteredDb, setUnregisteredDb] = useState([]);
@@ -29,6 +31,14 @@ function ShiftSetupDnd({
             }
         };
         fetchUnreg();
+    }, []);
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia("(max-width: 560px)");
+        const handleChange = () => setIsMobile(mediaQuery.matches);
+        handleChange();
+        mediaQuery.addEventListener("change", handleChange);
+        return () => mediaQuery.removeEventListener("change", handleChange);
     }, []);
 
     const combinedEmployees = useMemo(() => {
@@ -155,8 +165,11 @@ function ShiftSetupDnd({
 
     // ── Click-to-assign ──────────────────────────────────
     const handleTeamClick = useCallback((teamId) => {
-        // toggle: clicking the same team deselects it
-        setSelectedTeamId(prev => prev === teamId ? null : teamId);
+        setSelectedTeamId(prev => {
+            const nextTeamId = prev === teamId ? null : teamId;
+            setMobilePickerOpen(Boolean(nextTeamId));
+            return nextTeamId;
+        });
     }, []);
 
     const handlePoolEmployeeClick = useCallback((emp) => {
@@ -182,7 +195,10 @@ function ShiftSetupDnd({
         if (lastTeam.members.length > 0) {
             if (!window.confirm(`Removing Restaurant Team ${teams.length} will return its ${lastTeam.members.length} assigned employees to the Unassigned Pool. Continue?`)) return;
         }
-        if (selectedTeamId === lastTeam.teamId) setSelectedTeamId(null);
+        if (selectedTeamId === lastTeam.teamId) {
+            setSelectedTeamId(null);
+            setMobilePickerOpen(false);
+        }
         setTeams(prev => prev.slice(0, -1));
     }, [teams, selectedTeamId, setTeams]);
 
@@ -195,9 +211,9 @@ function ShiftSetupDnd({
     }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee]);
 
     return (
-        <div className="grid grid-cols-[minmax(340px,0.9fr)_minmax(440px,1.3fr)] gap-4 h-[min(68vh,720px)] min-h-[420px] items-stretch max-[900px]:grid-cols-1 max-[900px]:h-auto">
+        <div className="grid grid-cols-[minmax(340px,0.9fr)_minmax(440px,1.3fr)] gap-4 h-[min(68vh,720px)] min-h-[420px] items-stretch max-[900px]:grid-cols-1 max-[900px]:h-auto max-[560px]:min-h-0">
             <div
-                className="min-h-0 h-full flex flex-col max-[900px]:order-2"
+                className="min-h-0 h-full flex flex-col max-[900px]:order-2 max-[560px]:hidden"
                 onDragOver={(e) => { e.preventDefault(); if (dragOverId !== 'pool') setDragOverId('pool'); }}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDropPool}
@@ -224,6 +240,54 @@ function ShiftSetupDnd({
                 onTeamClick={handleTeamClick}
                 handlers={handlers}
             />
+
+            {isMobile && mobilePickerOpen && selectedTeamId ? (
+            <div
+                className="fixed inset-0 z-40"
+            >
+                <button
+                    type="button"
+                    aria-label="Close employee picker"
+                    className="absolute inset-0 bg-black/30"
+                    onClick={() => setMobilePickerOpen(false)}
+                />
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Add employees to ${selectedTargetLabel || 'selected team'}`}
+                    className="absolute inset-x-0 bottom-0 max-h-[82vh] rounded-t-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[0_-12px_36px_rgba(15,23,42,0.22)] border-t border-[var(--color-line)] overflow-hidden"
+                >
+                    <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
+                        <div className="min-w-0">
+                            <div className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                Add employees to
+                            </div>
+                            <h3 className="text-base font-semibold text-[var(--color-ink)] truncate">
+                                {selectedTargetLabel || 'Selected team'}
+                            </h3>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setMobilePickerOpen(false)}
+                            className="h-10 px-3 rounded-[var(--radius-sm)] border border-[var(--color-line)] text-sm font-medium text-[var(--color-ink)] bg-[var(--color-surface)]"
+                        >
+                            Done
+                        </button>
+                    </div>
+                    <EmployeePool
+                        employees={combinedEmployees}
+                        assignedUids={assignedUids}
+                        onDragStart={handleDragStart}
+                        onEmployeeClick={handlePoolEmployeeClick}
+                        selectedTeamId={selectedTeamId}
+                        selectedTargetLabel={selectedTargetLabel}
+                        onAddUnregistered={handleAddUnregistered}
+                        title="Choose Employees"
+                        className="max-h-[calc(82vh-73px)] bg-[var(--color-surface-muted)] p-3 flex flex-col gap-2.5 overflow-y-auto"
+                    />
+                </div>
+            </div>
+            ) : null}
         </div>
     );
 }

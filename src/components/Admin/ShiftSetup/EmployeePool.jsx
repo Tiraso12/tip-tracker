@@ -11,7 +11,17 @@ const ROLE_FILTERS = [
     { value: 'temp', label: 'Temp' },
 ];
 
-function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId, selectedTargetLabel, onAddUnregistered }) {
+function EmployeePool({
+    employees,
+    assignedUids,
+    onDragStart,
+    onEmployeeClick,
+    selectedTeamId,
+    selectedTargetLabel,
+    onAddUnregistered,
+    title = 'Available Employees',
+    className,
+}) {
     const [searchTerm, setSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
     const [showUnregForm, setShowUnregForm] = useState(false);
@@ -56,9 +66,9 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
     const formInputClass = "w-full px-2 py-[0.35rem] rounded-[var(--radius-xs)] bg-[var(--color-bg)] border border-[var(--color-line)] text-[var(--color-ink)] text-[0.75rem]";
 
     return (
-        <div className="bg-[var(--color-surface-muted)] rounded-[var(--radius-lg)] p-[0.85rem] flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:max-h-none max-[560px]:rounded-[var(--radius-md)] max-[560px]:p-3">
+        <div className={className || "bg-[var(--color-surface-muted)] rounded-[var(--radius-lg)] p-[0.85rem] flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:max-h-none max-[560px]:rounded-[var(--radius-md)] max-[560px]:p-3"}>
             <div className="flex items-center justify-between gap-3">
-                <h3 className="text-[0.7rem] font-bold m-0 uppercase tracking-[0.07em] text-[var(--color-ink-muted)]">Available Employees</h3>
+                <h3 className="text-[0.7rem] font-bold m-0 uppercase tracking-[0.07em] text-[var(--color-ink-muted)]">{title}</h3>
                 <span className="hidden max-[560px]:inline text-[0.7rem] text-[var(--color-ink-muted)]">
                     {filtered.length} available
                 </span>
