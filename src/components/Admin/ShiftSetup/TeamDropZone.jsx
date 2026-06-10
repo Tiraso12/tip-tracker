@@ -13,8 +13,10 @@ function TeamDropZone({
     onDragLeave,
     onDrop,
     onDragStart,
-    onRemove
+    onRemove,
+    onRoleChange
 }) {
+    const canEditRole = !isRunner && teamId !== 'bar';
     const zoneClass = [
         "border-[1.5px] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] min-h-[62px] flex flex-col gap-[0.35rem] transition-all duration-200",
         isSelected
@@ -57,8 +59,10 @@ function TeamDropZone({
                         key={member.uid}
                         member={member}
                         isRunner={isRunner}
+                        canEditRole={canEditRole}
                         onDragStart={(e) => onDragStart(e, member.uid, teamId)}
                         onRemove={() => onRemove(member.uid, teamId)}
+                        onRoleChange={(uid, role) => onRoleChange(teamId, uid, role)}
                     />
                 ))
             )}
@@ -76,6 +80,7 @@ export default React.memo(TeamDropZone, (prevProps, nextProps) => {
     if (prevProps.members.length !== nextProps.members.length) return false;
     for (let i = 0; i < prevProps.members.length; i++) {
         if (prevProps.members[i].uid !== nextProps.members[i].uid) return false;
+        if (prevProps.members[i].role !== nextProps.members[i].role) return false;
         if (prevProps.members[i].points !== nextProps.members[i].points) return false;
         if (prevProps.members[i].isCaptainActive !== nextProps.members[i].isCaptainActive) return false;
         if (prevProps.members[i].payoutAmount !== nextProps.members[i].payoutAmount) return false;
