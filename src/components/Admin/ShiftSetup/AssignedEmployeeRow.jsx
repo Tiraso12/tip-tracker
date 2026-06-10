@@ -14,18 +14,18 @@ function AssignedEmployeeRow({ member, onDragStart, onRemove, isRunner, canEditR
 
     return (
         <div
-            className="bg-[var(--color-surface-muted)] px-[0.45rem] py-[0.36rem] rounded-[var(--radius-xs)] grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-[0.45rem] gap-y-1 cursor-grab active:cursor-grabbing"
+            className="bg-[var(--color-surface-muted)] px-[0.45rem] py-[0.36rem] rounded-[var(--radius-xs)] grid grid-cols-[auto_minmax(0,1fr)] gap-x-[0.45rem] gap-y-1 cursor-grab active:cursor-grabbing"
             draggable
             onDragStart={onDragStart}
         >
-            <div className="text-[var(--color-ink-muted)] opacity-35 text-[0.8rem] leading-none">⋮⋮</div>
+            <div className="text-[var(--color-ink-muted)] opacity-35 text-[0.8rem] leading-none row-span-2 self-center">⋮⋮</div>
 
             <div className="min-w-0 flex flex-col gap-1">
                 <div className="font-semibold text-[0.8rem] leading-tight truncate">
                     {member.name}
                 </div>
 
-                <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 pr-6 relative">
                     {isRunner ? (
                         <span className="text-[var(--color-ink-muted)] text-[0.7rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.4rem] py-[0.16rem]">Runner</span>
                     ) : canEditRole ? (
@@ -42,20 +42,19 @@ function AssignedEmployeeRow({ member, onDragStart, onRemove, isRunner, canEditR
                                     <option key={option.value} value={option.value}>{option.label}</option>
                                 ))}
                             </select>
-                            <span className="text-[var(--color-ink-muted)] text-[0.68rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.35rem] py-[0.12rem]">{pointsLabel}</span>
                         </>
                     ) : (
                         <span className="text-[var(--color-ink-muted)] text-[0.7rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.4rem] py-[0.16rem]">
                             {member.role === "bartender" ? "Bar" : pointsLabel}
                         </span>
                     )}
+
+                    <button
+                        className="absolute right-0 top-1/2 -translate-y-1/2 bg-transparent border-0 text-[var(--color-ink-muted)] w-5 h-5 rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 text-[0.72rem] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
+                        onClick={onRemove}
+                    >✕</button>
                 </div>
             </div>
-
-            <button
-                className="bg-transparent border-0 text-[var(--color-ink-muted)] w-5 h-5 rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 text-[0.72rem] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
-                onClick={onRemove}
-            >✕</button>
         </div>
     );
 }
