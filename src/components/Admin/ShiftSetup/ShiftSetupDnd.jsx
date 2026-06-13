@@ -20,6 +20,10 @@ function ShiftSetupDnd({
     // ── Unregistered Staff ──
     const [unregisteredDb, setUnregisteredDb] = useState([]);
 
+    const getRestaurantRole = useCallback((role) => (
+        ROLE_POINTS[role] != null ? role : 'server'
+    ), []);
+
     useEffect(() => {
         const fetchUnreg = async () => {
             try {
@@ -101,7 +105,8 @@ function ShiftSetupDnd({
     }, [setBarTeam, setRunners, setTeams]);
 
     const addEmployee = useCallback((emp, targetTeamId, pts) => {
-        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: emp.role || null, points: pts };
+        const restaurantRole = getRestaurantRole(emp.role);
+        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: restaurantRole, points: pts };
         if (targetTeamId === 'bar') {
             setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
         } else if (targetTeamId === 'runner') {
@@ -111,7 +116,24 @@ function ShiftSetupDnd({
                 t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t
             ));
         }
-    }, [setBarTeam, setRunners, setTeams]);
+    }, [getRestaurantRole, setBarTeam, setRunners, setTeams]);
+
+    const updateMemberRole = useCallback((teamId, uid, role) => {
+        if (teamId === 'bar' || teamId === 'runner') return;
+        const nextRole = getRestaurantRole(role);
+        setTeams(prev => prev.map(team =>
+            team.teamId === teamId
+                ? {
+                    ...team,
+                    members: team.members.map(member =>
+                        member.uid === uid
+                            ? { ...member, role: nextRole, points: ROLE_POINTS[nextRole] }
+                            : member
+                    )
+                }
+                : team
+        ));
+    }, [getRestaurantRole, setTeams]);
 
     // ── Drag handlers ────────────────────────────────────
     const handleDragStart = useCallback((e, uid, sourceTeamId) => {
@@ -155,13 +177,14 @@ function ShiftSetupDnd({
 
         removeEmployee(uid, sourceTeamId);
 
+        const restaurantRole = getRestaurantRole(emp.role);
         const pts = (targetTeamId !== 'runner' && targetTeamId !== 'bar')
-            ? (ROLE_POINTS[emp.role] != null ? ROLE_POINTS[emp.role] : 4)
+            ? ROLE_POINTS[restaurantRole]
             : null;
 
         addEmployee(emp, targetTeamId, pts);
         setDraggedData(null);
-    }, [draggedData, combinedEmployees, removeEmployee, addEmployee]);
+    }, [draggedData, combinedEmployees, removeEmployee, addEmployee, getRestaurantRole]);
 
     // ── Click-to-assign ──────────────────────────────────
     const handleTeamClick = useCallback((teamId) => {
@@ -175,13 +198,14 @@ function ShiftSetupDnd({
     const handlePoolEmployeeClick = useCallback((emp) => {
         if (!selectedTeamId) return; // no team selected — nothing to do
 
+        const restaurantRole = getRestaurantRole(emp.role);
         const pts = (selectedTeamId !== 'runner' && selectedTeamId !== 'bar')
-            ? (ROLE_POINTS[emp.role] != null ? ROLE_POINTS[emp.role] : 4)
+            ? ROLE_POINTS[restaurantRole]
             : null;
 
         addEmployee(emp, selectedTeamId, pts);
         // keep team selected so user can keep clicking more employees
-    }, [selectedTeamId, addEmployee]);
+    }, [selectedTeamId, addEmployee, getRestaurantRole]);
 
     const handleAddTeam = useCallback(() => {
         if (teams.length >= 6) return;
@@ -207,8 +231,9 @@ function ShiftSetupDnd({
         onDragLeave: handleDragLeave,
         onDrop: handleDropTeam,
         onDragStart: handleDragStart,
-        onRemove: removeEmployee
-    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee]);
+        onRemove: removeEmployee,
+        onRoleChange: updateMemberRole
+    }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee, updateMemberRole]);
 
     return (
         <div className="grid grid-cols-[minmax(340px,0.9fr)_minmax(440px,1.3fr)] gap-4 h-[min(68vh,720px)] min-h-[420px] items-stretch max-[900px]:grid-cols-1 max-[900px]:h-auto max-[560px]:min-h-0">
@@ -313,6 +338,7 @@ export default React.memo(ShiftSetupDnd, (prevProps, nextProps) => {
         // Check exact member configuration
         for (let j = 0; j < prevT.members.length; j++) {
             if (prevT.members[j].uid !== nextT.members[j].uid) return false;
+            if (prevT.members[j].role !== nextT.members[j].role) return false;
             if (prevT.members[j].points !== nextT.members[j].points) return false;
             if (prevT.members[j].isCaptainActive !== nextT.members[j].isCaptainActive) return false;
         }
@@ -322,7 +348,7 @@ export default React.memo(ShiftSetupDnd, (prevProps, nextProps) => {
     for (let j = 0; j < prevProps.barTeam.members.length; j++) {
         const pm = prevProps.barTeam.members[j];
         const nm = nextProps.barTeam.members[j];
-        if (pm.uid !== nm.uid || pm.points !== nm.points || pm.isCaptainActive !== nm.isCaptainActive) return false;
+        if (pm.uid !== nm.uid || pm.role !== nm.role || pm.points !== nm.points || pm.isCaptainActive !== nm.isCaptainActive) return false;
     }
 
     // Check runners deeply

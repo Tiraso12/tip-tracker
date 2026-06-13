@@ -69,6 +69,43 @@ test("calculates a balanced role-point shift with bar CTP allocation", () => {
     });
 });
 
+test("pays a non-captain profile as captain when assigned to work captain on the shift", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [
+                    {
+                        uid: "server-working-captain",
+                        name: "Server Working Captain",
+                        profileRole: "server",
+                        role: "captain",
+                    },
+                    { uid: "server-1", name: "Server One", role: "server" },
+                ],
+                pools: { sales: 10000, tips: 1000, cash: 0, gratuity: 0 },
+                contracts: [],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+    });
+
+    assert.deepEqual(result.validations, []);
+    assert.equal(result.balances.overallBalance, 0);
+    assert.equal(result.allocations.captainOverrideCTP, 100);
+
+    const workedCaptain = getOnly(result.payouts.roleGrouped.captains);
+    const server = getOnly(result.payouts.roleGrouped.servers);
+
+    assert.equal(workedCaptain.uid, "server-working-captain");
+    assert.equal(workedCaptain.role, "captain");
+    assert.equal(workedCaptain.points, 4);
+    assert.equal(server.points, 4);
+    assert.equal(workedCaptain.ctp, 525);
+    assert.equal(server.ctp, 425);
+});
+
 test("balances contract gratuity, bar pools, runner payout, and bar transfer", () => {
     const result = calculateShift({
         teams: [

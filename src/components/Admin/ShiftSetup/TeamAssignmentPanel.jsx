@@ -117,6 +117,7 @@ export default React.memo(TeamAssignmentPanel, (prevProps, nextProps) => {
         if (prevT.members.length !== nextT.members.length) return false;
         for (let j = 0; j < prevT.members.length; j++) {
             if (prevT.members[j].uid !== nextT.members[j].uid) return false;
+            if (prevT.members[j].role !== nextT.members[j].role) return false;
             if (prevT.members[j].points !== nextT.members[j].points) return false;
             if (prevT.members[j].isCaptainActive !== nextT.members[j].isCaptainActive) return false;
         }
@@ -126,7 +127,7 @@ export default React.memo(TeamAssignmentPanel, (prevProps, nextProps) => {
     for (let j = 0; j < prevProps.barTeam.members.length; j++) {
         const pm = prevProps.barTeam.members[j];
         const nm = nextProps.barTeam.members[j];
-        if (pm.uid !== nm.uid || pm.points !== nm.points || pm.isCaptainActive !== nm.isCaptainActive) return false;
+        if (pm.uid !== nm.uid || pm.role !== nm.role || pm.points !== nm.points || pm.isCaptainActive !== nm.isCaptainActive) return false;
     }
 
     // Check runners deeply

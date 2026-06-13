@@ -47,15 +47,27 @@ const NAV_ITEMS = [
     },
 ];
 
-function SideNavItem({ item, active, onClick }) {
+function MenuIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="4" y1="6" x2="20" y2="6" />
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <line x1="4" y1="18" x2="20" y2="18" />
+        </svg>
+    );
+}
+
+function SideNavItem({ item, active, onClick, collapsed }) {
     return (
         <button
             type="button"
             onClick={onClick}
             aria-current={active ? "page" : undefined}
+            title={collapsed ? item.label : undefined}
             className={
                 "group relative w-full flex items-center gap-3 px-3 py-2 text-sm rounded-[var(--radius-sm)] " +
                 "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+                (collapsed ? "lg:justify-center lg:px-0 lg:h-10 " : "") +
                 (active
                     ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium"
                     : "text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)]")
@@ -64,7 +76,7 @@ function SideNavItem({ item, active, onClick }) {
             <span className={active ? "text-[var(--color-accent)]" : "text-[var(--color-ink-muted)] group-hover:text-[var(--color-ink-soft)]"}>
                 {item.icon}
             </span>
-            <span>{item.label}</span>
+            <span className={collapsed ? "lg:sr-only" : ""}>{item.label}</span>
         </button>
     );
 }
@@ -77,6 +89,7 @@ function AdminDashboard() {
     const [daySummary, setDaySummary] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
+    const [navCollapsed, setNavCollapsed] = useState(true);
 
     const fetchEmployees = useCallback(async () => {
         try {
@@ -200,6 +213,17 @@ function AdminDashboard() {
             {/* Top app bar */}
             <header className="sticky top-0 z-20 h-14 px-4 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
                 <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setNavCollapsed(prev => !prev)}
+                        aria-expanded={!navCollapsed}
+                        aria-controls="admin-workspace-nav"
+                        aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
+                        title={navCollapsed ? "Open workspace" : "Collapse workspace"}
+                        className="h-9 w-9 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                    >
+                        <MenuIcon />
+                    </button>
                     <span className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
                         TipTracker
                     </span>
@@ -219,9 +243,32 @@ function AdminDashboard() {
 
             <div className="flex flex-col lg:flex-row min-h-[calc(100vh-3.5rem)]">
                 {/* Sidebar */}
-                <aside className="lg:w-60 lg:shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--color-line)] bg-[var(--color-bg)]">
-                    <nav className="lg:sticky lg:top-14 p-4 lg:py-6">
-                        <p className="hidden lg:block px-3 mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                <aside
+                    id="admin-workspace-nav"
+                    className={
+                        "lg:shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--color-line)] bg-[var(--color-bg)] transition-[width] duration-200 " +
+                        (navCollapsed ? "lg:w-16" : "lg:w-60")
+                    }
+                >
+                    <nav className="lg:sticky lg:top-14 p-3 lg:py-4">
+                        <div className={"hidden lg:flex mb-3 " + (navCollapsed ? "justify-center" : "px-1 justify-between items-center")}>
+                            {!navCollapsed ? (
+                                <p className="px-2 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                                    Workspace
+                                </p>
+                            ) : null}
+                            <button
+                                type="button"
+                                onClick={() => setNavCollapsed(prev => !prev)}
+                                aria-expanded={!navCollapsed}
+                                aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
+                                title={navCollapsed ? "Open workspace" : "Collapse workspace"}
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                            >
+                                <MenuIcon />
+                            </button>
+                        </div>
+                        <p className="lg:hidden px-3 mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
                             Workspace
                         </p>
                         <div className="flex lg:flex-col gap-1">
@@ -231,6 +278,7 @@ function AdminDashboard() {
                                     item={item}
                                     active={sidebarValue === item.value}
                                     onClick={() => setActiveTab(item.value)}
+                                    collapsed={navCollapsed}
                                 />
                             ))}
                         </div>
