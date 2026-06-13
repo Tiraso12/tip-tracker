@@ -163,17 +163,10 @@ function buildPayoutReview(result, mappedPayouts) {
             return (a.name || "").localeCompare(b.name || "");
         });
 
-    const roleTotals = payoutRows.reduce((totals, payout) => {
-        const role = payout.role || "other";
-        totals[role] = (totals[role] || 0) + getPayoutNonCashTotal(payout);
-        return totals;
-    }, {});
-
     return {
         result,
         mappedPayouts,
         payoutRows,
-        roleTotals,
         staffTotal: payoutRows.reduce((sum, payout) => sum + getPayoutNonCashTotal(payout), 0),
     };
 }
@@ -459,7 +452,7 @@ function PointAdjustmentsPanel({
 }
 
 function CalculatedPayoutReview({ review }) {
-    const { result, payoutRows, roleTotals, staffTotal } = review;
+    const { result, payoutRows, staffTotal } = review;
     const reviewRoleLabels = {
         captain: "Captains",
         server: "Servers",
@@ -493,17 +486,6 @@ function CalculatedPayoutReview({ review }) {
                 <SummaryMetric label="Available" value={fmtMoney(result.balances?.totalAvailable)} />
                 <SummaryMetric label="Distributed" value={fmtMoney(result.balances?.totalDistributed)} />
                 <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 px-5 py-4 border-b border-[var(--color-accent)]/15">
-                {Object.entries(reviewRoleLabels).map(([role, label]) => (
-                    <div key={role} className="flex flex-col gap-0.5">
-                        <span className="text-[10px] uppercase tracking-wide text-[var(--color-ink-muted)]">{label}</span>
-                        <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
-                            {fmtMoney(roleTotals[role] || 0)}
-                        </strong>
-                    </div>
-                ))}
             </div>
 
             <div className="divide-y divide-[var(--color-accent)]/10 max-h-96 overflow-y-auto">
