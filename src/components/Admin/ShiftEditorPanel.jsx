@@ -4,7 +4,6 @@ import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import { Button, Card } from "../ui";
-import { generateTeamSheetPDF } from "../../utils/pdfExport";
 import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "../../utils/shiftPersistence";
 
 const toMoney = (value) => Number(value) || 0;
@@ -164,23 +163,16 @@ function buildPayoutReview(result, mappedPayouts) {
             return (a.name || "").localeCompare(b.name || "");
         });
 
-    const roleTotals = payoutRows.reduce((totals, payout) => {
-        const role = payout.role || "other";
-        totals[role] = (totals[role] || 0) + getPayoutNonCashTotal(payout);
-        return totals;
-    }, {});
-
     return {
         result,
         mappedPayouts,
         payoutRows,
-        roleTotals,
         staffTotal: payoutRows.reduce((sum, payout) => sum + getPayoutNonCashTotal(payout), 0),
     };
 }
 
 const NUMERIC_INPUT =
-    "block w-full h-9 px-2.5 text-sm font-mono tabular-nums bg-[var(--color-surface)] " +
+    "block w-full h-9 px-2.5 text-sm font-mono tabular-nums bg-[var(--color-surface)] max-[560px]:h-11 " +
     "text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] " +
     "border border-[var(--color-line)] rounded-[var(--radius-xs)] " +
     "transition-colors duration-150 hover:border-[var(--color-line-strong)] " +
@@ -213,11 +205,11 @@ function PoolField({ label, value, onChange, hint }) {
 
 function SummaryMetric({ label, value }) {
     return (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-0.5 min-w-0">
             <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
                 {label}
             </span>
-            <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
+            <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)] truncate">
                 {value}
             </strong>
         </div>
@@ -226,17 +218,48 @@ function SummaryMetric({ label, value }) {
 
 function PoolCardTotals({ totals }) {
     return (
-        <div className="grid grid-cols-3 gap-3 px-4 py-3 bg-[var(--color-surface-muted)]/50 border-y border-[var(--color-line)]">
+        <div className="grid grid-cols-3 gap-3 px-4 py-3 bg-[var(--color-surface-muted)]/50 border-y border-[var(--color-line)] max-[560px]:gap-2">
             {totals.map(([label, value]) => (
-                <div key={label} className="flex flex-col gap-0.5">
+                <div key={label} className="flex flex-col gap-0.5 min-w-0">
                     <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
                         {label}
                     </span>
-                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
+                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)] truncate">
                         {label === "Covers" ? value.toLocaleString() : fmtMoney(value)}
                     </strong>
                 </div>
             ))}
+        </div>
+    );
+}
+
+function TeamCloseoutCard({
+    title,
+    memberCount,
+    totals,
+    hasInputData,
+    children,
+}) {
+    const [showInputs, setShowInputs] = useState(hasInputData);
+
+    return (
+        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
+                <span className="text-sm font-medium text-[var(--color-ink)]">
+                    {title} ({memberCount} {memberCount === 1 ? "member" : "members"})
+                </span>
+                <button
+                    type="button"
+                    onClick={() => setShowInputs(open => !open)}
+                    className="hidden max-[560px]:inline text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
+                >
+                    {showInputs ? "Hide inputs" : hasInputData ? "Edit inputs" : "Edit inputs"}
+                </button>
+            </div>
+            <PoolCardTotals totals={totals} />
+            <div className={(showInputs ? "grid " : "grid max-[560px]:hidden ") + "grid-cols-1 sm:grid-cols-3 gap-3 p-4"}>
+                {children}
+            </div>
         </div>
     );
 }
@@ -250,8 +273,8 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
     }, 0);
 
     return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-sm)] overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-muted)]/40 border-b border-[var(--color-line)]">
+        <div className="border border-[var(--color-line)] rounded-[var(--radius-sm)] overflow-hidden max-[560px]:border-x-0 max-[560px]:rounded-none">
+            <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-muted)]/40 border-b border-[var(--color-line)] max-[560px]:px-3 max-[560px]:py-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
                     {title}
                 </span>
@@ -271,27 +294,27 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
                             ? defaultPoints
                             : member.points;
                         return (
-                            <div key={member.uid} className="flex items-center justify-between gap-3 px-4 py-2">
-                                <div className="flex flex-col min-w-0">
-                                    <strong className="text-sm text-[var(--color-ink)] truncate">{member.name}</strong>
-                                    <span className="text-[11px] text-[var(--color-ink-muted)]">
+                            <div key={member.uid} className="flex items-center justify-between gap-3 px-4 py-2 max-[560px]:px-3 max-[560px]:py-2">
+                                <div className="flex flex-col min-w-0 flex-1">
+                                    <strong className="text-sm text-[var(--color-ink)] truncate max-[560px]:text-[0.82rem]">{member.name}</strong>
+                                    <span className="text-[11px] text-[var(--color-ink-muted)] max-[560px]:text-[0.68rem]">
                                         {roleLabels[member.role] || member.role || "Staff"}
                                     </span>
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
+                                <div className="flex items-center gap-1 shrink-0 max-[560px]:gap-1.5">
                                     <button
                                         type="button"
                                         onClick={() => onPointAdjust(member.uid, -0.5)}
                                         aria-label={`Decrease ${member.name} points`}
-                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors"
+                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-8 max-[560px]:w-8"
                                     >
                                         −
                                     </button>
                                     <input
                                         type="number"
                                         min="0"
-                                        step="0.5"
-                                        className={NUMERIC_INPUT + " !w-16 !h-7 text-center"}
+                                        step="any"
+                                        className={NUMERIC_INPUT + " !w-16 !h-7 text-center max-[560px]:!h-8 max-[560px]:!w-16 max-[560px]:text-[0.82rem]"}
                                         value={value}
                                         onChange={(e) => onPointChange(member.uid, e.target.value)}
                                         aria-label={`${member.name} points`}
@@ -300,7 +323,7 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
                                         type="button"
                                         onClick={() => onPointAdjust(member.uid, 0.5)}
                                         aria-label={`Increase ${member.name} points`}
-                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors"
+                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-8 max-[560px]:w-8"
                                     >
                                         +
                                     </button>
@@ -316,8 +339,8 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
 
 function RunnerGroup({ runners, totalPay, onPayoutChange }) {
     return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-sm)] overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-muted)]/40 border-b border-[var(--color-line)]">
+        <div className="border border-[var(--color-line)] rounded-[var(--radius-sm)] overflow-hidden max-[560px]:border-x-0 max-[560px]:rounded-none">
+            <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-muted)]/40 border-b border-[var(--color-line)] max-[560px]:px-3 max-[560px]:py-2">
                 <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
                     Runners
                 </span>
@@ -333,15 +356,15 @@ function RunnerGroup({ runners, totalPay, onPayoutChange }) {
             ) : (
                 <div className="divide-y divide-[var(--color-line)]">
                     {runners.map((runner) => (
-                        <div key={runner.uid} className="flex items-center justify-between gap-3 px-4 py-2">
-                            <strong className="text-sm text-[var(--color-ink)] truncate">{runner.name}</strong>
+                        <div key={runner.uid} className="flex items-center justify-between gap-3 px-4 py-2 max-[560px]:px-3 max-[560px]:py-2">
+                            <strong className="text-sm text-[var(--color-ink)] truncate max-[560px]:text-[0.82rem]">{runner.name}</strong>
                             <label className="flex items-center gap-2 shrink-0">
                                 <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Payout</span>
                                 <input
                                     type="number"
                                     min="0"
                                     step="0.01"
-                                    className={NUMERIC_INPUT + " !w-20 !h-7"}
+                                    className={NUMERIC_INPUT + " !w-20 !h-7 max-[560px]:!h-8 max-[560px]:!w-20 max-[560px]:text-[0.82rem]"}
                                     value={runner.payoutAmount ?? ""}
                                     onChange={(e) => onPayoutChange(runner.uid, e.target.value)}
                                     placeholder="102"
@@ -369,23 +392,34 @@ function PointAdjustmentsPanel({
 }) {
     const restaurantMembersCount = teams.reduce((sum, team) => sum + team.members.length, 0);
     const hasAdjustments = restaurantMembersCount > 0 || barTeam.members.length > 0 || runners.length > 0;
+    const [isOpen, setIsOpen] = useState(false);
 
     return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)]">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
-                <span className="text-sm font-medium text-[var(--color-ink)]">Point Adjustments</span>
-                <div className="flex items-center gap-3 text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
-                    <span>Dining {totals.restaurant.toLocaleString()}</span>
-                    <span>Bar {totals.bar.toLocaleString()}</span>
+        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:items-start">
+                <div className="min-w-0">
+                    <span className="block text-sm font-medium text-[var(--color-ink)]">Point Adjustments</span>
+                    <div className="mt-2 flex items-center gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:flex-wrap">
+                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Dining {totals.restaurant.toLocaleString()} pts</span>
+                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Bar {totals.bar.toLocaleString()} pts</span>
+                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Runners {fmtMoney(totals.runnerPay)}</span>
+                    </div>
                 </div>
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(open => !open)}
+                    className="shrink-0 text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
+                >
+                    {isOpen ? "Hide points" : "Edit points"}
+                </button>
             </div>
 
-            {!hasAdjustments ? (
+            {!isOpen ? null : !hasAdjustments ? (
                 <div className="px-4 py-6 text-xs text-[var(--color-ink-muted)] italic">
                     Assign restaurant, bar, or runner employees before adjusting.
                 </div>
             ) : (
-                <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-3 max-[560px]:px-0 max-[560px]:py-2">
                     {teams.map((team, index) => (
                         <PointGroup
                             key={team.teamId}
@@ -418,7 +452,7 @@ function PointAdjustmentsPanel({
 }
 
 function CalculatedPayoutReview({ review }) {
-    const { result, payoutRows, roleTotals, staffTotal } = review;
+    const { result, payoutRows, staffTotal } = review;
     const reviewRoleLabels = {
         captain: "Captains",
         server: "Servers",
@@ -454,17 +488,6 @@ function CalculatedPayoutReview({ review }) {
                 <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 px-5 py-4 border-b border-[var(--color-accent)]/15">
-                {Object.entries(reviewRoleLabels).map(([role, label]) => (
-                    <div key={role} className="flex flex-col gap-0.5">
-                        <span className="text-[10px] uppercase tracking-wide text-[var(--color-ink-muted)]">{label}</span>
-                        <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
-                            {fmtMoney(roleTotals[role] || 0)}
-                        </strong>
-                    </div>
-                ))}
-            </div>
-
             <div className="divide-y divide-[var(--color-accent)]/10 max-h-96 overflow-y-auto">
                 {payoutRows.map((payout) => (
                     <div key={payout.uid} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-5 py-3">
@@ -497,7 +520,7 @@ function CollapsibleSection({ title, subtitle, badge, isOpen, onToggle, children
                 type="button"
                 onClick={onToggle}
                 aria-expanded={isOpen}
-                className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]/50 transition-colors duration-150 text-left"
+                className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]/50 transition-colors duration-150 text-left max-[560px]:px-4 max-[560px]:py-3"
             >
                 <div className="flex flex-col gap-0.5">
                     {subtitle ? (
@@ -505,7 +528,7 @@ function CollapsibleSection({ title, subtitle, badge, isOpen, onToggle, children
                             {subtitle}
                         </span>
                     ) : null}
-                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)]">
+                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)] max-[560px]:text-lg">
                         {title}
                     </h3>
                 </div>
@@ -555,6 +578,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [shiftStatus, setShiftStatus] = useState(null);
     const [teamSetupOpen, setTeamSetupOpen] = useState(true);
     const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
+    const [showLiveTotalDetails, setShowLiveTotalDetails] = useState(false);
 
     const poolSummary = useMemo(() => {
         const teamSummaries = teams.map(getTeamSummary);
@@ -590,6 +614,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             barPoints,
         };
     }, [teams, barTeam, runners]);
+
+    const hasBarCloseoutData = Object.values(barTeam.pools || {}).some(value => toMoney(value) > 0);
+    const teamHasCloseoutData = (team) => Object.values(team.pools || {}).some(value => toMoney(value) > 0)
+        || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0);
 
     const updatePool = (teamId, field, value) => {
         setTeams(prev => prev.map(t =>
@@ -848,12 +876,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
             {/* Workspace header */}
             <Card className="!p-0">
-                <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4 border-b border-[var(--color-line)]">
+                <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
-                        <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
+                        <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
                             Shift Workspace — {date}
                         </h2>
                         {shiftStatus ? (
@@ -865,9 +893,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
                         ) : null}
                     </div>
-                    <Button variant="secondary" size="sm" onClick={() => generateTeamSheetPDF(date, teams, barTeam, runners)}>
-                        Print Team Sheet
-                    </Button>
                 </header>
 
                 {loading ? (
@@ -875,7 +900,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         Loading shift data…
                     </div>
                 ) : (
-                    <div className="p-4 sm:p-6 space-y-3">
+                    <div className="p-3 sm:p-6 space-y-3">
                         {/* Team setup */}
                         <CollapsibleSection
                             title="Team Floor Setup"
@@ -884,7 +909,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             isOpen={teamSetupOpen}
                             onToggle={() => setTeamSetupOpen(o => !o)}
                         >
-                            <div className="p-4 sm:p-6">
+                            <div className="p-3 sm:p-6">
                                 <ShiftSetupDnd
                                     allEmployees={allEmployees}
                                     teams={teams} setTeams={setTeams}
@@ -911,7 +936,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             isOpen={moneyCloseoutOpen}
                             onToggle={() => setMoneyCloseoutOpen(o => !o)}
                         >
-                        <section className="p-4 sm:p-6 space-y-4">
+                        <section className="p-4 sm:p-6 space-y-4 max-[560px]:px-3">
 
                             {validationMessages.length > 0 ? (
                                 <div role="alert" className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
@@ -927,22 +952,33 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             ) : null}
 
                             {/* Live totals */}
-                            <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)]">
-                                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 px-5 py-4 border-b border-[var(--color-line)]">
-                                    <div>
+                            <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
+                                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-4 max-[560px]:py-3">
+                                    <div className="flex items-end justify-between gap-3 max-[560px]:w-full">
+                                        <div>
                                         <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
                                             Live shift totals
                                         </div>
-                                        <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-ink)]">
+                                        <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-ink)] max-[560px]:text-2xl">
                                             {fmtMoney(poolSummary.payoutPool)}
                                         </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowLiveTotalDetails(open => !open)}
+                                            className="hidden max-[560px]:inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-line)] px-3 text-xs font-medium text-[var(--color-accent)] bg-[var(--color-surface)]"
+                                        >
+                                            {showLiveTotalDetails ? "Hide details" : "Show details"}
+                                        </button>
                                     </div>
-                                    <div className="text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
-                                        {diningCount} dining · {barTeam.members.length} bar · {runners.length} runners
+                                    <div className="flex flex-wrap gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
+                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{diningCount} dining</span>
+                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{barTeam.members.length} bar</span>
+                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{runners.length} runners</span>
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 px-5 py-4">
+                                <div className={(showLiveTotalDetails ? "grid " : "hidden ") + "sm:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 px-5 py-4 max-[560px]:px-4 max-[560px]:gap-y-3"}>
                                     <SummaryMetric label="Sales" value={fmtMoney(poolSummary.totalSales)} />
                                     <SummaryMetric label="Tips CTP" value={fmtMoney(poolSummary.totalTips)} />
                                     <SummaryMetric label="Gratuity" value={fmtMoney(poolSummary.totalGratuity)} />
@@ -951,7 +987,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                     <SummaryMetric label="Runner pay" value={fmtMoney(poolSummary.totalRunnerPay)} />
                                     <SummaryMetric label="Bar transfer" value={fmtMoney(poolSummary.runnerTransfer)} />
                                     <SummaryMetric label="Dining pts" value={poolSummary.restaurantPoints.toLocaleString()} />
-                                    <SummaryMetric label="Bar pts" value={poolSummary.barPoints.toLocaleString()} />
                                 </div>
 
                                 {poolSummary.contractTotal > 0 ? (
@@ -964,30 +999,26 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             {/* Pool inputs */}
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {teams.map((t, idx) => (
-                                    <div key={t.teamId} className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
-                                        <div className="px-4 py-3 border-b border-[var(--color-line)]">
-                                            <span className="text-sm font-medium text-[var(--color-ink)]">
-                                                Team {idx + 1} ({t.members.length} members)
-                                            </span>
-                                        </div>
-                                        <PoolCardTotals
-                                            totals={[
-                                                ["Sales", poolSummary.teams[idx].sales],
-                                                ["Pool", poolSummary.teams[idx].payoutPool],
-                                                ["Covers", poolSummary.teams[idx].covers],
-                                            ]}
-                                        />
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+                                    <TeamCloseoutCard
+                                        key={t.teamId}
+                                        title={`Team ${idx + 1}`}
+                                        memberCount={t.members.length}
+                                        hasInputData={teamHasCloseoutData(t)}
+                                        totals={[
+                                            ["Sales", poolSummary.teams[idx].sales],
+                                            ["Pool", poolSummary.teams[idx].payoutPool],
+                                            ["Covers", poolSummary.teams[idx].covers],
+                                        ]}
+                                    >
                                             <PoolField label="Sales ($)" value={t.pools.sales} onChange={(v) => updatePool(t.teamId, "sales", v)} />
                                             <PoolField label="Tips (CTP) ($)" value={t.pools.tips} onChange={(v) => updatePool(t.teamId, "tips", v)} />
                                             <PoolField label="Gratuity ($)" value={t.pools.gratuity} onChange={(v) => updatePool(t.teamId, "gratuity", v)} />
                                             <PoolField label="Cash ($)" value={t.pools.cash} onChange={(v) => updatePool(t.teamId, "cash", v)} />
                                             <PoolField label="Covers" value={t.pools.covers} onChange={(v) => updatePool(t.teamId, "covers", v)} />
-                                        </div>
 
                                         {/* Contracts */}
-                                        <div className="border-t border-[var(--color-line)]">
-                                            <div className="flex items-center justify-between px-4 py-2">
+                                        <div className="col-span-full border-t border-[var(--color-line)]">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 py-2">
                                                 <button
                                                     type="button"
                                                     onClick={() => {
@@ -1003,7 +1034,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                                     <button
                                                         type="button"
                                                         onClick={() => addContract(t.teamId)}
-                                                        className="text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
+                                                        className="text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors whitespace-nowrap"
                                                     >
                                                         + Add Contract
                                                     </button>
@@ -1012,7 +1043,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
                                             {t._showContracts ? (
                                                 t.contracts && t.contracts.length > 0 ? (
-                                                    <div className="px-4 pb-4 space-y-2">
+                                                    <div className="pb-4 space-y-2">
                                                         {t.contracts.map((contract, cIdx) => (
                                                             <div key={cIdx} className="flex items-center gap-2">
                                                                 <span className="text-xs font-mono tabular-nums text-[var(--color-ink-muted)] w-7">
@@ -1043,37 +1074,32 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                                         ))}
                                                     </div>
                                                 ) : (
-                                                    <div className="px-4 pb-4 text-xs text-[var(--color-ink-muted)] italic">
+                                                    <div className="pb-4 text-xs text-[var(--color-ink-muted)] italic">
                                                         No contracts added. Click '+ Add Contract' to input a contract amount.
                                                     </div>
                                                 )
                                             ) : null}
                                         </div>
-                                    </div>
+                                    </TeamCloseoutCard>
                                 ))}
 
                                 {/* Bar */}
-                                <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
-                                    <div className="px-4 py-3 border-b border-[var(--color-line)]">
-                                        <span className="text-sm font-medium text-[var(--color-ink)]">
-                                            Bar Team ({barTeam.members.length} members)
-                                        </span>
-                                    </div>
-                                    <PoolCardTotals
-                                        totals={[
-                                            ["Sales", poolSummary.bar.sales],
-                                            ["Pool", poolSummary.bar.payoutPool],
-                                            ["Transfer", poolSummary.bar.runnerTransfer],
-                                        ]}
-                                    />
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
-                                        <PoolField label="Bar Sales ($)" value={barTeam.pools.sales} onChange={(v) => updateBarPool("sales", v)} />
-                                        <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
-                                        <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
-                                        <PoolField label="Covers" value={barTeam.pools.covers} onChange={(v) => updateBarPool("covers", v)} />
-                                        <PoolField label="Runners Transfer ($)" value={barTeam.pools.runners} onChange={(v) => updateBarPool("runners", v)} />
-                                    </div>
-                                </div>
+                                <TeamCloseoutCard
+                                    title="Bar Team"
+                                    memberCount={barTeam.members.length}
+                                    hasInputData={hasBarCloseoutData || barTeam.members.length > 0}
+                                    totals={[
+                                        ["Sales", poolSummary.bar.sales],
+                                        ["Pool", poolSummary.bar.payoutPool],
+                                        ["Transfer", poolSummary.bar.runnerTransfer],
+                                    ]}
+                                >
+                                    <PoolField label="Bar Sales ($)" value={barTeam.pools.sales} onChange={(v) => updateBarPool("sales", v)} />
+                                    <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
+                                    <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
+                                    <PoolField label="Covers" value={barTeam.pools.covers} onChange={(v) => updateBarPool("covers", v)} />
+                                    <PoolField label="Runners Transfer ($)" value={barTeam.pools.runners} onChange={(v) => updateBarPool("runners", v)} />
+                                </TeamCloseoutCard>
                             </div>
 
                             <PointAdjustmentsPanel

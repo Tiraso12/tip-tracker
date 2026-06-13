@@ -11,7 +11,17 @@ const ROLE_FILTERS = [
     { value: 'temp', label: 'Temp' },
 ];
 
-function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, selectedTeamId, selectedTargetLabel, onAddUnregistered }) {
+function EmployeePool({
+    employees,
+    assignedUids,
+    onDragStart,
+    onEmployeeClick,
+    selectedTeamId,
+    selectedTargetLabel,
+    onAddUnregistered,
+    title = 'Available Employees',
+    className,
+}) {
     const [searchTerm, setSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
     const [showUnregForm, setShowUnregForm] = useState(false);
@@ -39,25 +49,30 @@ function EmployeePool({ employees, assignedUids, onDragStart, onEmployeeClick, s
     };
 
     const filterBtnClass = (value) => [
-        "flex-none border rounded-[var(--radius-xs)] px-2 py-[0.28rem] text-[0.7rem] font-bold cursor-pointer transition-colors duration-150",
+        "flex-none border rounded-[var(--radius-xs)] px-2 py-[0.28rem] text-[0.7rem] font-bold cursor-pointer transition-colors duration-150 max-[560px]:px-3 max-[560px]:py-2",
         roleFilter === value
             ? "bg-[var(--color-accent)] border-[var(--color-accent)] text-white"
             : "bg-[var(--color-surface)] border-[var(--color-line)] text-[var(--color-ink-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-ink)]",
     ].join(" ");
 
     const poolItemClass = [
-        "bg-[var(--color-bg)] px-2.5 py-[0.38rem] rounded-[var(--radius-md)] border border-transparent flex justify-between items-center transition-colors duration-150",
+        "bg-[var(--color-bg)] px-2.5 py-[0.38rem] rounded-[var(--radius-md)] border border-transparent flex justify-between items-center transition-colors duration-150 max-[560px]:min-h-11 max-[560px]:px-3",
         clickable
             ? "cursor-pointer hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
             : "cursor-grab hover:border-[var(--color-accent)] active:cursor-grabbing",
     ].join(" ");
 
-    const inputClass = "w-full px-2.5 py-1.5 rounded-[var(--radius-md)] bg-[var(--color-surface)] border border-[var(--color-line)] text-[var(--color-ink)] text-[0.8rem] focus:outline-none focus:border-[var(--color-accent)]";
+    const inputClass = "w-full px-2.5 py-1.5 rounded-[var(--radius-md)] bg-[var(--color-surface)] border border-[var(--color-line)] text-[var(--color-ink)] text-[0.8rem] focus:outline-none focus:border-[var(--color-accent)] max-[560px]:h-11";
     const formInputClass = "w-full px-2 py-[0.35rem] rounded-[var(--radius-xs)] bg-[var(--color-bg)] border border-[var(--color-line)] text-[var(--color-ink)] text-[0.75rem]";
 
     return (
-        <div className="bg-[var(--color-surface-muted)] rounded-[var(--radius-lg)] p-[0.85rem] flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:max-h-none">
-            <h3 className="text-[0.7rem] font-bold m-0 uppercase tracking-[0.07em] text-[var(--color-ink-muted)]">Available Employees</h3>
+        <div className={className || "bg-[var(--color-surface-muted)] rounded-[var(--radius-lg)] p-[0.85rem] flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:max-h-none max-[560px]:rounded-[var(--radius-md)] max-[560px]:p-3"}>
+            <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[0.7rem] font-bold m-0 uppercase tracking-[0.07em] text-[var(--color-ink-muted)]">{title}</h3>
+                <span className="hidden max-[560px]:inline text-[0.7rem] text-[var(--color-ink-muted)]">
+                    {filtered.length} available
+                </span>
+            </div>
             <input
                 type="text"
                 className={inputClass}

@@ -145,7 +145,7 @@ function AdminDashboard() {
             return {
                 eyebrow: "Shifts",
                 title: "Shift Distribution",
-                subtitle: "Select a date to view the saved tip distribution for that shift.",
+                subtitle: null,
                 actions: (
                     <div className="flex items-center gap-2">
                         <button
@@ -184,7 +184,7 @@ function AdminDashboard() {
             return {
                 eyebrow: `Editing ${selectedDate}`,
                 title: "Shift Editor",
-                subtitle: "Set teams, enter pool inputs, and confirm payouts before saving.",
+                subtitle: null,
                 actions: (
                     <Button onClick={handleEditorClose} variant="secondary" size="sm">
                         ← Back to Shifts
@@ -286,16 +286,16 @@ function AdminDashboard() {
                 </aside>
 
                 {/* Main content */}
-                <main className="flex-1 min-w-0 px-4 sm:px-8 py-6 lg:py-10">
+                <main className="flex-1 min-w-0 px-4 sm:px-8 py-5 lg:py-10">
                     <div className="max-w-6xl mx-auto">
-                        <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 pb-6 mb-6 border-b border-[var(--color-line)]">
+                        <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 mb-4 sm:mb-6 border-b border-[var(--color-line)]">
                             <div className="flex flex-col gap-1.5">
                                 {header.eyebrow ? (
                                     <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
                                         {header.eyebrow}
                                     </span>
                                 ) : null}
-                                <h1 className="font-display text-3xl sm:text-4xl font-medium tracking-tight text-[var(--color-ink)]">
+                                <h1 className="font-display text-2xl sm:text-4xl font-medium tracking-tight text-[var(--color-ink)]">
                                     {header.title}
                                 </h1>
                                 {header.subtitle ? (

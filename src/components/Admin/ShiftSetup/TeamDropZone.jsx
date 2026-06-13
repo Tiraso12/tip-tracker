@@ -18,7 +18,7 @@ function TeamDropZone({
 }) {
     const canEditRole = !isRunner && teamId !== 'bar';
     const zoneClass = [
-        "border-[1.5px] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] min-h-[62px] flex flex-col gap-[0.35rem] transition-all duration-200",
+        "border-[1.5px] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] min-h-[62px] flex flex-col gap-[0.35rem] transition-all duration-200 max-[560px]:min-h-0 max-[560px]:px-3 max-[560px]:py-2",
         isSelected
             ? "bg-[var(--color-surface)] border-solid border-[var(--color-accent)] shadow-[0_0_0_2px_var(--color-accent-soft)]"
             : isOver
@@ -35,7 +35,7 @@ function TeamDropZone({
         >
             <button
                 type="button"
-                className="w-full flex justify-between items-center mb-1 cursor-pointer rounded-[4px] px-1 py-0.5 -mx-1 -my-0.5 transition-colors duration-150 hover:bg-[var(--color-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40"
+                className="w-full flex justify-between items-center mb-1 cursor-pointer rounded-[4px] px-1 py-0.5 -mx-1 -my-0.5 transition-colors duration-150 hover:bg-[var(--color-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/40 max-[560px]:min-h-9 max-[560px]:mb-0"
                 onClick={() => onTeamClick(teamId)}
                 aria-pressed={isSelected}
                 title={isSelected ? 'Click to deselect' : 'Click to select this team, then click employees to assign'}
@@ -44,14 +44,14 @@ function TeamDropZone({
                     {isSelected && <span className="text-[var(--color-accent)] text-[0.5rem] mr-[0.35rem] align-middle animate-pulse">●</span>}
                     {title}
                 </h4>
-                <span className="text-[0.67rem] text-[var(--color-ink-muted)] opacity-70">
-                    {members.length} {members.length === 1 ? 'member' : 'members'}
+                <span className="text-[0.67rem] text-[var(--color-ink-muted)] opacity-70 max-[560px]:text-[0.7rem]">
+                    {members.length === 0 ? 'Add' : `${members.length} ${members.length === 1 ? 'member' : 'members'}`}
                 </span>
             </button>
 
             {members.length === 0 ? (
-                <div className="text-[var(--color-ink-muted)] text-[0.75rem] text-center py-2 pointer-events-none opacity-60">
-                    {isSelected ? 'Click employees from the list →' : 'Drag employees here'}
+                <div className="text-[var(--color-ink-muted)] text-[0.75rem] text-center py-2 pointer-events-none opacity-60 max-[560px]:hidden">
+                    {isSelected ? 'Tap employees below to add' : 'Tap to select this team'}
                 </div>
             ) : (
                 members.map(member => (
