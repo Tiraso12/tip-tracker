@@ -67,7 +67,7 @@ function EmployeePool({
 
     return (
         <div className={className || "bg-[var(--color-surface-muted)] rounded-[var(--radius-lg)] p-[0.85rem] flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:max-h-none max-[560px]:rounded-[var(--radius-md)] max-[560px]:p-3"}>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex-none flex items-center justify-between gap-3">
                 <h3 className="text-[0.7rem] font-bold m-0 uppercase tracking-[0.07em] text-[var(--color-ink-muted)]">{title}</h3>
                 <span className="hidden max-[560px]:inline text-[0.7rem] text-[var(--color-ink-muted)]">
                     {filtered.length} available
@@ -82,7 +82,7 @@ function EmployeePool({
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
 
-            <div className="flex flex-wrap gap-1.5 pb-0.5 max-[900px]:flex-nowrap max-[900px]:overflow-x-auto" aria-label="Filter available employees by role">
+            <div className="flex-none flex flex-wrap gap-1.5 pb-0.5 max-[900px]:flex-nowrap max-[900px]:overflow-x-auto max-[900px]:overflow-y-hidden" aria-label="Filter available employees by role">
                 {ROLE_FILTERS.map(filter => (
                     <button
                         key={filter.value}
@@ -96,12 +96,12 @@ function EmployeePool({
             </div>
 
             {selectedTeamId && (
-                <div className="bg-[var(--color-accent-soft)] border border-[var(--color-line-strong)] rounded-[var(--radius-xs)] px-[0.55rem] py-[0.28rem] text-[0.7rem] text-[var(--color-accent)] font-semibold text-center">
+                <div className="flex-none bg-[var(--color-accent-soft)] border border-[var(--color-line-strong)] rounded-[var(--radius-xs)] px-[0.55rem] py-[0.28rem] text-[0.7rem] text-[var(--color-accent)] font-semibold text-center">
                     Assigning to {selectedTargetLabel || 'selected team'}. Click employees below.
                 </div>
             )}
 
-            <div className="flex flex-col gap-1.5 overflow-y-auto min-h-0">
+            <div className="flex-1 flex flex-col gap-1.5 overflow-y-auto min-h-0">
                 {filtered.length === 0 ? (
                     <div className="text-[var(--color-ink-muted)] text-[0.78rem] text-center p-3 border border-dashed border-[var(--color-line)] rounded-[var(--radius-md)]">
                         No available employees match this filter.
@@ -125,7 +125,7 @@ function EmployeePool({
             </div>
 
             {showUnregForm ? (
-                <div className="mt-2 p-2.5 bg-[var(--color-surface)] rounded-[var(--radius-md)] border border-[var(--color-accent)] flex flex-col gap-1.5">
+                <div className="flex-none mt-2 p-2.5 bg-[var(--color-surface)] rounded-[var(--radius-md)] border border-[var(--color-accent)] flex flex-col gap-1.5">
                     <label className="text-[0.7rem] text-[var(--color-ink-muted)] font-semibold -mb-1">Temporary Staff Name</label>
                     <input
                         type="text"
@@ -164,7 +164,7 @@ function EmployeePool({
                 </div>
             ) : (
                 <button
-                    className="w-full mt-2 py-1.5 bg-[var(--color-surface-muted)] border border-dashed border-[var(--color-line-strong)] rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] text-[0.75rem] font-semibold text-center cursor-pointer transition-all duration-200 hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)]"
+                    className="flex-none w-full mt-2 py-1.5 bg-[var(--color-surface-muted)] border border-dashed border-[var(--color-line-strong)] rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] text-[0.75rem] font-semibold text-center cursor-pointer transition-all duration-200 hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-accent)]"
                     onClick={() => setShowUnregForm(true)}
                 >
                     + Add Temporary Staff
