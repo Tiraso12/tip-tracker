@@ -8,7 +8,7 @@
  * along with a double-entry balance check.
  */
 
-import { ROLE_POINTS } from './constants.js';
+import { ROLE_POINTS, RUNNER_FLAT_RATE } from './constants.js';
 
 
 
@@ -97,7 +97,7 @@ export function calculateShift(inputs) {
     // 5. RUNNER LOGIC (SIMPLIFIED)
     // Runners are calculated here because they are deducted from the raw pool alongside allocations
     const runnerPayouts = config.runners.map(runner => {
-        const payoutAmount = n(runner.payoutAmount) || 102; // Default to 102
+        const payoutAmount = n(runner.payoutAmount) || RUNNER_FLAT_RATE;
         if (payoutAmount < 0) validations.push(`Warning: Runner ${runner.name || 'Unknown'} has a negative payout amount.`);
 
         return {
@@ -297,7 +297,7 @@ export function calculateShift(inputs) {
     reconcile(allPayoutsFlat, adjustedTeamCashPool, 'cash');
 
     // Reconcile Runners
-    reconcile(runnerPayouts, sumProp(config.runners, 'payoutAmount'), 'payoutAmount');
+    reconcile(runnerPayouts, totalRunnerPay, 'payoutAmount');
 
     // 11. BALANCE CHECKS (AUDIT)
     const sumNestedPayouts = (groupedArray, key) =>

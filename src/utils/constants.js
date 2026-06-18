@@ -12,4 +12,4 @@ export const ROLE_POINTS = {
     assistant: 2,
 };
 
-export const RUNNER_FLAT_RATE = 102;
+export const RUNNER_FLAT_RATE = 85;

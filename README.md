@@ -19,7 +19,7 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 - Per-team sales, tips, gratuity, and cash pools
 - Contract shift support with automated 26% gratuity tracking
 - Captain override bonus (1% of sales), split across all active captains
-- Runner flat-rate payouts ($102 default) deducted from the dining room pool
+- Runner flat-rate payouts ($85 default) deducted from the dining room pool
 - Bar-to-team transfer support for flexible nightly configurations
 
 **Calculation Engine**

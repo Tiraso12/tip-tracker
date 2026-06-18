@@ -5,6 +5,7 @@ import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import { Button, Card } from "../ui";
 import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "../../utils/shiftPersistence";
+import { RUNNER_FLAT_RATE } from "../../utils/constants";
 
 const toMoney = (value) => Number(value) || 0;
 const hasNegative = (value) => Number(value) < 0;
@@ -367,7 +368,7 @@ function RunnerGroup({ runners, totalPay, onPayoutChange }) {
                                     className={NUMERIC_INPUT + " !w-20 !h-7 max-[560px]:!h-8 max-[560px]:!w-20 max-[560px]:text-[0.82rem]"}
                                     value={runner.payoutAmount ?? ""}
                                     onChange={(e) => onPayoutChange(runner.uid, e.target.value)}
-                                    placeholder="102"
+                                    placeholder={String(RUNNER_FLAT_RATE)}
                                     aria-label={`${runner.name} runner payout`}
                                 />
                             </label>
@@ -608,7 +609,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             totalCovers: restaurantCovers + barSummary.covers,
             contractTotal,
             runnerTransfer: barSummary.runnerTransfer,
-            totalRunnerPay: runners.reduce((sum, runner) => sum + toMoney(runner.payoutAmount || 102), 0),
+            totalRunnerPay: runners.reduce((sum, runner) => sum + toMoney(runner.payoutAmount || RUNNER_FLAT_RATE), 0),
             payoutPool: restaurantTips + barSummary.tips + restaurantGratuity + barSummary.gratuity + restaurantCash,
             restaurantPoints,
             barPoints,

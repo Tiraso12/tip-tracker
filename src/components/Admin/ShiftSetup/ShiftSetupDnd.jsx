@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import EmployeePool from './EmployeePool';
 import TeamAssignmentPanel from './TeamAssignmentPanel';
-import { ROLE_POINTS } from '../../../utils/constants';
+import { ROLE_POINTS, RUNNER_FLAT_RATE } from '../../../utils/constants';
 import { db } from '../../../config/firebase';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
@@ -110,7 +110,7 @@ function ShiftSetupDnd({
         if (targetTeamId === 'bar') {
             setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
         } else if (targetTeamId === 'runner') {
-            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null, payoutAmount: 102 }]);
+            setRunners(prev => [...prev, { ...newMember, role: 'runner', points: null, payoutAmount: RUNNER_FLAT_RATE }]);
         } else {
             setTeams(prev => prev.map(t =>
                 t.teamId === targetTeamId ? { ...t, members: [...t.members, newMember] } : t

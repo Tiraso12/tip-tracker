@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateShift } from "./engine.js";
+import { RUNNER_FLAT_RATE } from "./constants.js";
 
 const getOnly = (items) => {
     assert.equal(items.length, 1);
@@ -104,6 +105,20 @@ test("pays a non-captain profile as captain when assigned to work captain on the
     assert.equal(server.points, 4);
     assert.equal(workedCaptain.ctp, 525);
     assert.equal(server.ctp, 425);
+});
+
+test("defaults runner payout to the configured flat rate", () => {
+    const result = calculateShift({
+        teams: [],
+        barTeam: { members: [], pools: {} },
+        runners: [{ uid: "runner-1", name: "Runner One", role: "runner" }],
+    });
+
+    const runner = getOnly(result.payouts.roleGrouped.runners);
+
+    assert.equal(result.allocations.totalRunnerPay, RUNNER_FLAT_RATE);
+    assert.equal(result.runnerDeductionsByPool["Dining Room CTP"], RUNNER_FLAT_RATE);
+    assert.equal(runner.payoutAmount, RUNNER_FLAT_RATE);
 });
 
 test("balances contract gratuity, bar pools, runner payout, and bar transfer", () => {
