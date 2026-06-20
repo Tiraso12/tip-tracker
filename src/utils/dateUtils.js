@@ -87,17 +87,16 @@ export function isSameDay(d1, d2) {
  * Anchor date is Nov 21, 2025.
  */
 export function getBiweeklyPeriod(date) {
-    // Anchor date: Nov 21, 2025
-    const anchor = new Date('2025-11-21T00:00:00');
-
-    // Normalize input date to midnight
+    const anchor = new Date(2025, 10, 21);
     const current = new Date(date);
     current.setHours(0, 0, 0, 0);
 
-    // Calculate days diff
+    // Count calendar days instead of elapsed milliseconds so daylight saving
+    // offsets cannot push boundary dates into the previous pay period.
     const oneDay = 24 * 60 * 60 * 1000;
-    const diffTime = current - anchor;
-    const diffDays = Math.floor(diffTime / oneDay);
+    const anchorUtc = Date.UTC(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+    const currentUtc = Date.UTC(current.getFullYear(), current.getMonth(), current.getDate());
+    const diffDays = Math.floor((currentUtc - anchorUtc) / oneDay);
 
     // Each period is 14 days
     const periodsPassed = Math.floor(diffDays / 14);
