@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import { Button, Card } from "../ui";
 import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "../../utils/shiftPersistence";
 import { RUNNER_FLAT_RATE } from "../../utils/constants";
+import { getHistoryFlagUpdate, getShiftParticipantUids } from "../../utils/userHistoryFlags";
 
 const toMoney = (value) => Number(value) || 0;
 const hasNegative = (value) => Number(value) < 0;
@@ -20,6 +21,12 @@ const roleLabels = {
     assistant: "Assistant",
     bartender: "Bartender",
     runner: "Runner",
+};
+
+const ignoreMissingUserDoc = (error) => {
+    if (error?.code !== "not-found") {
+        throw error;
+    }
 };
 
 function getContractTotal(team) {
@@ -264,6 +271,131 @@ function TeamCloseoutCard({
         </div>
     );
 }
+
+const TeamPoolCloseoutCard = memo(function TeamPoolCloseoutCard({
+    team,
+    teamIndex,
+    summarySales,
+    summaryPool,
+    summaryCovers,
+    onPoolChange,
+    onToggleContracts,
+    onAddContract,
+    onUpdateContract,
+    onRemoveContract,
+}) {
+    const hasInputData = Object.values(team.pools || {}).some(value => toMoney(value) > 0)
+        || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0);
+
+    return (
+        <TeamCloseoutCard
+            title={`Team ${teamIndex + 1}`}
+            memberCount={team.members.length}
+            hasInputData={hasInputData}
+            totals={[
+                ["Sales", summarySales],
+                ["Pool", summaryPool],
+                ["Covers", summaryCovers],
+            ]}
+        >
+            <PoolField label="Sales ($)" value={team.pools.sales} onChange={(value) => onPoolChange(team.teamId, "sales", value)} />
+            <PoolField label="Tips (CTP) ($)" value={team.pools.tips} onChange={(value) => onPoolChange(team.teamId, "tips", value)} />
+            <PoolField label="Gratuity ($)" value={team.pools.gratuity} onChange={(value) => onPoolChange(team.teamId, "gratuity", value)} />
+            <PoolField label="Cash ($)" value={team.pools.cash} onChange={(value) => onPoolChange(team.teamId, "cash", value)} />
+            <PoolField label="Covers" value={team.pools.covers} onChange={(value) => onPoolChange(team.teamId, "covers", value)} />
+
+            <div className="col-span-full border-t border-[var(--color-line)]">
+                <div className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <button
+                        type="button"
+                        onClick={() => onToggleContracts(team.teamId)}
+                        aria-expanded={Boolean(team._showContracts)}
+                        className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] transition-colors"
+                    >
+                        <span className={"transition-transform duration-150 " + (team._showContracts ? "rotate-90" : "")}>▶</span>
+                        Contracts {team.contracts && team.contracts.length > 0 ? `(${team.contracts.length})` : ""}
+                    </button>
+                    {team._showContracts ? (
+                        <button
+                            type="button"
+                            onClick={() => onAddContract(team.teamId)}
+                            className="text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors whitespace-nowrap"
+                        >
+                            + Add Contract
+                        </button>
+                    ) : null}
+                </div>
+
+                {team._showContracts ? (
+                    team.contracts && team.contracts.length > 0 ? (
+                        <div className="pb-4 space-y-2">
+                            {team.contracts.map((contract, contractIndex) => (
+                                <div key={contractIndex} className="flex items-center gap-2">
+                                    <span className="text-xs font-mono tabular-nums text-[var(--color-ink-muted)] w-7">
+                                        #{contractIndex + 1}
+                                    </span>
+                                    <div className="relative flex-1">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-ink-muted)] pointer-events-none">$</span>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            placeholder="26% Gratuity Amount"
+                                            value={contract.gratuity}
+                                            onChange={(e) => onUpdateContract(team.teamId, contractIndex, "gratuity", e.target.value)}
+                                            className={NUMERIC_INPUT + " !pl-6"}
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => onRemoveContract(team.teamId, contractIndex)}
+                                        title="Remove contract"
+                                        aria-label="Remove contract"
+                                        className="h-9 w-9 inline-flex items-center justify-center rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="pb-4 text-xs text-[var(--color-ink-muted)] italic">
+                            No contracts added. Click '+ Add Contract' to input a contract amount.
+                        </div>
+                    )
+                ) : null}
+            </div>
+        </TeamCloseoutCard>
+    );
+});
+
+const BarPoolCloseoutCard = memo(function BarPoolCloseoutCard({
+    barTeam,
+    summarySales,
+    summaryPool,
+    summaryTransfer,
+    hasInputData,
+    onBarPoolChange,
+}) {
+    return (
+        <TeamCloseoutCard
+            title="Bar Team"
+            memberCount={barTeam.members.length}
+            hasInputData={hasInputData || barTeam.members.length > 0}
+            totals={[
+                ["Sales", summarySales],
+                ["Pool", summaryPool],
+                ["Transfer", summaryTransfer],
+            ]}
+        >
+            <PoolField label="Bar Sales ($)" value={barTeam.pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
+            <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
+            <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
+            <PoolField label="Covers" value={barTeam.pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />
+            <PoolField label="Runners Transfer ($)" value={barTeam.pools.runners} onChange={(value) => onBarPoolChange("runners", value)} />
+        </TeamCloseoutCard>
+    );
+});
 
 function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointChange, onPointAdjust }) {
     const totalPoints = members.reduce((sum, member) => {
@@ -580,6 +712,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [teamSetupOpen, setTeamSetupOpen] = useState(true);
     const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
     const [showLiveTotalDetails, setShowLiveTotalDetails] = useState(false);
+    const realEmployeeUids = useMemo(
+        () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
+        [allEmployees]
+    );
 
     const poolSummary = useMemo(() => {
         const teamSummaries = teams.map(getTeamSummary);
@@ -617,22 +753,20 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     }, [teams, barTeam, runners]);
 
     const hasBarCloseoutData = Object.values(barTeam.pools || {}).some(value => toMoney(value) > 0);
-    const teamHasCloseoutData = (team) => Object.values(team.pools || {}).some(value => toMoney(value) > 0)
-        || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0);
 
-    const updatePool = (teamId, field, value) => {
+    const updatePool = useCallback((teamId, field, value) => {
         setTeams(prev => prev.map(t =>
             t.teamId === teamId ? { ...t, pools: { ...t.pools, [field]: value } } : t
         ));
-    };
+    }, []);
 
-    const addContract = (teamId) => {
+    const addContract = useCallback((teamId) => {
         setTeams(prev => prev.map(t =>
             t.teamId === teamId ? { ...t, contracts: [...(t.contracts || []), { name: "", gratuity: "" }] } : t
         ));
-    };
+    }, []);
 
-    const updateContract = (teamId, index, field, value) => {
+    const updateContract = useCallback((teamId, index, field, value) => {
         setTeams(prev => prev.map(t => {
             if (t.teamId === teamId) {
                 const newContracts = [...(t.contracts || [])];
@@ -641,9 +775,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             }
             return t;
         }));
-    };
+    }, []);
 
-    const removeContract = (teamId, index) => {
+    const removeContract = useCallback((teamId, index) => {
         setTeams(prev => prev.map(t => {
             if (t.teamId === teamId) {
                 const newContracts = [...(t.contracts || [])];
@@ -652,17 +786,33 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             }
             return t;
         }));
-    };
+    }, []);
 
-    const updateBarPool = (field, value) => {
+    const toggleContractVisibility = useCallback((teamId) => {
+        setTeams(prev => prev.map(team =>
+            team.teamId === teamId ? { ...team, _showContracts: !team._showContracts } : team
+        ));
+    }, []);
+
+    const updateBarPool = useCallback((field, value) => {
         setBarTeam(prev => ({ ...prev, pools: { ...prev.pools, [field]: value } }));
-    };
+    }, []);
 
     const updateRunnerPayout = (uid, value) => {
         setRunners(prev => prev.map(runner =>
             runner.uid === uid ? { ...runner, payoutAmount: value } : runner
         ));
     };
+
+    const markUserHistoryFlags = useCallback(async (status, payouts = {}) => {
+        const flagUpdate = getHistoryFlagUpdate(status);
+        const participantUids = getShiftParticipantUids({ teams, barTeam, runners, payouts })
+            .filter(uid => realEmployeeUids.has(uid));
+
+        await Promise.all(participantUids.map(uid =>
+            updateDoc(doc(db, "users", uid), flagUpdate).catch(ignoreMissingUserDoc)
+        ));
+    }, [barTeam, realEmployeeUids, runners, teams]);
 
     const updateTeamMemberPoints = (teamId, uid, value) => {
         setTeams(prev => prev.map(team =>
@@ -770,6 +920,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
         try {
             await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({ date, teams, barTeam, runners }));
+            await markUserHistoryFlags("setup");
             setShiftStatus("setup");
             setSaveStatus("Team setup saved.");
             setMoneyCloseoutOpen(true);
@@ -859,6 +1010,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 deleteDoc(doc(db, "users", uid, "tips", date))
             );
             await Promise.all([...saves, ...deletes]);
+            await markUserHistoryFlags("closed", mappedPayoutsForFirebase);
             setSaveStatus("Saved.");
             setShiftStatus("closed");
             setCalculatedReview(null);
@@ -1000,107 +1152,30 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             {/* Pool inputs */}
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {teams.map((t, idx) => (
-                                    <TeamCloseoutCard
+                                    <TeamPoolCloseoutCard
                                         key={t.teamId}
-                                        title={`Team ${idx + 1}`}
-                                        memberCount={t.members.length}
-                                        hasInputData={teamHasCloseoutData(t)}
-                                        totals={[
-                                            ["Sales", poolSummary.teams[idx].sales],
-                                            ["Pool", poolSummary.teams[idx].payoutPool],
-                                            ["Covers", poolSummary.teams[idx].covers],
-                                        ]}
-                                    >
-                                            <PoolField label="Sales ($)" value={t.pools.sales} onChange={(v) => updatePool(t.teamId, "sales", v)} />
-                                            <PoolField label="Tips (CTP) ($)" value={t.pools.tips} onChange={(v) => updatePool(t.teamId, "tips", v)} />
-                                            <PoolField label="Gratuity ($)" value={t.pools.gratuity} onChange={(v) => updatePool(t.teamId, "gratuity", v)} />
-                                            <PoolField label="Cash ($)" value={t.pools.cash} onChange={(v) => updatePool(t.teamId, "cash", v)} />
-                                            <PoolField label="Covers" value={t.pools.covers} onChange={(v) => updatePool(t.teamId, "covers", v)} />
-
-                                        {/* Contracts */}
-                                        <div className="col-span-full border-t border-[var(--color-line)]">
-                                            <div className="flex flex-wrap items-center justify-between gap-2 py-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setTeams(prev => prev.map(pt => pt.teamId === t.teamId ? { ...pt, _showContracts: !pt._showContracts } : pt));
-                                                    }}
-                                                    aria-expanded={Boolean(t._showContracts)}
-                                                    className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] transition-colors"
-                                                >
-                                                    <span className={"transition-transform duration-150 " + (t._showContracts ? "rotate-90" : "")}>▶</span>
-                                                    Contracts {t.contracts && t.contracts.length > 0 ? `(${t.contracts.length})` : ""}
-                                                </button>
-                                                {t._showContracts ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => addContract(t.teamId)}
-                                                        className="text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors whitespace-nowrap"
-                                                    >
-                                                        + Add Contract
-                                                    </button>
-                                                ) : null}
-                                            </div>
-
-                                            {t._showContracts ? (
-                                                t.contracts && t.contracts.length > 0 ? (
-                                                    <div className="pb-4 space-y-2">
-                                                        {t.contracts.map((contract, cIdx) => (
-                                                            <div key={cIdx} className="flex items-center gap-2">
-                                                                <span className="text-xs font-mono tabular-nums text-[var(--color-ink-muted)] w-7">
-                                                                    #{cIdx + 1}
-                                                                </span>
-                                                                <div className="relative flex-1">
-                                                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-ink-muted)] pointer-events-none">$</span>
-                                                                    <input
-                                                                        type="number"
-                                                                        min="0"
-                                                                        step="0.01"
-                                                                        placeholder="26% Gratuity Amount"
-                                                                        value={contract.gratuity}
-                                                                        onChange={(e) => updateContract(t.teamId, cIdx, "gratuity", e.target.value)}
-                                                                        className={NUMERIC_INPUT + " !pl-6"}
-                                                                    />
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removeContract(t.teamId, cIdx)}
-                                                                    title="Remove contract"
-                                                                    aria-label="Remove contract"
-                                                                    className="h-9 w-9 inline-flex items-center justify-center rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors"
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <div className="pb-4 text-xs text-[var(--color-ink-muted)] italic">
-                                                        No contracts added. Click '+ Add Contract' to input a contract amount.
-                                                    </div>
-                                                )
-                                            ) : null}
-                                        </div>
-                                    </TeamCloseoutCard>
+                                        team={t}
+                                        teamIndex={idx}
+                                        summarySales={poolSummary.teams[idx].sales}
+                                        summaryPool={poolSummary.teams[idx].payoutPool}
+                                        summaryCovers={poolSummary.teams[idx].covers}
+                                        onPoolChange={updatePool}
+                                        onToggleContracts={toggleContractVisibility}
+                                        onAddContract={addContract}
+                                        onUpdateContract={updateContract}
+                                        onRemoveContract={removeContract}
+                                    />
                                 ))}
 
                                 {/* Bar */}
-                                <TeamCloseoutCard
-                                    title="Bar Team"
-                                    memberCount={barTeam.members.length}
-                                    hasInputData={hasBarCloseoutData || barTeam.members.length > 0}
-                                    totals={[
-                                        ["Sales", poolSummary.bar.sales],
-                                        ["Pool", poolSummary.bar.payoutPool],
-                                        ["Transfer", poolSummary.bar.runnerTransfer],
-                                    ]}
-                                >
-                                    <PoolField label="Bar Sales ($)" value={barTeam.pools.sales} onChange={(v) => updateBarPool("sales", v)} />
-                                    <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(v) => updateBarPool("tips", v)} />
-                                    <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(v) => updateBarPool("gratuity", v)} />
-                                    <PoolField label="Covers" value={barTeam.pools.covers} onChange={(v) => updateBarPool("covers", v)} />
-                                    <PoolField label="Runners Transfer ($)" value={barTeam.pools.runners} onChange={(v) => updateBarPool("runners", v)} />
-                                </TeamCloseoutCard>
+                                <BarPoolCloseoutCard
+                                    barTeam={barTeam}
+                                    summarySales={poolSummary.bar.sales}
+                                    summaryPool={poolSummary.bar.payoutPool}
+                                    summaryTransfer={poolSummary.bar.runnerTransfer}
+                                    hasInputData={hasBarCloseoutData}
+                                    onBarPoolChange={updateBarPool}
+                                />
                             </div>
 
                             <PointAdjustmentsPanel

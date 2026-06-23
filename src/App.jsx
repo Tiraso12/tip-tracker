@@ -1,19 +1,28 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { Suspense, lazy, useState, useEffect, useMemo } from "react";
 import Header from "./components/Header/Header";
 import Calendar from "./components/Calendar/Calendar";
 import MonthView from "./components/Calendar/MonthView";
-import Charts from "./components/Charts/Charts";
 
 import WeekHeader from "./components/WeekHeader/WeekHeader";
-import { getCurrentWeek, getCalendarMonth, toDateKey } from "./utils/dateUtils";
+import { getCurrentWeek, getCalendarMonth, getEmployeeTipSubscriptionDateKeys, toDateKey } from "./utils/dateUtils";
 
 import EmployeePeriodSummary from "./components/EmployeePeriodSummary/EmployeePeriodSummary";
 import DataService from "./services/dataService";
 import Login from "./components/Auth/Login";
 import PendingApproval from "./components/Auth/PendingApproval";
-import AdminDashboard from "./components/Admin/AdminDashboard";
 
 import { useAuth } from "./context/AuthContext";
+
+const AdminDashboard = lazy(() => import("./components/Admin/AdminDashboard"));
+const Charts = lazy(() => import("./components/Charts/Charts"));
+
+function InlineLoading({ label = "Loading..." }) {
+  return (
+    <div className="py-6 text-center text-sm text-[var(--color-ink-soft)]">
+      {label}
+    </div>
+  );
+}
 
 function App() {
   const { user, loading } = useAuth();
@@ -23,6 +32,10 @@ function App() {
   const [currentWeekDates, setCurrentWeekDates] = useState([]);
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'month'
   const [allData, setAllData] = useState({});
+  const tipSubscriptionDateKeys = useMemo(
+    () => getEmployeeTipSubscriptionDateKeys(baseDate, viewMode),
+    [baseDate, viewMode]
+  );
 
   // Calculate Chart Data
   const chartData = useMemo(() => {
@@ -133,16 +146,19 @@ function App() {
 
   // Keep user tip history fresh after login.
   useEffect(() => {
-    if (!user) {
+    if (!user || user.role === "admin") {
       setAllData({});
       return undefined;
     }
 
-    return DataService.subscribeToAllData(
-      setAllData,
+    return DataService.subscribeToDates(
+      tipSubscriptionDateKeys,
+      (dateKey, data) => {
+        setAllData(prev => ({ ...prev, [dateKey]: data }));
+      },
       () => setAllData({})
     );
-  }, [user]);
+  }, [user, tipSubscriptionDateKeys]);
 
   if (loading) {
     return (
@@ -159,7 +175,11 @@ function App() {
   // Admins go directly to their own central panel. Some legacy admin
   // profiles may not have an explicit active status yet.
   if (isAdmin) {
-    return <AdminDashboard />;
+    return (
+      <Suspense fallback={<InlineLoading label="Loading admin workspace..." />}>
+        <AdminDashboard />
+      </Suspense>
+    );
   }
 
   // Employees need an active profile before they can access the dashboard.
@@ -192,7 +212,9 @@ function App() {
         ) : (
           <MonthView currentDate={baseDate} allData={allData} />
         )}
-        <Charts weekData={chartData} />
+        <Suspense fallback={<InlineLoading label="Loading charts..." />}>
+          <Charts weekData={chartData} />
+        </Suspense>
       </div>
     </main>
   );

@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { Suspense, lazy, useState, useEffect, useCallback } from "react";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
-import TeamManagement from "./TeamManagement";
 import DayPayoutPanel from "./DayPayoutPanel";
-import ShiftEditorPanel from "./ShiftEditorPanel";
-import AdminReportsPanel from "./AdminReportsPanel";
 import { Badge, Button } from "../ui";
 import { toDateKey } from "../../utils/dateUtils";
+
+const TeamManagement = lazy(() => import("./TeamManagement"));
+const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
+const AdminReportsPanel = lazy(() => import("./AdminReportsPanel"));
 
 const NAV_ITEMS = [
     {
@@ -81,9 +82,20 @@ function SideNavItem({ item, active, onClick, collapsed }) {
     );
 }
 
+function PanelLoading({ label = "Loading..." }) {
+    return (
+        <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
+            {label}
+        </div>
+    );
+}
+
 function AdminDashboard() {
     const { logout, user } = useAuth();
     const [allEmployees, setAllEmployees] = useState([]);
+    const [employeesLoaded, setEmployeesLoaded] = useState(false);
+    const [employeesLoading, setEmployeesLoading] = useState(false);
+    const [employeesLoadError, setEmployeesLoadError] = useState("");
     const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
     const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor" | "reports"
     const [daySummary, setDaySummary] = useState(null);
@@ -91,18 +103,22 @@ function AdminDashboard() {
     const [dayLoading, setDayLoading] = useState(false);
     const [navCollapsed, setNavCollapsed] = useState(true);
 
-    const fetchEmployees = useCallback(async () => {
+    const loadEmployeesIfNeeded = useCallback(async ({ force = false } = {}) => {
+        if (employeesLoaded && !force) return;
+
+        setEmployeesLoading(true);
+        setEmployeesLoadError("");
         try {
             const snapshot = await getDocs(collection(db, "users"));
             setAllEmployees(snapshot.docs.map((d) => ({ uid: d.id, ...d.data() })));
+            setEmployeesLoaded(true);
         } catch (e) {
             console.error("Failed to fetch employees:", e);
+            setEmployeesLoadError("Employee data could not be loaded. Try opening this section again.");
+        } finally {
+            setEmployeesLoading(false);
         }
-    }, []);
-
-    useEffect(() => {
-        fetchEmployees();
-    }, [fetchEmployees]);
+    }, [employeesLoaded]);
 
     const fetchDayPayouts = useCallback(async (date) => {
         setDayLoading(true);
@@ -136,6 +152,13 @@ function AdminDashboard() {
         setActiveTab("shifts");
         fetchDayPayouts(selectedDate);
     };
+
+    const setActiveTabWithData = useCallback((tab) => {
+        setActiveTab(tab);
+        if (tab === "editor" || tab === "users") {
+            loadEmployeesIfNeeded();
+        }
+    }, [loadEmployeesIfNeeded]);
 
     // The sidebar treats "editor" as still belonging to the Shifts section.
     const sidebarValue = activeTab === "editor" ? "shifts" : activeTab;
@@ -173,7 +196,7 @@ function AdminDashboard() {
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                         </button>
-                        <Button onClick={() => setActiveTab("editor")}>
+                        <Button onClick={() => setActiveTabWithData("editor")}>
                             Edit Shift
                         </Button>
                     </div>
@@ -277,7 +300,7 @@ function AdminDashboard() {
                                     key={item.value}
                                     item={item}
                                     active={sidebarValue === item.value}
-                                    onClick={() => setActiveTab(item.value)}
+                                    onClick={() => setActiveTabWithData(item.value)}
                                     collapsed={navCollapsed}
                                 />
                             ))}
@@ -317,15 +340,36 @@ function AdminDashboard() {
                                 loading={dayLoading}
                             />
                         ) : activeTab === "editor" ? (
-                            <ShiftEditorPanel
-                                date={selectedDate}
-                                allEmployees={allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin")}
-                                onClose={handleEditorClose}
-                            />
+                            !employeesLoaded && employeesLoading ? (
+                                <PanelLoading label="Loading employees..." />
+                            ) : !employeesLoaded && employeesLoadError ? (
+                                <PanelLoading label={employeesLoadError} />
+                            ) : (
+                                <Suspense fallback={<PanelLoading label="Loading shift editor..." />}>
+                                    <ShiftEditorPanel
+                                        date={selectedDate}
+                                        allEmployees={allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin")}
+                                        onClose={handleEditorClose}
+                                    />
+                                </Suspense>
+                            )
                         ) : activeTab === "users" ? (
-                            <TeamManagement allEmployees={allEmployees} refreshEmployees={fetchEmployees} />
+                            !employeesLoaded && employeesLoading ? (
+                                <PanelLoading label="Loading team..." />
+                            ) : !employeesLoaded && employeesLoadError ? (
+                                <PanelLoading label={employeesLoadError} />
+                            ) : (
+                                <Suspense fallback={<PanelLoading label="Loading team management..." />}>
+                                    <TeamManagement
+                                        allEmployees={allEmployees}
+                                        refreshEmployees={() => loadEmployeesIfNeeded({ force: true })}
+                                    />
+                                </Suspense>
+                            )
                         ) : (
-                            <AdminReportsPanel />
+                            <Suspense fallback={<PanelLoading label="Loading reports..." />}>
+                                <AdminReportsPanel />
+                            </Suspense>
                         )}
                     </div>
                 </main>
