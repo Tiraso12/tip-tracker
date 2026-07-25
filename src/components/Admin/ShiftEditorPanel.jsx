@@ -22,7 +22,7 @@ import {
 } from "./shiftEditorUtils";
 
 const NUMERIC_INPUT =
-    "block w-full h-9 px-2.5 text-sm font-mono tabular-nums bg-[var(--color-surface)] max-[560px]:h-11 " +
+    "block w-full h-9 px-2.5 text-sm font-mono tabular-nums bg-[var(--color-surface)] max-[560px]:h-10 " +
     "text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] " +
     "border border-[var(--color-line)] rounded-[var(--radius-xs)] " +
     "transition-colors duration-150 hover:border-[var(--color-line-strong)] " +
@@ -88,26 +88,45 @@ function TeamCloseoutCard({
     memberCount,
     totals,
     hasInputData,
+    mobileOpen,
+    onMobileToggle,
+    inactive = false,
     children,
 }) {
-    const [showInputs, setShowInputs] = useState(hasInputData);
-
     return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
-                <span className="text-sm font-medium text-[var(--color-ink)]">
+        <div className={
+            "border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden " +
+            (inactive ? "max-[560px]:bg-[var(--color-surface-muted)]/35" : "")
+        }>
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:py-2.5">
+                <span className={
+                    "text-sm font-medium " +
+                    (inactive ? "max-[560px]:text-[var(--color-ink-soft)] text-[var(--color-ink)]" : "text-[var(--color-ink)]")
+                }>
                     {title} ({memberCount} {memberCount === 1 ? "member" : "members"})
                 </span>
                 <button
                     type="button"
-                    onClick={() => setShowInputs(open => !open)}
+                    onClick={onMobileToggle}
                     className="hidden max-[560px]:inline text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
                 >
-                    {showInputs ? "Hide inputs" : hasInputData ? "Edit inputs" : "Edit inputs"}
+                    {mobileOpen ? (
+                        "Hide inputs"
+                    ) : hasInputData ? (
+                        <span className="inline-flex items-center justify-center" title="Data entered" aria-label="Data entered">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
+                        </span>
+                    ) : inactive ? (
+                        "Open"
+                    ) : (
+                        "Edit inputs"
+                    )}
                 </button>
             </div>
-            <PoolCardTotals totals={totals} />
-            <div className={(showInputs ? "grid " : "grid max-[560px]:hidden ") + "grid-cols-1 sm:grid-cols-3 gap-3 p-4"}>
+            <div className={!mobileOpen ? "max-[560px]:hidden" : ""}>
+                <PoolCardTotals totals={totals} />
+            </div>
+            <div className={(mobileOpen ? "grid " : "hidden ") + "sm:grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 max-[560px]:p-3"}>
                 {children}
             </div>
         </div>
@@ -120,6 +139,8 @@ const TeamPoolCloseoutCard = memo(function TeamPoolCloseoutCard({
     summarySales,
     summaryPool,
     summaryCovers,
+    mobileOpen,
+    onMobileToggle,
     onPoolChange,
     onToggleContracts,
     onAddContract,
@@ -128,12 +149,16 @@ const TeamPoolCloseoutCard = memo(function TeamPoolCloseoutCard({
 }) {
     const hasInputData = Object.values(team.pools || {}).some(value => toMoney(value) > 0)
         || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0);
+    const inactive = team.members.length === 0 && !hasInputData;
 
     return (
         <TeamCloseoutCard
             title={`Team ${teamIndex + 1}`}
             memberCount={team.members.length}
             hasInputData={hasInputData}
+            mobileOpen={mobileOpen}
+            onMobileToggle={onMobileToggle}
+            inactive={inactive}
             totals={[
                 ["Sales", summarySales],
                 ["Pool", summaryPool],
@@ -217,13 +242,20 @@ const BarPoolCloseoutCard = memo(function BarPoolCloseoutCard({
     summaryPool,
     summaryTransfer,
     hasInputData,
+    mobileOpen,
+    onMobileToggle,
     onBarPoolChange,
 }) {
+    const inactive = barTeam.members.length === 0 && !hasInputData;
+
     return (
         <TeamCloseoutCard
             title="Bar Team"
             memberCount={barTeam.members.length}
             hasInputData={hasInputData || barTeam.members.length > 0}
+            mobileOpen={mobileOpen}
+            onMobileToggle={onMobileToggle}
+            inactive={inactive}
             totals={[
                 ["Sales", summarySales],
                 ["Pool", summaryPool],
@@ -371,11 +403,11 @@ function PointAdjustmentsPanel({
 
     return (
         <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:items-start">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:items-center max-[560px]:px-3 max-[560px]:py-2">
                 <div className="min-w-0">
-                    <span className="block text-sm font-medium text-[var(--color-ink)]">Point Adjustments</span>
-                    <div className="mt-2 flex items-center gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:flex-wrap">
-                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Dining {totals.restaurant.toLocaleString()} pts</span>
+                    <span className="block text-sm font-medium text-[var(--color-ink)] max-[560px]:text-[0.82rem]">Point Adjustments</span>
+                    <div className="mt-2 flex items-center gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
+                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1 max-[560px]:py-0.5">Dining {totals.restaurant.toLocaleString()} pts</span>
                         <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Bar {totals.bar.toLocaleString()} pts</span>
                         <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Runners {fmtMoney(totals.runnerPay)}</span>
                     </div>
@@ -383,7 +415,7 @@ function PointAdjustmentsPanel({
                 <button
                     type="button"
                     onClick={() => setIsOpen(open => !open)}
-                    className="shrink-0 text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
+                    className="shrink-0 text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors max-[560px]:rounded-[var(--radius-xs)] max-[560px]:border max-[560px]:border-[var(--color-line)] max-[560px]:px-2.5 max-[560px]:py-1.5"
                 >
                     {isOpen ? "Hide points" : "Edit points"}
                 </button>
@@ -428,6 +460,8 @@ function PointAdjustmentsPanel({
 
 function CalculatedPayoutReview({ review }) {
     const { result, payoutRows, staffTotal } = review;
+    const [showAllMobilePayouts, setShowAllMobilePayouts] = useState(false);
+    const verificationPayout = payoutRows.find(payout => payout.role === "captain") || payoutRows[0];
     const reviewRoleLabels = {
         captain: "Captains",
         server: "Servers",
@@ -439,16 +473,16 @@ function CalculatedPayoutReview({ review }) {
 
     return (
         <div className="border border-[var(--color-accent)]/20 rounded-[var(--radius-md)] bg-[var(--color-accent-soft)]/40">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-[var(--color-accent)]/20">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-[var(--color-accent)]/20 max-[560px]:flex-row max-[560px]:items-start max-[560px]:px-4 max-[560px]:py-3">
                 <div>
                     <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
                         Calculated payout review
                     </div>
-                    <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-accent)]">
+                    <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-accent)] max-[560px]:text-xl">
                         {fmtMoney(staffTotal)}
                     </div>
                 </div>
-                <div className="flex flex-col items-end">
+                <div className="flex flex-col items-end max-[560px]:pt-0.5">
                     <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Balance</span>
                     <strong className="font-mono tabular-nums text-[var(--color-ink)]">
                         {fmtMoney(result.balances?.overallBalance)}
@@ -456,14 +490,50 @@ function CalculatedPayoutReview({ review }) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-[var(--color-accent)]/15">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-[var(--color-accent)]/15 max-[560px]:gap-x-5 max-[560px]:gap-y-2 max-[560px]:px-4 max-[560px]:py-2.5">
                 <SummaryMetric label="Employees" value={payoutRows.length.toLocaleString()} />
                 <SummaryMetric label="Available" value={fmtMoney(result.balances?.totalAvailable)} />
                 <SummaryMetric label="Distributed" value={fmtMoney(result.balances?.totalDistributed)} />
                 <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
             </div>
 
-            <div className="divide-y divide-[var(--color-accent)]/10 max-h-96 overflow-y-auto">
+            <div className="hidden max-[560px]:block px-4 py-2.5 border-b border-[var(--color-accent)]/15">
+                {verificationPayout ? (
+                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-accent)]/20 bg-[var(--color-surface)] px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                                    {verificationPayout.role === "captain" ? "Captain check" : "Payout check"}
+                                </div>
+                                <div className="mt-1 text-sm font-semibold text-[var(--color-ink)] truncate">
+                                    {verificationPayout.name}
+                                </div>
+                            </div>
+                            <strong className="shrink-0 font-mono tabular-nums text-base text-[var(--color-ink)]">
+                                {fmtMoney(getPayoutNonCashTotal(verificationPayout))}
+                            </strong>
+                        </div>
+                        <div className="mt-1.5 flex items-center justify-between gap-3 border-t border-[var(--color-line)] pt-1.5 text-xs">
+                            <span className="font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                Cash
+                            </span>
+                            <strong className="font-mono tabular-nums text-[var(--color-ink)]">
+                                {fmtMoney(verificationPayout.cash)}
+                            </strong>
+                        </div>
+                    </div>
+                ) : null}
+
+                <button
+                    type="button"
+                    onClick={() => setShowAllMobilePayouts(open => !open)}
+                    className="mt-2 w-full rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-accent)]"
+                >
+                    {showAllMobilePayouts ? "Hide all payouts" : "Show all payouts"}
+                </button>
+            </div>
+
+            <div className={(showAllMobilePayouts ? "block " : "hidden ") + "sm:block divide-y divide-[var(--color-accent)]/10 max-h-96 overflow-y-auto"}>
                 {payoutRows.map((payout) => (
                     <div key={payout.uid} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-5 py-3">
                         <div className="flex flex-col">
@@ -495,15 +565,15 @@ function CollapsibleSection({ title, subtitle, badge, isOpen, onToggle, children
                 type="button"
                 onClick={onToggle}
                 aria-expanded={isOpen}
-                className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]/50 transition-colors duration-150 text-left max-[560px]:px-4 max-[560px]:py-3"
+                className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]/50 transition-colors duration-150 text-left max-[560px]:px-4 max-[560px]:py-2.5"
             >
                 <div className="flex flex-col gap-0.5">
                     {subtitle ? (
-                        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)] max-[560px]:hidden">
                             {subtitle}
                         </span>
                     ) : null}
-                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)] max-[560px]:text-lg">
+                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)] max-[560px]:text-base">
                         {title}
                     </h3>
                 </div>
@@ -549,11 +619,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [validationMessages, setValidationMessages] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [hasLoadedShift, setHasLoadedShift] = useState(false);
     const [calculatedReview, setCalculatedReview] = useState(null);
     const [shiftStatus, setShiftStatus] = useState(null);
     const [teamSetupOpen, setTeamSetupOpen] = useState(true);
     const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
     const [showLiveTotalDetails, setShowLiveTotalDetails] = useState(false);
+    const [activeMobileCloseoutId, setActiveMobileCloseoutId] = useState(null);
+    const [draftStatus, setDraftStatus] = useState("");
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -588,13 +661,30 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
             contractTotal,
             runnerTransfer: barSummary.runnerTransfer,
             totalRunnerPay: runners.reduce((sum, runner) => sum + toMoney(runner.payoutAmount || RUNNER_FLAT_RATE), 0),
-            payoutPool: restaurantTips + barSummary.tips + restaurantGratuity + barSummary.gratuity + restaurantCash,
+            payoutPool: restaurantTips + barSummary.tips + restaurantGratuity + barSummary.gratuity,
             restaurantPoints,
             barPoints,
         };
     }, [teams, barTeam, runners]);
 
     const hasBarCloseoutData = Object.values(barTeam.pools || {}).some(value => toMoney(value) > 0);
+
+    const toggleMobileCloseoutCard = useCallback((cardId) => {
+        setActiveMobileCloseoutId(current => current === cardId ? null : cardId);
+    }, []);
+
+    const hasAssignedStaff = useMemo(() => (
+        teams.some(team => team.members.length > 0) || barTeam.members.length > 0 || runners.length > 0
+    ), [barTeam.members.length, runners.length, teams]);
+
+    const hasCloseoutDraftData = useMemo(() => (
+        teams.some(team => (
+            Object.values(team.pools || {}).some(value => toMoney(value) > 0)
+            || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0)
+        ))
+        || Object.values(barTeam.pools || {}).some(value => toMoney(value) > 0)
+        || runners.some(runner => toMoney(runner.payoutAmount) !== RUNNER_FLAT_RATE)
+    ), [barTeam.pools, runners, teams]);
 
     const updatePool = useCallback((teamId, field, value) => {
         setTeams(prev => prev.map(t =>
@@ -714,6 +804,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         const loadShift = async () => {
             try {
                 setLoading(true);
+                setHasLoadedShift(false);
+                setDraftStatus("");
                 setShiftStatus(null);
                 const shiftDoc = await getDoc(doc(db, "shifts", date));
                 if (shiftDoc.exists()) {
@@ -736,15 +828,69 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     setShiftStatus(d.status || (d.summary || d.payouts ? "closed" : "setup"));
                     setTeamSetupOpen(false);
                     setMoneyCloseoutOpen(true);
+                } else {
+                    setTeams([
+                        { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
+                    ]);
+                    setBarTeam({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
+                    setRunners([]);
+                    setTeamSetupOpen(true);
+                    setMoneyCloseoutOpen(false);
                 }
             } catch (e) {
                 console.error("Failed to load shift:", e);
             } finally {
+                setHasLoadedShift(true);
                 setLoading(false);
             }
         };
         loadShift();
     }, [date]);
+
+    useEffect(() => {
+        if (!hasLoadedShift || loading || isSaving || shiftStatus === "closed") return undefined;
+        if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
+
+        let cancelled = false;
+        const timeoutId = window.setTimeout(async () => {
+            setDraftStatus("Saving draft...");
+            try {
+                await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
+                    date,
+                    teams,
+                    barTeam,
+                    runners,
+                    includeCloseoutDraft: true,
+                }));
+
+                if (!cancelled) {
+                    setShiftStatus("setup");
+                    setDraftStatus("Draft saved.");
+                }
+            } catch (e) {
+                console.error("Failed to autosave closeout draft:", e);
+                if (!cancelled) {
+                    setDraftStatus("Draft autosave failed.");
+                }
+            }
+        }, 1000);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timeoutId);
+        };
+    }, [
+        barTeam,
+        date,
+        hasAssignedStaff,
+        hasCloseoutDraftData,
+        hasLoadedShift,
+        isSaving,
+        loading,
+        runners,
+        shiftStatus,
+        teams,
+    ]);
 
     const handleSaveTeamSetup = async () => {
         if (isSaving) return;
@@ -886,6 +1032,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         ) : null}
                         {saveStatus ? (
                             <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
+                        ) : draftStatus ? (
+                            <span className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
                         ) : null}
                     </div>
                 </header>
@@ -947,14 +1095,16 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             ) : null}
 
                             {/* Live totals */}
-                            <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
-                                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-4 max-[560px]:py-3">
+                            <div className={
+                                "border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden max-[560px]:hidden"
+                            }>
+                                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-3 max-[560px]:py-2">
                                     <div className="flex items-end justify-between gap-3 max-[560px]:w-full">
                                         <div>
-                                        <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                                        <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)] max-[560px]:hidden">
                                             Live shift totals
                                         </div>
-                                        <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-ink)] max-[560px]:text-2xl">
+                                        <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-ink)] max-[560px]:text-xl">
                                             {fmtMoney(poolSummary.payoutPool)}
                                         </div>
                                         </div>
@@ -966,7 +1116,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                             {showLiveTotalDetails ? "Hide details" : "Show details"}
                                         </button>
                                     </div>
-                                    <div className="flex flex-wrap gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
+                                    <div className="flex flex-wrap gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
                                         <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{diningCount} dining</span>
                                         <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{barTeam.members.length} bar</span>
                                         <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{runners.length} runners</span>
@@ -1001,6 +1151,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                         summarySales={poolSummary.teams[idx].sales}
                                         summaryPool={poolSummary.teams[idx].payoutPool}
                                         summaryCovers={poolSummary.teams[idx].covers}
+                                        mobileOpen={activeMobileCloseoutId === t.teamId}
+                                        onMobileToggle={() => toggleMobileCloseoutCard(t.teamId)}
                                         onPoolChange={updatePool}
                                         onToggleContracts={toggleContractVisibility}
                                         onAddContract={addContract}
@@ -1016,6 +1168,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                     summaryPool={poolSummary.bar.payoutPool}
                                     summaryTransfer={poolSummary.bar.runnerTransfer}
                                     hasInputData={hasBarCloseoutData}
+                                    mobileOpen={activeMobileCloseoutId === "bar"}
+                                    onMobileToggle={() => toggleMobileCloseoutCard("bar")}
                                     onBarPoolChange={updateBarPool}
                                 />
                             </div>
@@ -1035,15 +1189,26 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             {calculatedReview ? <CalculatedPayoutReview review={calculatedReview} /> : null}
 
                             {/* Save row */}
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-2">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-2 max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
+                                <div className="hidden max-[560px]:flex items-center justify-between gap-3">
+                                    <span className="text-[0.7rem] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                        Closeout total
+                                    </span>
+                                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
+                                        {fmtMoney(poolSummary.payoutPool)}
+                                    </strong>
+                                </div>
                                 {saveStatus ? (
                                     <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
+                                ) : draftStatus ? (
+                                    <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
                                 ) : null}
                                 {calculatedReview ? (
                                     <Button
                                         variant="secondary"
                                         onClick={handleCalculateForReview}
                                         disabled={isSaving}
+                                        className="max-[560px]:w-full"
                                     >
                                         Recalculate Payouts
                                     </Button>
@@ -1051,6 +1216,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                 <Button
                                     onClick={calculatedReview ? handleConfirmSave : handleCalculateForReview}
                                     disabled={isSaving}
+                                    className="max-[560px]:w-full"
                                 >
                                     {isSaving
                                         ? "Saving…"

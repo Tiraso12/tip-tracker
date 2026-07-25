@@ -44,7 +44,7 @@ export function getTeamSummary(team) {
         cash,
         covers: toMoney(pools.covers),
         contractTotal,
-        payoutPool: tips + gratuity + cash + contractTotal,
+        payoutPool: tips + gratuity + contractTotal,
     };
 }
 
