@@ -152,3 +152,26 @@ export function getCalendarMonth(baseDate) {
 
     return dates;
 }
+
+/**
+ * Returns the date keys the employee dashboard needs to render the current
+ * visible surface without subscribing to the user's entire tip history.
+ */
+export function getEmployeeTipSubscriptionDateKeys(baseDate, viewMode = "week") {
+    const date = baseDate || new Date();
+
+    if (viewMode === "month") {
+        return getCalendarMonth(date).map(toDateKey);
+    }
+
+    const period = getBiweeklyPeriod(date);
+    const keys = [];
+    const current = new Date(period.start);
+
+    while (current <= period.end) {
+        keys.push(toDateKey(current));
+        current.setDate(current.getDate() + 1);
+    }
+
+    return keys;
+}

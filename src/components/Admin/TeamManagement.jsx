@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../config/firebase';
 import { doc, updateDoc, deleteDoc, collection, getDocs, setDoc } from 'firebase/firestore';
 import { Badge, Button, Card, Select } from '../ui';
+import { getMergeHistoryState } from '../../utils/userHistoryFlags';
 
 const ROLES = ["captain", "server", "back", "assistant", "bartender", "runner"];
 const ROLE_LABELS = {
@@ -89,28 +90,35 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
             setMergeEligibilityLoading(true);
             try {
                 const nextAccountsWithData = {};
+                const legacyUsers = [];
                 activeUsers.forEach(emp => {
-                    nextAccountsWithData[emp.uid] = false;
+                    const historyState = getMergeHistoryState(emp);
+                    nextAccountsWithData[emp.uid] = historyState.hasHistory;
+                    if (historyState.needsFallbackScan) {
+                        legacyUsers.push(emp);
+                    }
                 });
 
-                const shiftSnap = await getDocs(collection(db, "shifts"));
-                shiftSnap.docs.forEach(shiftDoc => {
-                    const shiftData = shiftDoc.data();
-                    activeUsers.forEach(emp => {
-                        if (nextAccountsWithData[emp.uid]) return;
-                        const inPayouts = !!shiftData.payouts?.[emp.uid];
-                        const inTeams = (shiftData.teams || []).some(team =>
-                            (team.members || []).some(member => member.uid === emp.uid)
-                        );
-                        const inBar = (shiftData.barTeam?.members || []).some(member => member.uid === emp.uid);
-                        const inRunners = (shiftData.runners || []).some(member => member.uid === emp.uid);
-                        if (inPayouts || inTeams || inBar || inRunners) {
-                            nextAccountsWithData[emp.uid] = true;
-                        }
+                if (legacyUsers.length > 0) {
+                    const shiftSnap = await getDocs(collection(db, "shifts"));
+                    shiftSnap.docs.forEach(shiftDoc => {
+                        const shiftData = shiftDoc.data();
+                        legacyUsers.forEach(emp => {
+                            if (nextAccountsWithData[emp.uid]) return;
+                            const inPayouts = !!shiftData.payouts?.[emp.uid];
+                            const inTeams = (shiftData.teams || []).some(team =>
+                                (team.members || []).some(member => member.uid === emp.uid)
+                            );
+                            const inBar = (shiftData.barTeam?.members || []).some(member => member.uid === emp.uid);
+                            const inRunners = (shiftData.runners || []).some(member => member.uid === emp.uid);
+                            if (inPayouts || inTeams || inBar || inRunners) {
+                                nextAccountsWithData[emp.uid] = true;
+                            }
+                        });
                     });
-                });
+                }
 
-                await Promise.all(activeUsers.map(async emp => {
+                await Promise.all(legacyUsers.map(async emp => {
                     if (nextAccountsWithData[emp.uid]) return;
                     const tipsSnap = await getDocs(collection(db, "users", emp.uid, "tips"));
                     if (!tipsSnap.empty) {
@@ -228,9 +236,15 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 await deleteDoc(doc(db, `users/${unregUser.uid}/tips`, tipDoc.id));
             }
 
+            await updateDoc(doc(db, "users", realUser.uid), {
+                hasShiftHistory: true,
+                hasTipHistory: true,
+            });
+
             await deleteDoc(doc(db, "unregisteredStaff", unregUser.uid));
 
             await fetchUnregistered();
+            await refreshEmployees();
             setLinkTargetUpdates(prev => {
                 const n = { ...prev };
                 delete n[unregUser.uid];

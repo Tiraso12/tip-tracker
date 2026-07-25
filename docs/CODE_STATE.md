@@ -1,12 +1,12 @@
 # Tip Tracker Code State
 
-Last reviewed: 2026-05-28
+Last reviewed: 2026-06-22
 
 ## Executive Summary
 
 Tip Tracker is in a stable, production-oriented state. The codebase is a focused React/Vite/Firebase application with a clear split between employee-facing payout history and admin-facing shift operations. The critical payout math lives in a pure utility module with unit tests, while Firestore rules and the auth flow now reflect the security-hardening work described in the roadmap.
 
-The app currently builds, lints, and passes its unit test suite. The main functional caution is not correctness of the tested paths, but operational maturity: there is no Firestore emulator/integration test setup, no backend functions for privileged admin work, and the production bundle has a large main chunk.
+The app currently builds, lints, passes its unit test suite, passes Firestore rules tests, and has a Playwright/Firebase emulator test for the admin closeout workflow. The main functional caution is now operational maturity around privileged admin work: admin operations still run through the client SDK rather than backend functions.
 
 ## Current Product Shape
 
@@ -33,7 +33,7 @@ The code is organized by feature and responsibility:
 
 - `src/App.jsx` routes the logged-in user into either the admin dashboard, pending approval screen, login flow, or employee dashboard.
 - `src/context/AuthContext.jsx` owns Firebase session state, username login, registration, pending approval status, and logout.
-- `src/services/dataService.js` handles employee tip reads/subscriptions for the employee dashboard.
+- `src/services/dataService.js` handles scoped employee tip reads/subscriptions for the employee dashboard.
 - `src/components/Admin/` contains the admin dashboard, shift editor, reports, team management, and shift setup UI.
 - `src/utils/engine.js` is the core payout calculation engine. It is UI-independent.
 - `src/utils/shiftPersistence.js` builds Firestore payloads for setup drafts and closed shifts.
@@ -48,8 +48,8 @@ For employees:
 
 1. Firebase auth resolves a user profile from `users/{uid}`.
 2. `DataService.setUserId()` points reads at the current employee.
-3. The app subscribes to `users/{uid}/tips`.
-4. Calendar, charts, and period summaries derive their data from those records.
+3. The app subscribes to only the date-key tip documents needed for the current employee view.
+4. Calendar, charts, and period summaries derive their data from the in-memory range cache.
 
 For admins:
 
@@ -61,6 +61,7 @@ For admins:
 6. `calculateShift()` returns allocations, payouts, warnings, and balance checks.
 7. Confirming save writes a closed shift to `shifts/{date}` and per-user tip records to `users/{uid}/tips/{date}`.
 8. Removed employees from a recalculated shift have that date's tip record deleted.
+9. Saved setups and closed shifts update user history flags used by Team Management merge safety checks.
 
 ## What Looks Solid
 
@@ -70,6 +71,11 @@ For admins:
 - Recalculated shifts clean up removed employee payouts.
 - Admin and employee access paths are clearly separated at the React level.
 - Firestore rules prevent basic self-elevation during signup and keep employee tip writes admin-only.
+- Firestore rules and admin closeout behavior are covered by local Firebase emulator tests.
+- Admin, chart, report, team management, and shift editor surfaces are lazy-loaded to reduce initial startup cost.
+- Admin employee collection reads are deferred until an employee-dependent admin panel is opened.
+- Employee tip subscriptions are scoped to the active pay period or visible month grid instead of full history.
+- Team Management uses `hasTipHistory` and `hasShiftHistory` flags before falling back to legacy scans.
 - Username login uses a separate `usernames/{normalizedUsername}` mapping instead of exposing full user profiles publicly.
 - The UI has a consistent local design system and Tailwind token setup.
 
@@ -77,12 +83,11 @@ For admins:
 
 - `captainOverrideCTP` is still carved out when no captain is assigned. This is documented in `docs/ROADMAP.md` and covered by a test as a known limitation.
 - Drag-and-drop shift setup has no touch support; mobile users rely on the click-to-assign flow.
-- Firestore behavior is not covered by emulator or integration tests. Rules and client write flows are currently verified by inspection, not automated integration coverage.
-- Most tests target utility logic. The React workflows, auth state transitions, PDF exports, and Firestore save paths do not have automated UI/integration coverage.
+- Most React workflows, auth state transitions, and PDF exports still do not have automated UI/integration coverage.
 - Admin operations are client-side SDK operations. There are no backend functions for stronger server-side enforcement, user deletion, bulk exports, or audited privileged operations.
 - Registration can create a Firebase Auth user before the Firestore batch succeeds; the code attempts cleanup, but failed client-side deletion remains an operational edge case.
 - The app imports Google Fonts directly from CSS, so visual rendering depends on network font availability.
-- Production build emits a large main chunk above Vite's default warning threshold.
+- Production build still emits a main chunk above Vite's default warning threshold, though heavy admin/chart/report/editor surfaces are split into lazy chunks.
 
 ## Verification Run
 
@@ -92,24 +97,27 @@ Commands run during this review:
 npm test
 npm run lint
 npm run build
+npm run test:rules
+npm run test:e2e
 ```
 
 Results:
 
-- Unit tests: 11 passed, 0 failed.
+- Unit tests: 26 passed, 0 failed.
 - Lint: passed.
 - Production build: passed.
-- Build warning: `dist/assets/index-BkkUjeUx.js` is about 1,039.80 kB minified, above the 500 kB chunk warning threshold.
+- Firestore rules tests: 6 passed, 0 failed.
+- Playwright/Firebase E2E: 1 passed, 0 failed.
+- Build warning: main app chunk is about 579.53 kB minified / 178.59 kB gzip, above the 500 kB chunk warning threshold.
 
 ## Recommended Next Steps
 
-1. Add Firestore emulator tests for the security rules and the admin save flow.
-2. Add engine coverage for the no-captain captain-override limitation before fixing it.
-3. Add at least one end-to-end or component-level test for the shift closeout workflow.
-4. Code-split heavy admin/report/PDF paths so employee dashboard users do not pay the full bundle cost upfront.
-5. Consider backend functions for sensitive admin operations and account cleanup.
-6. Add CSV export or reporting improvements only after the current save/security paths are covered by integration tests.
+1. Add engine coverage for the no-captain captain-override limitation before fixing it.
+2. Add more Playwright coverage for Team Management, employee dashboard ranges, and auth state transitions.
+3. Consider backend functions for sensitive admin operations and account cleanup.
+4. Continue bundle work by manually chunking vendor-heavy PDF/chart dependencies if startup remains slow.
+5. Add CSV export or reporting improvements after the current save/security paths stay covered by integration tests.
 
 ## Overall Assessment
 
-The code is in a healthy released-app state: understandable, scoped, and currently passing checks. The most important domain logic is isolated and tested. The next phase should be less about reorganizing React components and more about hardening boundaries around Firestore, improving automated coverage for real workflows, and trimming the production bundle.
+The code is in a healthy released-app state: understandable, scoped, and currently passing checks. The most important domain logic is isolated and tested, and the highest-risk Firestore/admin closeout paths now have local emulator coverage. The next phase should focus on server-side hardening for privileged operations, deeper workflow coverage, and continued bundle trimming for mobile startup.

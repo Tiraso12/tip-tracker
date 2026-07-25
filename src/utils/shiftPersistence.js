@@ -1,9 +1,9 @@
 const timestamp = (now) => now || new Date().toISOString();
 
-export function buildShiftSetupDraft({ date, teams, barTeam, runners, now }) {
+export function buildShiftSetupDraft({ date, teams, barTeam, runners, now, includeCloseoutDraft = false }) {
     const savedAt = timestamp(now);
 
-    return {
+    const payload = {
         date,
         status: "setup",
         teams,
@@ -12,6 +12,12 @@ export function buildShiftSetupDraft({ date, teams, barTeam, runners, now }) {
         setupSavedAt: savedAt,
         updatedAt: savedAt,
     };
+
+    if (includeCloseoutDraft) {
+        payload.closeoutDraftSavedAt = savedAt;
+    }
+
+    return payload;
 }
 
 export function buildClosedShiftPayload({ date, teams, barTeam, runners, payouts, summary, now }) {

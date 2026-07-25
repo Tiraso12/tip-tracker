@@ -16,8 +16,11 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true" && !globalThis.__TIP_TRACKER_EMULATORS_CONNECTED__) {
-    connectFirestoreEmulator(db, "127.0.0.1", 8080);
-    connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+    const firestoreEmulatorPort = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT || 8080);
+    const authEmulatorPort = Number(import.meta.env.VITE_AUTH_EMULATOR_PORT || 9099);
+
+    connectFirestoreEmulator(db, "127.0.0.1", firestoreEmulatorPort);
+    connectAuthEmulator(auth, `http://127.0.0.1:${authEmulatorPort}`, { disableWarnings: true });
     globalThis.__TIP_TRACKER_EMULATORS_CONNECTED__ = true;
 }
 

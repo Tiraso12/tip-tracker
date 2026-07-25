@@ -59,16 +59,10 @@ const DataService = {
     },
 
     /**
-     * Subscribe to real-time updates for a set of dates (optional, not used correctly yet in App)
-     * Actually, for document IDs, best to just subscribe to the collection or individual docs.
-     * Given the small number (7), individual subscriptions or a collection query with FieldPath.documentId() might work 
-     * but 'in' query limit is 10, so it fits a week.
+     * Subscribe to real-time updates for a bounded set of date-key documents.
+     * This avoids listening to the user's full historical tips collection.
      */
-    subscribeToWeek: (dateKeys, onUpdate) => {
-        // We can't easily query by documentId IN [...list] using the modular SDK comfortably for ids.
-        // Easier approach: Listen to the whole collection? No, expensive.
-        // Listen to individual documents.
-
+    subscribeToDates: (dateKeys, onUpdate, onError) => {
         const unsubscribes = [];
         if (!DataService.currentUserId) return () => { };
 
@@ -81,12 +75,19 @@ const DataService = {
                     // Document might have been deleted or not exist yet
                     onUpdate(key, { gratuity: "", tip: "", cash: "" });
                 }
+            }, (error) => {
+                console.error("Error subscribing to tip document:", error);
+                if (onError) onError(error);
             });
             unsubscribes.push(unsub);
         });
 
         // Return a function to unsubscribe from all
         return () => unsubscribes.forEach(fn => fn());
+    },
+
+    subscribeToWeek: (dateKeys, onUpdate, onError) => {
+        return DataService.subscribeToDates(dateKeys, onUpdate, onError);
     },
 
     /**

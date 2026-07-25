@@ -26,7 +26,15 @@ npm run test:e2e
 
 ## Prerequisites
 
-The Firestore emulator requires a local Java runtime. If `npm run test:rules` or `npm run test:e2e` fails with `Unable to locate a Java Runtime`, install Java and rerun the command.
+The Firestore emulator requires a local Java runtime. Firebase Tools currently requires JDK 21 or newer. This workstation has a portable Temurin JDK 21 at:
+
+```bash
+C:\tmp\temurin21\jdk-21.0.11+10
+```
+
+`JAVA_HOME` has been set for the Windows user to that path. Open a new terminal if Firebase still picks up an older Java runtime.
+
+Firestore emulator tests use port `8081` because port `8080` is already used by NVIDIA Broadcast on this machine.
 
 Playwright may also need a browser install on a fresh machine:
 
