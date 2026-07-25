@@ -10,14 +10,15 @@ function TeamAssignmentPanel({
     onRemoveTeam,
     dragOverId,
     selectedTeamId,
+    hideSelectedMembers,
     onTeamClick,
     handlers
 }) {
     const restaurantMemberCount = teams.reduce((total, team) => total + team.members.length, 0);
 
     return (
-        <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-3 flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:order-1 max-[900px]:max-h-none max-[560px]:rounded-none max-[560px]:px-0 max-[560px]:py-1 max-[560px]:gap-2">
-            <div className="grid grid-cols-3 gap-2 max-[560px]:gap-1.5">
+        <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-3 flex flex-col gap-2.5 overflow-y-auto max-h-full max-[900px]:order-1 max-[900px]:max-h-none max-[560px]:rounded-none max-[560px]:px-0 max-[560px]:py-0 max-[560px]:gap-2">
+            <div className="grid grid-cols-3 gap-2 max-[560px]:hidden">
                 <div className="bg-[var(--color-bg)] border border-[var(--color-line)] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] max-[560px]:min-w-0 max-[560px]:px-2 max-[560px]:py-2">
                     <span className="block text-[var(--color-ink-muted)] text-[0.65rem] font-bold uppercase">Restaurant</span>
                     <strong className="block text-[var(--color-ink)] text-base mt-[0.15rem]">{restaurantMemberCount}</strong>
@@ -33,11 +34,16 @@ function TeamAssignmentPanel({
             </div>
 
             {/* Restaurant Teams Controls */}
-            <div className="flex justify-between items-center bg-[var(--color-bg)] px-3 py-[0.45rem] rounded-[var(--radius-md)] border border-[var(--color-line)] max-[560px]:py-2">
-                <span className="text-[0.7rem] font-bold text-[var(--color-ink-muted)] uppercase tracking-[0.07em]">Restaurant Teams</span>
+            <div className="flex justify-between items-center bg-[var(--color-bg)] px-3 py-[0.45rem] rounded-[var(--radius-md)] border border-[var(--color-line)] max-[560px]:px-0 max-[560px]:py-0 max-[560px]:border-0 max-[560px]:bg-transparent">
+                <div className="min-w-0">
+                    <span className="text-[0.7rem] font-bold text-[var(--color-ink-muted)] uppercase tracking-[0.07em]">Restaurant Teams</span>
+                    <div className="hidden max-[560px]:block mt-1 text-[0.72rem] text-[var(--color-ink-soft)]">
+                        {restaurantMemberCount} dining / {barTeam.members.length} bar / {runners.length} runners
+                    </div>
+                </div>
                 <div className="flex items-center gap-1.5">
                     <button
-                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-10 max-[560px]:w-10"
+                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
                         onClick={onRemoveTeam}
                         disabled={teams.length <= 1}
                         title="Remove last team"
@@ -45,7 +51,7 @@ function TeamAssignmentPanel({
                     >−</button>
                     <span className="font-bold text-[0.9rem] min-w-[18px] text-center">{teams.length}</span>
                     <button
-                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-10 max-[560px]:w-10"
+                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
                         onClick={onAddTeam}
                         title="Add team"
                         aria-label="Add restaurant team"
@@ -67,6 +73,7 @@ function TeamAssignmentPanel({
                         members={t.members}
                         isOver={dragOverId === t.teamId}
                         isSelected={selectedTeamId === t.teamId}
+                        hideMembers={hideSelectedMembers && selectedTeamId === t.teamId}
                         onTeamClick={onTeamClick}
                         {...handlers}
                     />
@@ -77,11 +84,12 @@ function TeamAssignmentPanel({
                     teamId="bar"
                     title="Bar Team"
                     members={barTeam.members}
-                    isOver={dragOverId === 'bar'}
-                    isSelected={selectedTeamId === 'bar'}
-                    onTeamClick={onTeamClick}
-                    {...handlers}
-                />
+                isOver={dragOverId === 'bar'}
+                isSelected={selectedTeamId === 'bar'}
+                hideMembers={hideSelectedMembers && selectedTeamId === 'bar'}
+                onTeamClick={onTeamClick}
+                {...handlers}
+            />
 
                 {/* Runners */}
                 <TeamDropZone
@@ -89,11 +97,12 @@ function TeamAssignmentPanel({
                     title={`Runners ($${RUNNER_FLAT_RATE} flat each)`}
                     members={runners}
                     isRunner={true}
-                    isOver={dragOverId === 'runner'}
-                    isSelected={selectedTeamId === 'runner'}
-                    onTeamClick={onTeamClick}
-                    {...handlers}
-                />
+                isOver={dragOverId === 'runner'}
+                isSelected={selectedTeamId === 'runner'}
+                hideMembers={hideSelectedMembers && selectedTeamId === 'runner'}
+                onTeamClick={onTeamClick}
+                {...handlers}
+            />
             </div>
         </div>
     );
@@ -108,6 +117,7 @@ export default React.memo(TeamAssignmentPanel, (prevProps, nextProps) => {
     // Selection or Over state change
     if (prevProps.dragOverId !== nextProps.dragOverId) return false;
     if (prevProps.selectedTeamId !== nextProps.selectedTeamId) return false;
+    if (prevProps.hideSelectedMembers !== nextProps.hideSelectedMembers) return false;
 
     // Deep exact member comparison for restaurant teams
     for (let i = 0; i < prevProps.teams.length; i++) {

@@ -90,6 +90,13 @@ function ShiftSetupDnd({
         return teamIndex >= 0 ? `Team ${teamIndex + 1}` : "";
     }, [selectedTeamId, teams]);
 
+    const selectedTargetMembers = useMemo(() => {
+        if (!selectedTeamId) return [];
+        if (selectedTeamId === "bar") return barTeam.members;
+        if (selectedTeamId === "runner") return runners;
+        return teams.find(t => t.teamId === selectedTeamId)?.members || [];
+    }, [barTeam.members, runners, selectedTeamId, teams]);
+
     // ── Core helpers ─────────────────────────────────────
     const removeEmployee = useCallback((uid, teamId) => {
         if (teamId === 'pool') return;
@@ -262,6 +269,7 @@ function ShiftSetupDnd({
                 onRemoveTeam={handleRemoveTeam}
                 dragOverId={dragOverId}
                 selectedTeamId={selectedTeamId}
+                hideSelectedMembers={isMobile && mobilePickerOpen}
                 onTeamClick={handleTeamClick}
                 handlers={handlers}
             />
@@ -282,23 +290,58 @@ function ShiftSetupDnd({
                     aria-label={`Add employees to ${selectedTargetLabel || 'selected team'}`}
                     className="absolute inset-x-0 bottom-0 max-h-[82vh] rounded-t-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[0_-12px_36px_rgba(15,23,42,0.22)] border-t border-[var(--color-line)] overflow-hidden"
                 >
-                    <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
+                    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[var(--color-line)]">
                         <div className="min-w-0">
-                            <div className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                Add employees to
-                            </div>
-                            <h3 className="text-base font-semibold text-[var(--color-ink)] truncate">
+                            <h3 className="text-sm font-semibold text-[var(--color-ink)] truncate">
                                 {selectedTargetLabel || 'Selected team'}
                             </h3>
                         </div>
                         <button
                             type="button"
                             onClick={() => setMobilePickerOpen(false)}
-                            className="h-10 px-3 rounded-[var(--radius-sm)] border border-[var(--color-line)] text-sm font-medium text-[var(--color-ink)] bg-[var(--color-surface)]"
+                            className="h-9 px-3 rounded-[var(--radius-sm)] border border-[var(--color-line)] text-sm font-medium text-[var(--color-ink)] bg-[var(--color-surface)]"
                         >
                             Done
                         </button>
                     </div>
+
+                    <div className="px-4 py-2.5 border-b border-[var(--color-line)] bg-[var(--color-surface)]">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                            <div className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                Assigned
+                            </div>
+                            <span className="text-[0.72rem] text-[var(--color-ink-muted)]">
+                                {selectedTargetMembers.length} {selectedTargetMembers.length === 1 ? "person" : "people"}
+                            </span>
+                        </div>
+                        {selectedTargetMembers.length === 0 ? (
+                            <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--color-line)] px-3 py-2 text-sm text-[var(--color-ink-muted)]">
+                                No employees assigned yet.
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                                {selectedTargetMembers.map(member => (
+                                    <span
+                                        key={member.uid}
+                                        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-[var(--color-surface-muted)] px-2 py-1"
+                                    >
+                                        <span className="max-w-[8rem] truncate text-[0.72rem] font-semibold text-[var(--color-ink)]">
+                                            {member.name}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeEmployee(member.uid, selectedTeamId)}
+                                            aria-label={`Remove ${member.name}`}
+                                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+                                        >
+                                            x
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     <EmployeePool
                         employees={combinedEmployees}
                         assignedUids={assignedUids}
@@ -308,7 +351,7 @@ function ShiftSetupDnd({
                         selectedTargetLabel={selectedTargetLabel}
                         onAddUnregistered={handleAddUnregistered}
                         title="Choose Employees"
-                        className="h-[calc(82vh-73px)] min-h-0 bg-[var(--color-surface-muted)] p-3 flex flex-col gap-2.5 overflow-hidden"
+                        className="h-[calc(82vh-135px)] min-h-0 bg-[var(--color-surface-muted)] p-3 flex flex-col gap-2.5 overflow-hidden"
                     />
                 </div>
             </div>

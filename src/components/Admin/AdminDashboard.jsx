@@ -10,6 +10,8 @@ const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
 const AdminReportsPanel = lazy(() => import("./AdminReportsPanel"));
 
+const SHOW_ADMIN_REPORTS = false;
+
 const NAV_ITEMS = [
     {
         value: "shifts",
@@ -35,7 +37,7 @@ const NAV_ITEMS = [
             </svg>
         ),
     },
-    {
+    SHOW_ADMIN_REPORTS ? {
         value: "reports",
         label: "Reports",
         icon: (
@@ -45,8 +47,8 @@ const NAV_ITEMS = [
                 <line x1="6" y1="20" x2="6" y2="14" />
             </svg>
         ),
-    },
-];
+    } : null,
+].filter(Boolean);
 
 function MenuIcon() {
     return (
@@ -142,6 +144,12 @@ function AdminDashboard() {
         fetchDayPayouts(selectedDate);
     }, [selectedDate, fetchDayPayouts]);
 
+    useEffect(() => {
+        if (!SHOW_ADMIN_REPORTS && activeTab === "reports") {
+            setActiveTab("shifts");
+        }
+    }, [activeTab]);
+
     const changeDate = (delta) => {
         const d = new Date(selectedDate + "T12:00:00");
         d.setDate(d.getDate() + delta);
@@ -160,6 +168,13 @@ function AdminDashboard() {
         }
     }, [loadEmployeesIfNeeded]);
 
+    const handleNavItemClick = useCallback((tab) => {
+        setActiveTabWithData(tab);
+        if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+            setNavCollapsed(true);
+        }
+    }, [setActiveTabWithData]);
+
     // The sidebar treats "editor" as still belonging to the Shifts section.
     const sidebarValue = activeTab === "editor" ? "shifts" : activeTab;
 
@@ -170,7 +185,7 @@ function AdminDashboard() {
                 title: "Shift Distribution",
                 subtitle: null,
                 actions: (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 max-[560px]:w-full">
                         <button
                             type="button"
                             onClick={() => changeDate(-1)}
@@ -185,7 +200,7 @@ function AdminDashboard() {
                             value={selectedDate}
                             aria-label="Select shift date"
                             onChange={(e) => setSelectedDate(e.target.value)}
-                            className="h-10 px-3 text-sm font-mono tabular-nums bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-line)] rounded-[var(--radius-sm)] hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15 transition-colors"
+                            className="h-10 px-3 text-sm font-mono tabular-nums bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-line)] rounded-[var(--radius-sm)] hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15 transition-colors max-[560px]:min-w-0 max-[560px]:flex-1"
                         />
                         <button
                             type="button"
@@ -243,7 +258,7 @@ function AdminDashboard() {
                         aria-controls="admin-workspace-nav"
                         aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
                         title={navCollapsed ? "Open workspace" : "Collapse workspace"}
-                        className="h-9 w-9 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                        className="h-9 w-9 inline-flex lg:hidden items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
                     >
                         <MenuIcon />
                     </button>
@@ -269,8 +284,8 @@ function AdminDashboard() {
                 <aside
                     id="admin-workspace-nav"
                     className={
-                        "lg:shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--color-line)] bg-[var(--color-bg)] transition-[width] duration-200 " +
-                        (navCollapsed ? "lg:w-16" : "lg:w-60")
+                        "lg:block lg:shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--color-line)] bg-[var(--color-bg)] transition-[width] duration-200 " +
+                        (navCollapsed ? "hidden lg:w-16" : "block lg:w-60")
                     }
                 >
                     <nav className="lg:sticky lg:top-14 p-3 lg:py-4">
@@ -300,7 +315,7 @@ function AdminDashboard() {
                                     key={item.value}
                                     item={item}
                                     active={sidebarValue === item.value}
-                                    onClick={() => setActiveTabWithData(item.value)}
+                                    onClick={() => handleNavItemClick(item.value)}
                                     collapsed={navCollapsed}
                                 />
                             ))}
@@ -311,14 +326,23 @@ function AdminDashboard() {
                 {/* Main content */}
                 <main className="flex-1 min-w-0 px-4 sm:px-8 py-5 lg:py-10">
                     <div className="max-w-6xl mx-auto">
-                        <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 mb-4 sm:mb-6 border-b border-[var(--color-line)]">
-                            <div className="flex flex-col gap-1.5">
+                        <header className={
+                            "flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
+                            (activeTab === "editor" || activeTab === "shifts" ? "pb-3 mb-3 sm:pb-6 sm:mb-6" : "pb-4 sm:pb-6 mb-4 sm:mb-6")
+                        }>
+                            <div className={
+                                "flex flex-col gap-1.5 " +
+                                (activeTab === "shifts" ? "hidden sm:flex" : "")
+                            }>
                                 {header.eyebrow ? (
                                     <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
                                         {header.eyebrow}
                                     </span>
                                 ) : null}
-                                <h1 className="font-display text-2xl sm:text-4xl font-medium tracking-tight text-[var(--color-ink)]">
+                                <h1 className={
+                                    "font-display text-2xl sm:text-4xl font-medium tracking-tight text-[var(--color-ink)] " +
+                                    (activeTab === "editor" ? "hidden sm:block" : "")
+                                }>
                                     {header.title}
                                 </h1>
                                 {header.subtitle ? (
