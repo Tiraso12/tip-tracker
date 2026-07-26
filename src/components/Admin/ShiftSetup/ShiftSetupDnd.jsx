@@ -5,6 +5,18 @@ import { ROLE_POINTS, RUNNER_FLAT_RATE } from '../../../utils/constants';
 import { db } from '../../../config/firebase';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
+const RESTAURANT_ROLE_OPTIONS = [
+    { value: "captain", label: "Captain", badge: "C" },
+    { value: "server", label: "Server", badge: "S" },
+    { value: "back", label: "Back", badge: "B" },
+    { value: "assistant", label: "Assistant", badge: "A" },
+];
+
+const ROLE_BADGES = RESTAURANT_ROLE_OPTIONS.reduce((acc, option) => {
+    acc[option.value] = option.badge;
+    return acc;
+}, {});
+
 function ShiftSetupDnd({
     allEmployees,
     teams, setTeams,
@@ -96,6 +108,8 @@ function ShiftSetupDnd({
         if (selectedTeamId === "runner") return runners;
         return teams.find(t => t.teamId === selectedTeamId)?.members || [];
     }, [barTeam.members, runners, selectedTeamId, teams]);
+
+    const canEditSelectedRoles = selectedTeamId && selectedTeamId !== "bar" && selectedTeamId !== "runner";
 
     // ── Core helpers ─────────────────────────────────────
     const removeEmployee = useCallback((uid, teamId) => {
@@ -323,11 +337,28 @@ function ShiftSetupDnd({
                                 {selectedTargetMembers.map(member => (
                                     <span
                                         key={member.uid}
-                                        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-[var(--color-surface-muted)] px-2 py-1"
+                                        className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface-muted)] px-2 py-1"
                                     >
                                         <span className="max-w-[8rem] truncate text-[0.72rem] font-semibold text-[var(--color-ink)]">
                                             {member.name}
                                         </span>
+                                        {canEditSelectedRoles ? (
+                                            <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--color-accent)]/20 bg-[var(--color-accent-soft)] text-[0.62rem] font-bold text-[var(--color-accent)]">
+                                                {ROLE_BADGES[member.role] || "S"}
+                                                <select
+                                                    value={RESTAURANT_ROLE_OPTIONS.some(option => option.value === member.role) ? member.role : "server"}
+                                                    onChange={(e) => updateMemberRole(selectedTeamId, member.uid, e.target.value)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                                                    aria-label={`${member.name} worked role`}
+                                                >
+                                                    {RESTAURANT_ROLE_OPTIONS.map(option => (
+                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    ))}
+                                                </select>
+                                            </span>
+                                        ) : null}
                                         <button
                                             type="button"
                                             onClick={() => removeEmployee(member.uid, selectedTeamId)}
