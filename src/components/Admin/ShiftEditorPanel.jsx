@@ -627,6 +627,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [showLiveTotalDetails, setShowLiveTotalDetails] = useState(false);
     const [activeMobileCloseoutId, setActiveMobileCloseoutId] = useState(null);
     const [draftStatus, setDraftStatus] = useState("");
+    const [hasWarnedClosedRosterEdit, setHasWarnedClosedRosterEdit] = useState(false);
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -807,6 +808,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 setHasLoadedShift(false);
                 setDraftStatus("");
                 setShiftStatus(null);
+                setHasWarnedClosedRosterEdit(false);
                 const shiftDoc = await getDoc(doc(db, "shifts", date));
                 if (shiftDoc.exists()) {
                     const d = shiftDoc.data();
@@ -894,6 +896,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
     const handleSaveTeamSetup = async () => {
         if (isSaving) return;
+
+        if (shiftStatus === "closed") {
+            setSaveStatus("This shift is already closed and paid out. Use Calculate Payouts → Confirm & Save Shift to update the roster and payouts together.");
+            return;
+        }
 
         const inputErrors = validateTeamSetup({ teams, barTeam, runners });
         if (inputErrors.length > 0) {
@@ -1014,6 +1021,18 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         }
     };
 
+    const handleToggleTeamSetup = () => {
+        const willOpen = !teamSetupOpen;
+        if (willOpen && shiftStatus === "closed" && !hasWarnedClosedRosterEdit) {
+            const confirmed = window.confirm(
+                "This shift is already closed and paid out. Roster changes here won't take effect until you run Calculate Payouts → Confirm & Save Shift.\n\nContinue editing the roster?"
+            );
+            if (!confirmed) return;
+            setHasWarnedClosedRosterEdit(true);
+        }
+        setTeamSetupOpen(willOpen);
+    };
+
     const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
 
     return (
@@ -1050,7 +1069,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                             subtitle="Opening setup"
                             badge={`${diningCount}d · ${barTeam.members.length}b · ${runners.length}r`}
                             isOpen={teamSetupOpen}
-                            onToggle={() => setTeamSetupOpen(o => !o)}
+                            onToggle={handleToggleTeamSetup}
                         >
                             <div className="p-3 sm:p-6">
                                 <ShiftSetupDnd
@@ -1060,13 +1079,19 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                     runners={runners} setRunners={setRunners}
                                 />
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-5">
-                                    <Button
-                                        variant="secondary"
-                                        onClick={handleSaveTeamSetup}
-                                        disabled={isSaving}
-                                    >
-                                        {isSaving ? "Saving..." : "Save Team Setup"}
-                                    </Button>
+                                    {shiftStatus === "closed" ? (
+                                        <span className="text-xs text-[var(--color-ink-soft)]">
+                                            This shift is already closed and paid out. Roster changes are saved via Calculate Payouts → Confirm & Save Shift below.
+                                        </span>
+                                    ) : (
+                                        <Button
+                                            variant="secondary"
+                                            onClick={handleSaveTeamSetup}
+                                            disabled={isSaving}
+                                        >
+                                            {isSaving ? "Saving..." : "Save Team Setup"}
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
                         </CollapsibleSection>
