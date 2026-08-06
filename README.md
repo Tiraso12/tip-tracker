@@ -1,6 +1,6 @@
 # TipTracker
 
-A full-stack shift and tip distribution management system built for restaurant operations. Managers configure teams, enter shift financials, and the app automatically calculates individual payouts — handling multi-team splits, contract gratuity, captain overrides, bar allocations, and runners — with every cent accounted for.
+A full-stack shift and tip distribution management system built for restaurant operations. Managers configure teams, enter shift financials, and the app automatically calculates individual payouts — pooling dining-room tips house-wide by points, handling contract gratuity, captain overrides, bar allocations, and runners — with every cent accounted for.
 
 **Live app:** https://tip-tracker-44de1.web.app
 
@@ -16,7 +16,7 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 
 **Shift Management**
 - Drag-and-drop team builder — assign employees to teams, bar, or runners before the shift
-- Per-team sales, tips, gratuity, and cash pools
+- Per-team sales, tips, gratuity, and cash entry — dining-room tips/gratuity/cash pool together house-wide and split by points across all dining employees, not per team
 - Contract shift support with automated 26% gratuity tracking
 - Captain override bonus (1% of sales), split across all active captains
 - Runner flat-rate payouts ($85 default) deducted from the dining room pool
@@ -30,10 +30,9 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 - Double-entry balance check on every calculation — warns if the shift doesn't balance
 
 **Reports & Exports**
-- Shift PDF report — full payout breakdown per employee
-- Weekly and biweekly PDF reports with daily breakdowns and employee earnings summaries
-- Monthly report grouped by week
-- Team sheet PDF — card-layout printout to post on the board before service
+- Shift PDF report — full payout breakdown per employee (visible today, from the Shifts tab)
+- Weekly, pay-period, and monthly PDF reports with daily breakdowns and employee earnings summaries — implemented, but currently disabled: the admin Reports tab is off by default (`SHOW_ADMIN_REPORTS = false` in `AdminDashboard.jsx`), so managers can't reach these yet
+- Team sheet PDF — card-layout printout to post on the board before service — implemented in `pdfExport.js`, but not currently wired into any admin screen
 
 **Admin Dashboard**
 - Role-based access with admin approval flow for new users
@@ -117,10 +116,10 @@ npm run build     # Production build
 
 The engine (`src/utils/engine.js`) is a pure function — it takes a normalized shift config and returns a complete payout result with no side effects.
 
-1. **Derive totals** from per-team pool inputs (sales, tips, gratuity, cash)
+1. **Derive totals** from per-team pool inputs (sales, tips, gratuity, cash), combined into house-wide dining-room totals
 2. **Pre-distribute** — calculate bar allocation (1%), door (0.5%), captain override pool (1%), house/coordinator cuts for contract sales
 3. **Adjust pools** — apply bar-to-team transfers, deduct runner payouts from dining room CTP
-4. **Distribute by points** — each employee's share = `(their points / total points) * adjusted pool`
+4. **Distribute by points** — dining-room pools are split by one house-wide point value across all dining employees (not per team); each employee's share = `(their points / total dining-room points) * adjusted pool`
 5. **Captain override** — split evenly across all active captains and merged into their payout
 6. **Reconcile** — correct any floating-point drift so pool totals match exactly
 7. **Balance check** — verify `total available == total distributed + external allocations`

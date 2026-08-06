@@ -232,7 +232,14 @@ export function calculateShift(inputs) {
         splitGRT = captainOverrideGRTPool / captainCount;
     }
 
-    // 10. GENERATE PAYOUTS 
+    // 10. GENERATE PAYOUTS
+    // Dining-room CTP/GRT/cash are pooled house-wide: one point value is computed across
+    // ALL dining teams combined and applied to every dining employee, regardless of which
+    // team's money they came from. This is intentional restaurant policy (tips pool across
+    // teams and split by points), not a per-team split - do not "fix" this into computing
+    // separate point values per team. The UI still collects money per team for entry
+    // convenience/auditing (see loc_adjCTP/loc_adjCash/loc_adjGRT above), but those per-team
+    // proportional amounts are not what drives payouts here.
     const totalAllTeamPoints = teamsProcessed.reduce((sum, t) => sum + t.teamPts, 0);
 
     const globalTeamCTPPointValue = totalAllTeamPoints > 0 ? adjustedTeamCTPPool / totalAllTeamPoints : 0;
