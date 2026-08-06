@@ -1022,17 +1022,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     };
 
     const handleToggleTeamSetup = () => {
-        setTeamSetupOpen((prevOpen) => {
-            const willOpen = !prevOpen;
-            if (willOpen && shiftStatus === "closed" && !hasWarnedClosedRosterEdit) {
-                const confirmed = window.confirm(
-                    "This shift is already closed and paid out. Roster changes here won't take effect until you run Calculate Payouts → Confirm & Save Shift.\n\nContinue editing the roster?"
-                );
-                if (!confirmed) return prevOpen;
-                setHasWarnedClosedRosterEdit(true);
-            }
-            return willOpen;
-        });
+        const willOpen = !teamSetupOpen;
+        if (willOpen && shiftStatus === "closed" && !hasWarnedClosedRosterEdit) {
+            const confirmed = window.confirm(
+                "This shift is already closed and paid out. Roster changes here won't take effect until you run Calculate Payouts → Confirm & Save Shift.\n\nContinue editing the roster?"
+            );
+            if (!confirmed) return;
+            setHasWarnedClosedRosterEdit(true);
+        }
+        setTeamSetupOpen(willOpen);
     };
 
     const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
