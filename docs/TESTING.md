@@ -63,3 +63,11 @@ The first Playwright test covers:
 - calculating payouts
 - confirming the closed shift
 - verifying shift and employee tip documents in the emulator
+
+The second Playwright test covers editing a closed, paid-out shift's roster:
+
+- reopening a closed shift and confirming the closed-shift roster-edit warning
+- asserting the bare Save Team Setup overwrite is not offered on a closed shift
+- removing an employee and re-saving via Calculate Payouts → Confirm & Save Shift
+- verifying payouts, summary, and closedAt survive on the shift doc
+- verifying the removed employee is absent from payouts and their stale tip doc is cleaned up
