@@ -152,3 +152,68 @@ test("admin can close out a simple dining room shift and create employee tip rec
         expect(backTip.exists()).toBe(true);
     });
 });
+
+test("editing a closed shift's roster preserves payouts and cleans up the removed employee's tip doc", async ({ page }) => {
+    await page.goto("/");
+
+    await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
+    await page.getByRole("textbox", { name: "Password" }).fill(ADMIN_PASSWORD);
+    await page.getByRole("button", { name: "Log In" }).click();
+
+    await expect(page.getByRole("heading", { name: "Shift Distribution" })).toBeVisible();
+    await page.getByLabel("Select shift date").fill(SHIFT_DATE);
+    await page.getByRole("button", { name: "Edit Shift" }).click();
+
+    await page.getByRole("button", { name: /Team 1/i }).click();
+    await page.getByText("Captain One").click();
+    await page.getByText("Server One").click();
+    await page.getByText("Back One").click();
+
+    await page.getByRole("button", { name: "Save Team Setup" }).click();
+    await expect(page.getByText("Team setup saved.").first()).toBeVisible();
+
+    await page.getByRole("spinbutton", { name: "Sales ($)", exact: true }).fill("1000");
+    await page.getByRole("spinbutton", { name: "Tips (CTP) ($)", exact: true }).first().fill("300");
+    await page.getByRole("spinbutton", { name: "Gratuity ($)", exact: true }).first().fill("150");
+    await page.getByRole("spinbutton", { name: "Cash ($)", exact: true }).fill("80");
+
+    await page.getByRole("button", { name: "Calculate Payouts" }).click();
+    await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
+    await expect(page.getByText("Saved.").first()).toBeVisible();
+
+    // Reopen the now-closed, paid-out shift.
+    await page.getByRole("button", { name: "Edit Shift" }).click();
+    await expect(page.getByText("CLOSED SHIFT")).toBeVisible();
+
+    // Expanding Team Floor Setup on a closed shift must warn before allowing roster edits.
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: /Team Floor Setup/i }).click();
+
+    // The bare, non-merging "Save Team Setup" overwrite must not be offered on a closed shift.
+    await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Remove Back One" }).click();
+
+    // Roster edits on a closed shift go through Calculate Payouts -> Confirm & Save Shift,
+    // which correctly diffs and cleans up the removed employee's tip doc.
+    await page.getByRole("button", { name: "Calculate Payouts" }).click();
+    await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
+    await expect(page.getByText("Saved.").first()).toBeVisible();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const shiftDoc = await getDoc(doc(db, `shifts/${SHIFT_DATE}`));
+        const backTip = await getDoc(doc(db, `users/backUid/tips/${SHIFT_DATE}`));
+
+        expect(shiftDoc.exists()).toBe(true);
+        const shiftData = shiftDoc.data();
+        expect(shiftData.status).toBe("closed");
+        expect(shiftData).toHaveProperty("summary");
+        expect(shiftData).toHaveProperty("closedAt");
+        expect(Object.keys(shiftData.payouts)).toEqual(
+            expect.arrayContaining(["captainUid", "serverUid"])
+        );
+        expect(shiftData.payouts).not.toHaveProperty("backUid");
+        expect(backTip.exists()).toBe(false);
+    });
+});
