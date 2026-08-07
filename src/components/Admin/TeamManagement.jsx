@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../config/firebase';
-import { doc, updateDoc, deleteDoc, collection, getDocs, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
 import { Badge, Button, Card, Select } from '../ui';
-import { getMergeHistoryState } from '../../utils/userHistoryFlags';
+import { useAuth } from '../../context/AuthContext';
+import {
+    formatTempStaffMergeCollisionMessage,
+    isTempStaffMergeCollisionError,
+    mergeTempStaffIntoAccount,
+} from '../../utils/tempStaffMergePersistence';
 
 const ROLES = ["captain", "server", "back", "assistant", "bartender", "runner"];
 const ROLE_LABELS = {
@@ -51,11 +56,10 @@ function EmptyRow({ children }) {
 }
 
 const TeamManagement = ({ allEmployees, refreshEmployees }) => {
+    const { user } = useAuth();
     const [loadingId, setLoadingId] = useState(null);
     const [unregisteredStaff, setUnregisteredStaff] = useState([]);
     const [linkTargetUpdates, setLinkTargetUpdates] = useState({});
-    const [accountsWithData, setAccountsWithData] = useState({});
-    const [mergeEligibilityLoading, setMergeEligibilityLoading] = useState(true);
 
     const fetchUnregistered = async () => {
         try {
@@ -74,73 +78,9 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     const activeUsers = useMemo(() => allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin"), [allEmployees]);
     const inactiveUsers = useMemo(() => allEmployees.filter(emp => emp.status === "inactive" && emp.role !== "admin"), [allEmployees]);
     const mergeTargetUsers = useMemo(
-        () => activeUsers.filter(emp => !accountsWithData[emp.uid]),
-        [activeUsers, accountsWithData]
+        () => activeUsers,
+        [activeUsers]
     );
-
-    useEffect(() => {
-        let cancelled = false;
-        const loadMergeEligibility = async () => {
-            if (activeUsers.length === 0) {
-                setAccountsWithData({});
-                setMergeEligibilityLoading(false);
-                return;
-            }
-
-            setMergeEligibilityLoading(true);
-            try {
-                const nextAccountsWithData = {};
-                const legacyUsers = [];
-                activeUsers.forEach(emp => {
-                    const historyState = getMergeHistoryState(emp);
-                    nextAccountsWithData[emp.uid] = historyState.hasHistory;
-                    if (historyState.needsFallbackScan) {
-                        legacyUsers.push(emp);
-                    }
-                });
-
-                if (legacyUsers.length > 0) {
-                    const shiftSnap = await getDocs(collection(db, "shifts"));
-                    shiftSnap.docs.forEach(shiftDoc => {
-                        const shiftData = shiftDoc.data();
-                        legacyUsers.forEach(emp => {
-                            if (nextAccountsWithData[emp.uid]) return;
-                            const inPayouts = !!shiftData.payouts?.[emp.uid];
-                            const inTeams = (shiftData.teams || []).some(team =>
-                                (team.members || []).some(member => member.uid === emp.uid)
-                            );
-                            const inBar = (shiftData.barTeam?.members || []).some(member => member.uid === emp.uid);
-                            const inRunners = (shiftData.runners || []).some(member => member.uid === emp.uid);
-                            if (inPayouts || inTeams || inBar || inRunners) {
-                                nextAccountsWithData[emp.uid] = true;
-                            }
-                        });
-                    });
-                }
-
-                await Promise.all(legacyUsers.map(async emp => {
-                    if (nextAccountsWithData[emp.uid]) return;
-                    const tipsSnap = await getDocs(collection(db, "users", emp.uid, "tips"));
-                    if (!tipsSnap.empty) {
-                        nextAccountsWithData[emp.uid] = true;
-                    }
-                }));
-
-                if (!cancelled) {
-                    setAccountsWithData(nextAccountsWithData);
-                }
-            } catch (error) {
-                console.error("Failed to check merge eligibility:", error);
-            } finally {
-                if (!cancelled) {
-                    setMergeEligibilityLoading(false);
-                }
-            }
-        };
-
-        loadMergeEligibility();
-        return () => { cancelled = true; };
-    }, [activeUsers]);
 
     const handleUpdateUser = async (uid, updates) => {
         setLoadingId(uid);
@@ -167,81 +107,16 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         const realUser = allEmployees.find(e => e.uid === targetRealUid);
         if (!realUser) return;
 
-        if (mergeEligibilityLoading) {
-            alert("Wait until account data checks finish before merging.");
-            return;
-        }
-
-        if (accountsWithData[targetRealUid]) {
-            alert("This account already has saved shift or tip history, so it cannot be used as a merge target. Choose an empty active account instead.");
-            return;
-        }
-
         if (!window.confirm(`Merge temporary profile '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis updates past shifts and moves saved tip history to the real account. The temporary profile will be removed after the merge.`)) return;
 
         setLoadingId(unregUser.uid);
         try {
-            const shiftsSnap = await getDocs(collection(db, "shifts"));
-            for (const shiftDoc of shiftsSnap.docs) {
-                const shiftData = shiftDoc.data();
-                let modified = false;
-
-                if (shiftData.teams) {
-                    shiftData.teams.forEach(t => {
-                        const idx = t.members?.findIndex(m => m.uid === unregUser.uid);
-                        if (idx !== undefined && idx !== -1) {
-                            t.members[idx].uid = realUser.uid;
-                            t.members[idx].name = realUser.username || realUser.name;
-                            modified = true;
-                        }
-                    });
-                }
-                if (shiftData.barTeam?.members) {
-                    const idx = shiftData.barTeam.members.findIndex(m => m.uid === unregUser.uid);
-                    if (idx !== -1) {
-                        shiftData.barTeam.members[idx].uid = realUser.uid;
-                        shiftData.barTeam.members[idx].name = realUser.username || realUser.name;
-                        modified = true;
-                    }
-                }
-                if (shiftData.runners) {
-                    const idx = shiftData.runners.findIndex(m => m.uid === unregUser.uid);
-                    if (idx !== -1) {
-                        shiftData.runners[idx].uid = realUser.uid;
-                        shiftData.runners[idx].name = realUser.username || realUser.name;
-                        modified = true;
-                    }
-                }
-                if (shiftData.payouts && shiftData.payouts[unregUser.uid]) {
-                    const payoutData = shiftData.payouts[unregUser.uid];
-                    payoutData.name = realUser.username || realUser.name;
-                    shiftData.payouts[realUser.uid] = payoutData;
-                    delete shiftData.payouts[unregUser.uid];
-                    modified = true;
-                }
-
-                if (modified) {
-                    await updateDoc(doc(db, "shifts", shiftDoc.id), {
-                        teams: shiftData.teams || [],
-                        barTeam: shiftData.barTeam || {},
-                        runners: shiftData.runners || [],
-                        payouts: shiftData.payouts || {}
-                    });
-                }
-            }
-
-            const tipsSnap = await getDocs(collection(db, `users/${unregUser.uid}/tips`));
-            for (const tipDoc of tipsSnap.docs) {
-                await setDoc(doc(db, `users/${realUser.uid}/tips`, tipDoc.id), tipDoc.data());
-                await deleteDoc(doc(db, `users/${unregUser.uid}/tips`, tipDoc.id));
-            }
-
-            await updateDoc(doc(db, "users", realUser.uid), {
-                hasShiftHistory: true,
-                hasTipHistory: true,
+            const result = await mergeTempStaffIntoAccount({
+                db,
+                tempUser: unregUser,
+                realUser,
+                updatedBy: user?.uid || null,
             });
-
-            await deleteDoc(doc(db, "unregisteredStaff", unregUser.uid));
 
             await fetchUnregistered();
             await refreshEmployees();
@@ -250,10 +125,15 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 delete n[unregUser.uid];
                 return n;
             });
-            alert("Temporary profile merged into the real account.");
+            const dates = result.migratedDates.length > 0 ? ` Dates moved: ${result.migratedDates.join(", ")}.` : "";
+            alert(`Temporary profile merged into the real account.${dates}`);
         } catch (error) {
             console.error("Failed to link account:", error);
-            alert("Error linking account.");
+            if (isTempStaffMergeCollisionError(error)) {
+                alert(formatTempStaffMergeCollisionMessage(error.collisions));
+            } else {
+                alert("Error linking account.");
+            }
         } finally {
             setLoadingId(null);
         }
@@ -336,7 +216,10 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     );
 
     const UnregisteredRow = ({ unregUser }) => (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4">
+        <div
+            data-testid={`temp-staff-row-${unregUser.uid}`}
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4"
+        >
             <div className="flex flex-col gap-1 min-w-0">
                 <span className="text-sm font-medium text-[var(--color-ink)] truncate">{unregUser.name}</span>
                 <Badge tone="neutral" className="self-start">{unregUser.role}</Badge>
@@ -344,9 +227,10 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
 
             <div className="flex flex-wrap items-center gap-2">
                 <Select
+                    aria-label={`Merge ${unregUser.name} into account`}
                     value={linkTargetUpdates[unregUser.uid] || ""}
                     onChange={(e) => setLinkTargetUpdates(prev => ({ ...prev, [unregUser.uid]: e.target.value }))}
-                    disabled={mergeEligibilityLoading || mergeTargetUsers.length === 0}
+                    disabled={mergeTargetUsers.length === 0}
                     className="!h-9 !text-xs min-w-[10rem]"
                 >
                     <option value="" disabled>Merge into account…</option>
@@ -354,15 +238,13 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                         <option key={emp.uid} value={emp.uid}>{emp.username || emp.name} ({emp.role})</option>
                     ))}
                 </Select>
-                {mergeEligibilityLoading ? (
-                    <span className="text-xs text-[var(--color-ink-muted)]">Checking data…</span>
-                ) : mergeTargetUsers.length === 0 ? (
-                    <span className="text-xs text-[var(--color-ink-muted)]">No empty active accounts</span>
+                {mergeTargetUsers.length === 0 ? (
+                    <span className="text-xs text-[var(--color-ink-muted)]">No active accounts</span>
                 ) : null}
                 <Button
                     size="sm"
                     onClick={() => handleLinkAccount(unregUser)}
-                    disabled={loadingId === unregUser.uid || mergeEligibilityLoading || !linkTargetUpdates[unregUser.uid]}
+                    disabled={loadingId === unregUser.uid || !linkTargetUpdates[unregUser.uid]}
                     title="Merge this temporary profile into a real account"
                 >
                     Merge
