@@ -1022,6 +1022,28 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     </div>
                 </header>
 
+                {/* Mobile status strip: the workspace header above is `hidden sm:flex`,
+                    so on phones the closed / paid-out cue would otherwise vanish and an
+                    admin could re-save a paid-out shift blind. Surface a compact,
+                    always-visible strip that mirrors the desktop badge. */}
+                {shiftStatus ? (
+                    shiftStatus === "closed" ? (
+                        <div className="sm:hidden flex items-center justify-between gap-2 px-3 py-2.5 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-warning)]">
+                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
+                                Closed shift · Paid out
+                            </span>
+                            <span className="text-[11px] tabular-nums text-[var(--color-warning)]/80">{date}</span>
+                        </div>
+                    ) : (
+                        <div className="sm:hidden px-3 py-2.5 border-b border-[var(--color-line)]">
+                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                                Team setup saved
+                            </span>
+                        </div>
+                    )
+                ) : null}
+
                 {loading ? (
                     <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
                         Loading shift data…
@@ -1165,6 +1187,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                     </strong>
                                 </div>
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+                                    {shiftStatus === "closed" ? (
+                                        <p className="sm:hidden flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
+                                            <span aria-hidden="true">⚠</span>
+                                            <span>Re-saving overwrites the saved payouts for {date}.</span>
+                                        </p>
+                                    ) : null}
                                     {saveStatus ? (
                                         <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
                                     ) : draftStatus ? (
