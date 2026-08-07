@@ -52,18 +52,21 @@ test("Firebase emulator ports are configurable for local port conflicts", () => 
     assert.match(source, /VITE_FIRESTORE_EMULATOR_PORT/);
 });
 
-test("Shift editor isolates money closeout cards from unrelated input rerenders", () => {
+test("Shift editor isolates money closeout entry from unrelated input rerenders", () => {
     const source = readSource("src/components/Admin/ShiftEditorPanel.jsx");
 
+    // The team-switcher renders one fixed-height entry panel and a rail of memoized
+    // pills, so only the focused group's inputs (plus the pill whose pool changed) react
+    // to a keystroke - the roster no longer renders as a growing stack of cards.
     assert.match(
         source,
-        /const\s+TeamPoolCloseoutCard\s*=\s*memo\(/,
-        "Dining team money inputs should live in a memoized closeout card."
+        /const\s+RailPill\s*=\s*memo\(/,
+        "Switcher rail pills should be memoized so unrelated teams don't rerender on every keystroke."
     );
     assert.match(
         source,
-        /const\s+BarPoolCloseoutCard\s*=\s*memo\(/,
-        "Bar money inputs should live in a memoized closeout card."
+        /function\s+CloseoutEntryPanel\(/,
+        "Money inputs should render through a single fixed-height entry panel."
     );
     assert.match(
         source,

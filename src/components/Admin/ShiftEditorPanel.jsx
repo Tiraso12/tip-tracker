@@ -32,25 +32,30 @@ const NUMERIC_INPUT =
     "appearance-none [-moz-appearance:textfield] " +
     "[&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
 
-function PoolField({ label, value, onChange, hint }) {
+function PoolField({ label, value, onChange, money = true }) {
     const id = `pool-field-${label.replace(/\s+/g, "-").toLowerCase()}`;
     return (
-        <div className="flex flex-col gap-1">
-            <label htmlFor={id} className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
+        <div className="flex flex-col gap-1.5">
+            <label htmlFor={id} className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
                 {label}
             </label>
-            {hint ? <span className="text-[10px] text-[var(--color-ink-muted)]">{hint}</span> : null}
-            <input
-                id={id}
-                type="number"
-                min="0"
-                step="0.01"
-                className={NUMERIC_INPUT}
-                value={value ?? ""}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder="0.00"
-                aria-label={label}
-            />
+            <div className="relative flex items-center">
+                {money ? (
+                    <span className="absolute left-3 text-[13px] text-[var(--color-ink-muted)] pointer-events-none">$</span>
+                ) : null}
+                <input
+                    id={id}
+                    type="number"
+                    inputMode={money ? "decimal" : "numeric"}
+                    min="0"
+                    step="0.01"
+                    className={NUMERIC_INPUT + (money ? " !pl-6" : "")}
+                    value={value ?? ""}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder={money ? "0.00" : "0"}
+                    aria-label={label}
+                />
+            </div>
         </div>
     );
 }
@@ -68,112 +73,96 @@ function SummaryMetric({ label, value }) {
     );
 }
 
-function PoolCardTotals({ totals }) {
+// Compact team pill for the horizontal switcher rail. One tap focuses that group's
+// inputs in the single fixed-height panel below - the rail scrolls sideways on phone
+// so the page height never grows with the roster.
+const RailPill = memo(function RailPill({ group, selected, onSelect }) {
     return (
-        <div className="grid grid-cols-3 gap-3 px-4 py-3 bg-[var(--color-surface-muted)]/50 border-y border-[var(--color-line)] max-[560px]:gap-2">
-            {totals.map(([label, value]) => (
-                <div key={label} className="flex flex-col gap-0.5 min-w-0">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
-                        {label}
-                    </span>
-                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)] truncate">
-                        {label === "Covers" ? value.toLocaleString() : fmtMoney(value)}
-                    </strong>
-                </div>
-            ))}
-        </div>
+        <button
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={onSelect}
+            className={
+                "flex-none inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[var(--radius-md)] border " +
+                "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+                (selected
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[inset_0_-2px_0_var(--color-accent)]"
+                    : "border-[var(--color-line)] bg-[var(--color-surface)] hover:border-[var(--color-line-strong)]")
+            }
+        >
+            <span className={"text-[13px] font-semibold whitespace-nowrap " + (selected ? "text-[var(--color-accent)]" : "text-[var(--color-ink)]")}>
+                {group.name}
+            </span>
+            <span className={"font-mono tabular-nums text-[11.5px] whitespace-nowrap " + (selected ? "text-[var(--color-accent)]" : "text-[var(--color-ink-soft)]")}>
+                {group.poolLabel === "Pay" ? "Pay " : ""}${Math.round(group.pool).toLocaleString()}
+            </span>
+            <span
+                className={"h-[7px] w-[7px] rounded-full flex-none " + (group.entered ? "bg-[var(--color-success)]" : "bg-[var(--color-line-strong)]")}
+                aria-hidden="true"
+            />
+        </button>
     );
-}
+});
 
-function TeamCloseoutCard({
-    title,
-    memberCount,
-    totals,
-    hasInputData,
-    mobileOpen,
-    onMobileToggle,
-    inactive = false,
-    children,
-}) {
+// The single fixed-height entry panel. Its chrome (head + padded body) is identical for
+// every group, so the panel is the same height for two teams or six - the whole point of
+// the switcher. Body content is supplied by the caller per selected group.
+function CloseoutEntryPanel({ group, children }) {
     return (
-        <div className={
-            "border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden " +
-            (inactive ? "max-[560px]:bg-[var(--color-surface-muted)]/35" : "")
-        }>
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:py-2.5">
-                <span className={
-                    "text-sm font-medium " +
-                    (inactive ? "max-[560px]:text-[var(--color-ink-soft)] text-[var(--color-ink)]" : "text-[var(--color-ink)]")
-                }>
-                    {title} ({memberCount} {memberCount === 1 ? "member" : "members"})
-                </span>
-                <button
-                    type="button"
-                    onClick={onMobileToggle}
-                    className="hidden max-[560px]:inline text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
-                >
-                    {mobileOpen ? (
-                        "Hide inputs"
-                    ) : hasInputData ? (
-                        <span className="inline-flex items-center justify-center" title="Data entered" aria-label="Data entered">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
+        <div className="border border-[var(--color-line-strong)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="font-display text-[17px] font-medium tracking-tight text-[var(--color-ink)] truncate">
+                        {group.name}
+                    </span>
+                    <span className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-ink-muted)]">
+                        {group.sub}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2.5 flex-none">
+                    <span className="font-mono tabular-nums text-[12.5px] text-[var(--color-ink-soft)] whitespace-nowrap">
+                        {group.poolLabel} <b className="text-[var(--color-ink)] font-semibold">{fmtMoney(group.pool)}</b>
+                    </span>
+                    {group.entered ? (
+                        <span
+                            className="h-[18px] w-[18px] rounded-full bg-[var(--color-success)] text-white inline-flex items-center justify-center text-[11px] leading-none"
+                            title="Data entered"
+                            aria-label="Data entered"
+                        >
+                            ✓
                         </span>
-                    ) : inactive ? (
-                        "Open"
-                    ) : (
-                        "Edit inputs"
-                    )}
-                </button>
+                    ) : null}
+                </div>
             </div>
-            <div className={!mobileOpen ? "max-[560px]:hidden" : ""}>
-                <PoolCardTotals totals={totals} />
-            </div>
-            <div className={(mobileOpen ? "grid " : "hidden ") + "sm:grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 max-[560px]:p-3"}>
+            <div className="p-4 max-[560px]:p-3.5">
                 {children}
             </div>
         </div>
     );
 }
 
-const TeamPoolCloseoutCard = memo(function TeamPoolCloseoutCard({
+// Money inputs for one dining team, plus the per-team contracts disclosure. Rendered
+// inside the single entry panel (no card chrome of its own).
+function TeamPoolFields({
     team,
-    teamIndex,
-    summarySales,
-    summaryPool,
-    summaryCovers,
-    mobileOpen,
-    onMobileToggle,
     onPoolChange,
     onToggleContracts,
     onAddContract,
     onUpdateContract,
     onRemoveContract,
 }) {
-    const hasInputData = Object.values(team.pools || {}).some(value => toMoney(value) > 0)
-        || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0);
-    const inactive = team.members.length === 0 && !hasInputData;
-
     return (
-        <TeamCloseoutCard
-            title={`Team ${teamIndex + 1}`}
-            memberCount={team.members.length}
-            hasInputData={hasInputData}
-            mobileOpen={mobileOpen}
-            onMobileToggle={onMobileToggle}
-            inactive={inactive}
-            totals={[
-                ["Sales", summarySales],
-                ["Pool", summaryPool],
-                ["Covers", summaryCovers],
-            ]}
-        >
-            <PoolField label="Sales ($)" value={team.pools.sales} onChange={(value) => onPoolChange(team.teamId, "sales", value)} />
-            <PoolField label="Tips (CTP) ($)" value={team.pools.tips} onChange={(value) => onPoolChange(team.teamId, "tips", value)} />
-            <PoolField label="Gratuity ($)" value={team.pools.gratuity} onChange={(value) => onPoolChange(team.teamId, "gratuity", value)} />
-            <PoolField label="Cash ($)" value={team.pools.cash} onChange={(value) => onPoolChange(team.teamId, "cash", value)} />
-            <PoolField label="Covers" value={team.pools.covers} onChange={(value) => onPoolChange(team.teamId, "covers", value)} />
+        <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                <PoolField label="Sales" value={team.pools.sales} onChange={(value) => onPoolChange(team.teamId, "sales", value)} />
+                <PoolField label="Tips (CTP)" value={team.pools.tips} onChange={(value) => onPoolChange(team.teamId, "tips", value)} />
+                <PoolField label="Gratuity" value={team.pools.gratuity} onChange={(value) => onPoolChange(team.teamId, "gratuity", value)} />
+                <PoolField label="Cash" value={team.pools.cash} onChange={(value) => onPoolChange(team.teamId, "cash", value)} />
+                <PoolField label="Covers" money={false} value={team.pools.covers} onChange={(value) => onPoolChange(team.teamId, "covers", value)} />
+            </div>
 
-            <div className="col-span-full border-t border-[var(--color-line)]">
+            <div className="mt-3 border-t border-[var(--color-line)]">
                 <div className="flex flex-wrap items-center justify-between gap-2 py-2">
                     <button
                         type="button"
@@ -197,7 +186,7 @@ const TeamPoolCloseoutCard = memo(function TeamPoolCloseoutCard({
 
                 {team._showContracts ? (
                     team.contracts && team.contracts.length > 0 ? (
-                        <div className="pb-4 space-y-2">
+                        <div className="pb-1 space-y-2">
                             {team.contracts.map((contract, contractIndex) => (
                                 <div key={contractIndex} className="flex items-center gap-2">
                                     <span className="text-xs font-mono tabular-nums text-[var(--color-ink-muted)] w-7">
@@ -228,50 +217,28 @@ const TeamPoolCloseoutCard = memo(function TeamPoolCloseoutCard({
                             ))}
                         </div>
                     ) : (
-                        <div className="pb-4 text-xs text-[var(--color-ink-muted)] italic">
+                        <div className="pb-1 text-xs text-[var(--color-ink-muted)] italic">
                             No contracts added. Click '+ Add Contract' to input a contract amount.
                         </div>
                     )
                 ) : null}
             </div>
-        </TeamCloseoutCard>
+        </>
     );
-});
+}
 
-const BarPoolCloseoutCard = memo(function BarPoolCloseoutCard({
-    barTeam,
-    summarySales,
-    summaryPool,
-    summaryTransfer,
-    hasInputData,
-    mobileOpen,
-    onMobileToggle,
-    onBarPoolChange,
-}) {
-    const inactive = barTeam.members.length === 0 && !hasInputData;
-
+// Money inputs for the bar pool. Rendered inside the single entry panel.
+function BarPoolFields({ barTeam, onBarPoolChange }) {
     return (
-        <TeamCloseoutCard
-            title="Bar Team"
-            memberCount={barTeam.members.length}
-            hasInputData={hasInputData || barTeam.members.length > 0}
-            mobileOpen={mobileOpen}
-            onMobileToggle={onMobileToggle}
-            inactive={inactive}
-            totals={[
-                ["Sales", summarySales],
-                ["Pool", summaryPool],
-                ["Transfer", summaryTransfer],
-            ]}
-        >
-            <PoolField label="Bar Sales ($)" value={barTeam.pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
-            <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
-            <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
-            <PoolField label="Covers" value={barTeam.pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />
-            <PoolField label="Runners Transfer ($)" value={barTeam.pools.runners} onChange={(value) => onBarPoolChange("runners", value)} />
-        </TeamCloseoutCard>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <PoolField label="Bar Sales" value={barTeam.pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
+            <PoolField label="Tips (CTP)" value={barTeam.pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
+            <PoolField label="Gratuity" value={barTeam.pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
+            <PoolField label="Covers" money={false} value={barTeam.pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />
+            <PoolField label="Runners Transfer" value={barTeam.pools.runners} onChange={(value) => onBarPoolChange("runners", value)} />
+        </div>
     );
-});
+}
 
 function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointChange, onPointAdjust }) {
     const totalPoints = members.reduce((sum, member) => {
@@ -388,74 +355,33 @@ function RunnerGroup({ runners, totalPay, onPayoutChange }) {
     );
 }
 
-function PointAdjustmentsPanel({
-    teams,
-    barTeam,
-    runners,
-    totals,
-    onTeamPointChange,
-    onTeamPointAdjust,
-    onBarPointChange,
-    onBarPointAdjust,
-    onRunnerPayoutChange,
-}) {
-    const restaurantMembersCount = teams.reduce((sum, team) => sum + team.members.length, 0);
-    const hasAdjustments = restaurantMembersCount > 0 || barTeam.members.length > 0 || runners.length > 0;
+// Per-group point split, folded into the entry panel as a calm collapsed disclosure so
+// the panel height stays constant. Opening it reveals only the selected group's members.
+function PointSplitDisclosure({ title, members, defaultPoints = 0, emptyMessage, onPointChange, onPointAdjust }) {
     const [isOpen, setIsOpen] = useState(false);
-
     return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:items-center max-[560px]:px-3 max-[560px]:py-2">
-                <div className="min-w-0">
-                    <span className="block text-sm font-medium text-[var(--color-ink)] max-[560px]:text-[0.82rem]">Point Adjustments</span>
-                    <div className="mt-2 flex items-center gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
-                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1 max-[560px]:py-0.5">Dining {totals.restaurant.toLocaleString()} pts</span>
-                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Bar {totals.bar.toLocaleString()} pts</span>
-                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Runners {fmtMoney(totals.runnerPay)}</span>
-                    </div>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => setIsOpen(open => !open)}
-                    className="shrink-0 text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors max-[560px]:rounded-[var(--radius-xs)] max-[560px]:border max-[560px]:border-[var(--color-line)] max-[560px]:px-2.5 max-[560px]:py-1.5"
-                >
-                    {isOpen ? "Hide points" : "Edit points"}
-                </button>
-            </div>
-
-            {!isOpen ? null : !hasAdjustments ? (
-                <div className="px-4 py-6 text-xs text-[var(--color-ink-muted)] italic">
-                    Assign restaurant, bar, or runner employees before adjusting.
-                </div>
-            ) : (
-                <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-3 max-[560px]:px-0 max-[560px]:py-2">
-                    {teams.map((team, index) => (
-                        <PointGroup
-                            key={team.teamId}
-                            title={`Team ${index + 1}`}
-                            members={team.members}
-                            emptyMessage="No dining room employees on this team."
-                            onPointChange={(uid, value) => onTeamPointChange(team.teamId, uid, value)}
-                            onPointAdjust={(uid, delta) => onTeamPointAdjust(team.teamId, uid, delta)}
-                        />
-                    ))}
-
+        <div className="mt-3 border-t border-[var(--color-line)] pt-2.5">
+            <button
+                type="button"
+                onClick={() => setIsOpen(open => !open)}
+                aria-expanded={isOpen}
+                className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] transition-colors py-1"
+            >
+                <span className={"transition-transform duration-150 " + (isOpen ? "rotate-90" : "")}>▸</span>
+                Adjust point split · {members.length} {members.length === 1 ? "member" : "members"}
+            </button>
+            {isOpen ? (
+                <div className="mt-2">
                     <PointGroup
-                        title="Bar Team"
-                        members={barTeam.members}
-                        emptyMessage="No bar employees assigned."
-                        defaultPoints={1}
-                        onPointChange={onBarPointChange}
-                        onPointAdjust={onBarPointAdjust}
-                    />
-
-                    <RunnerGroup
-                        runners={runners}
-                        totalPay={totals.runnerPay}
-                        onPayoutChange={onRunnerPayoutChange}
+                        title={title}
+                        members={members}
+                        emptyMessage={emptyMessage}
+                        defaultPoints={defaultPoints}
+                        onPointChange={onPointChange}
+                        onPointAdjust={onPointAdjust}
                     />
                 </div>
-            )}
+            ) : null}
         </div>
     );
 }
@@ -649,8 +575,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [shiftStatus, setShiftStatus] = useState(null);
     const [teamSetupOpen, setTeamSetupOpen] = useState(true);
     const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
-    const [showLiveTotalDetails, setShowLiveTotalDetails] = useState(false);
-    const [activeMobileCloseoutId, setActiveMobileCloseoutId] = useState(null);
+    const [activeGroupId, setActiveGroupId] = useState("team-1");
     const [draftStatus, setDraftStatus] = useState("");
     const [hasWarnedClosedRosterEdit, setHasWarnedClosedRosterEdit] = useState(false);
     const realEmployeeUids = useMemo(
@@ -695,9 +620,45 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
     const hasBarCloseoutData = Object.values(barTeam.pools || {}).some(value => toMoney(value) > 0);
 
-    const toggleMobileCloseoutCard = useCallback((cardId) => {
-        setActiveMobileCloseoutId(current => current === cardId ? null : cardId);
-    }, []);
+    // Descriptors for the switcher rail + entry panel: one entry per dining team, then Bar,
+    // then Runners. Each carries the display name, roster sub-line, live pool, and whether
+    // any money has been entered (drives the status dot / check).
+    const closeoutGroups = useMemo(() => {
+        const teamGroups = teams.map((team, index) => ({
+            id: team.teamId,
+            kind: "dining",
+            name: `Team ${index + 1}`,
+            sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"} · dining`,
+            poolLabel: "Pool",
+            pool: poolSummary.teams[index]?.payoutPool ?? 0,
+            entered: Object.values(team.pools || {}).some(value => toMoney(value) > 0)
+                || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0),
+            teamIndex: index,
+        }));
+        return [
+            ...teamGroups,
+            {
+                id: "bar",
+                kind: "bar",
+                name: "Bar Team",
+                sub: `${barTeam.members.length} ${barTeam.members.length === 1 ? "member" : "members"} · bar`,
+                poolLabel: "Pool",
+                pool: poolSummary.bar.payoutPool,
+                entered: hasBarCloseoutData || barTeam.members.length > 0,
+            },
+            {
+                id: "runners",
+                kind: "runners",
+                name: "Runners",
+                sub: `${runners.length} ${runners.length === 1 ? "runner" : "runners"}`,
+                poolLabel: "Pay",
+                pool: poolSummary.totalRunnerPay,
+                entered: runners.length > 0,
+            },
+        ];
+    }, [teams, barTeam, runners, poolSummary, hasBarCloseoutData]);
+
+    const activeGroup = closeoutGroups.find(group => group.id === activeGroupId) || closeoutGroups[0];
 
     const hasAssignedStaff = useMemo(() => (
         teams.some(team => team.members.length > 0) || barTeam.members.length > 0 || runners.length > 0
@@ -1123,136 +1084,114 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                 </div>
                             ) : null}
 
-                            {/* Live totals */}
-                            <div className={
-                                "border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden max-[560px]:hidden"
-                            }>
-                                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-3 max-[560px]:py-2">
-                                    <div className="flex items-end justify-between gap-3 max-[560px]:w-full">
-                                        <div>
-                                        <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)] max-[560px]:hidden">
-                                            Live shift totals
-                                        </div>
-                                        <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-ink)] max-[560px]:text-xl">
-                                            {fmtMoney(poolSummary.payoutPool)}
-                                        </div>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowLiveTotalDetails(open => !open)}
-                                            className="hidden max-[560px]:inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-line)] px-3 text-xs font-medium text-[var(--color-accent)] bg-[var(--color-surface)]"
-                                        >
-                                            {showLiveTotalDetails ? "Hide details" : "Show details"}
-                                        </button>
+                            {calculatedReview ? (
+                                <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} />
+                            ) : (
+                                <>
+                                    {/* Team switcher: a compact horizontal strip above one fixed-height entry
+                                        panel. Tapping a pill focuses that group; the strip scrolls sideways on
+                                        phone so page height stays constant no matter how large the roster is. */}
+                                    <div
+                                        role="tablist"
+                                        aria-label="Select a group to enter money"
+                                        className="flex gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 [scrollbar-width:thin]"
+                                    >
+                                        {closeoutGroups.map(group => (
+                                            <RailPill
+                                                key={group.id}
+                                                group={group}
+                                                selected={group.id === activeGroup.id}
+                                                onSelect={() => setActiveGroupId(group.id)}
+                                            />
+                                        ))}
                                     </div>
-                                    <div className="flex flex-wrap gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
-                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{diningCount} dining</span>
-                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{barTeam.members.length} bar</span>
-                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{runners.length} runners</span>
-                                    </div>
-                                </div>
 
-                                <div className={(showLiveTotalDetails ? "grid " : "hidden ") + "sm:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 px-5 py-4 max-[560px]:px-4 max-[560px]:gap-y-3"}>
-                                    <SummaryMetric label="Sales" value={fmtMoney(poolSummary.totalSales)} />
-                                    <SummaryMetric label="Tips CTP" value={fmtMoney(poolSummary.totalTips)} />
-                                    <SummaryMetric label="Gratuity" value={fmtMoney(poolSummary.totalGratuity)} />
-                                    <SummaryMetric label="Cash" value={fmtMoney(poolSummary.totalCash)} />
-                                    <SummaryMetric label="Covers" value={poolSummary.totalCovers.toLocaleString()} />
-                                    <SummaryMetric label="Runner pay" value={fmtMoney(poolSummary.totalRunnerPay)} />
-                                    <SummaryMetric label="Bar transfer" value={fmtMoney(poolSummary.runnerTransfer)} />
-                                    <SummaryMetric label="Dining pts" value={poolSummary.restaurantPoints.toLocaleString()} />
-                                </div>
+                                    <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
+                                        {activeGroup.kind === "dining" ? (
+                                            <>
+                                                <TeamPoolFields
+                                                    team={teams[activeGroup.teamIndex]}
+                                                    onPoolChange={updatePool}
+                                                    onToggleContracts={toggleContractVisibility}
+                                                    onAddContract={addContract}
+                                                    onUpdateContract={updateContract}
+                                                    onRemoveContract={removeContract}
+                                                />
+                                                <PointSplitDisclosure
+                                                    title={activeGroup.name}
+                                                    members={teams[activeGroup.teamIndex].members}
+                                                    emptyMessage="No dining room employees on this team."
+                                                    onPointChange={(uid, value) => updateTeamMemberPoints(activeGroup.id, uid, value)}
+                                                    onPointAdjust={(uid, delta) => adjustTeamMemberPoints(activeGroup.id, uid, delta)}
+                                                />
+                                            </>
+                                        ) : activeGroup.kind === "bar" ? (
+                                            <>
+                                                <BarPoolFields barTeam={barTeam} onBarPoolChange={updateBarPool} />
+                                                <PointSplitDisclosure
+                                                    title="Bar Team"
+                                                    members={barTeam.members}
+                                                    defaultPoints={1}
+                                                    emptyMessage="No bar employees assigned."
+                                                    onPointChange={updateBarMemberPoints}
+                                                    onPointAdjust={adjustBarMemberPoints}
+                                                />
+                                            </>
+                                        ) : (
+                                            <>
+                                                <p className="text-[12.5px] leading-relaxed text-[var(--color-ink-soft)] mb-3">
+                                                    Runner pay is drawn from the tip pool. Enter each runner's take-home.
+                                                </p>
+                                                <RunnerGroup
+                                                    runners={runners}
+                                                    totalPay={poolSummary.totalRunnerPay}
+                                                    onPayoutChange={updateRunnerPayout}
+                                                />
+                                            </>
+                                        )}
+                                    </CloseoutEntryPanel>
+                                </>
+                            )}
 
-                                {poolSummary.contractTotal > 0 ? (
-                                    <div className="px-5 py-2 text-xs text-[var(--color-ink-soft)] bg-[var(--color-surface-muted)]/50 border-t border-[var(--color-line)]">
-                                        Contract gratuity included: {fmtMoney(poolSummary.contractTotal)}
-                                    </div>
-                                ) : null}
-                            </div>
-
-                            {/* Pool inputs */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {teams.map((t, idx) => (
-                                    <TeamPoolCloseoutCard
-                                        key={t.teamId}
-                                        team={t}
-                                        teamIndex={idx}
-                                        summarySales={poolSummary.teams[idx].sales}
-                                        summaryPool={poolSummary.teams[idx].payoutPool}
-                                        summaryCovers={poolSummary.teams[idx].covers}
-                                        mobileOpen={activeMobileCloseoutId === t.teamId}
-                                        onMobileToggle={() => toggleMobileCloseoutCard(t.teamId)}
-                                        onPoolChange={updatePool}
-                                        onToggleContracts={toggleContractVisibility}
-                                        onAddContract={addContract}
-                                        onUpdateContract={updateContract}
-                                        onRemoveContract={removeContract}
-                                    />
-                                ))}
-
-                                {/* Bar */}
-                                <BarPoolCloseoutCard
-                                    barTeam={barTeam}
-                                    summarySales={poolSummary.bar.sales}
-                                    summaryPool={poolSummary.bar.payoutPool}
-                                    summaryTransfer={poolSummary.bar.runnerTransfer}
-                                    hasInputData={hasBarCloseoutData}
-                                    mobileOpen={activeMobileCloseoutId === "bar"}
-                                    onMobileToggle={() => toggleMobileCloseoutCard("bar")}
-                                    onBarPoolChange={updateBarPool}
-                                />
-                            </div>
-
-                            <PointAdjustmentsPanel
-                                teams={teams}
-                                barTeam={barTeam}
-                                runners={runners}
-                                totals={{ restaurant: poolSummary.restaurantPoints, bar: poolSummary.barPoints, runnerPay: poolSummary.totalRunnerPay }}
-                                onTeamPointChange={updateTeamMemberPoints}
-                                onTeamPointAdjust={adjustTeamMemberPoints}
-                                onBarPointChange={updateBarMemberPoints}
-                                onBarPointAdjust={adjustBarMemberPoints}
-                                onRunnerPayoutChange={updateRunnerPayout}
-                            />
-
-                            {calculatedReview ? <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} /> : null}
-
-                            {/* Save row */}
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-2 max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-                                <div className="hidden max-[560px]:flex items-center justify-between gap-3">
-                                    <span className="text-[0.7rem] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                        Pool available
+                            {/* Save row: one slim closeout total + the primary action, always present.
+                                Calculate → Review → Confirm & Save runs unchanged. */}
+                            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
+                                <div className="flex items-center justify-between gap-3 sm:justify-start">
+                                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                        Closeout total
                                     </span>
-                                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
+                                    <strong className="font-mono tabular-nums text-base text-[var(--color-ink)]">
                                         {fmtMoney(poolSummary.payoutPool)}
                                     </strong>
                                 </div>
-                                {saveStatus ? (
-                                    <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
-                                ) : draftStatus ? (
-                                    <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
-                                ) : null}
-                                {calculatedReview ? (
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+                                    {saveStatus ? (
+                                        <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
+                                    ) : draftStatus ? (
+                                        <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
+                                    ) : null}
+                                    {calculatedReview ? (
+                                        <Button
+                                            variant="secondary"
+                                            onClick={handleCalculateForReview}
+                                            disabled={isSaving}
+                                            className="max-[560px]:w-full"
+                                        >
+                                            Recalculate Payouts
+                                        </Button>
+                                    ) : null}
                                     <Button
-                                        variant="secondary"
-                                        onClick={handleCalculateForReview}
+                                        onClick={calculatedReview ? handleConfirmSave : handleCalculateForReview}
                                         disabled={isSaving}
                                         className="max-[560px]:w-full"
                                     >
-                                        Recalculate Payouts
+                                        {isSaving
+                                            ? "Saving…"
+                                            : calculatedReview
+                                                ? "Confirm & Save Shift"
+                                                : "Calculate Payouts"}
                                     </Button>
-                                ) : null}
-                                <Button
-                                    onClick={calculatedReview ? handleConfirmSave : handleCalculateForReview}
-                                    disabled={isSaving}
-                                    className="max-[560px]:w-full"
-                                >
-                                    {isSaving
-                                        ? "Saving…"
-                                        : calculatedReview
-                                            ? "Confirm & Save Shift"
-                                            : "Calculate Payouts"}
-                                </Button>
+                                </div>
                             </div>
                         </section>
                         </CollapsibleSection>
