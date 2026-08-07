@@ -1,6 +1,46 @@
 import React from 'react';
 import AssignedEmployeeRow from './AssignedEmployeeRow';
 
+const getInitials = (name = '') => {
+    // Only consider words that start with a letter/number, so parenthetical tags
+    // like "Temp Staff (Temp)" yield "TS" rather than "T(".
+    const parts = name.trim().split(/\s+/).filter(part => /[a-z0-9]/i.test(part[0]));
+    if (parts.length === 0) {
+        const alnum = name.replace(/[^a-z0-9]/gi, '');
+        return alnum ? alnum.slice(0, 2).toUpperCase() : '?';
+    }
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+// A compact cluster of member initials, shown on mobile in place of the full
+// member list so a populated team reads as "full" at a glance without a long list.
+function AvatarCluster({ members }) {
+    const shown = members.slice(0, 4);
+    const overflow = members.length - shown.length;
+
+    return (
+        <div className="hidden max-[560px]:flex items-center gap-1.5 pt-0.5">
+            <div className="flex -space-x-1.5">
+                {shown.map(member => (
+                    <span
+                        key={member.uid}
+                        title={member.name}
+                        className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)] text-[0.6rem] font-bold uppercase ring-2 ring-[var(--color-surface)]"
+                    >
+                        {getInitials(member.name)}
+                    </span>
+                ))}
+                {overflow > 0 ? (
+                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--color-surface-muted)] text-[var(--color-ink-muted)] text-[0.6rem] font-bold ring-2 ring-[var(--color-surface)]">
+                        +{overflow}
+                    </span>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
 function TeamDropZone({
     teamId,
     title,
@@ -18,12 +58,17 @@ function TeamDropZone({
     hideMembers = false
 }) {
     const canEditRole = !isRunner && teamId !== 'bar';
+    const isPopulated = members.length > 0;
+    // Dashed border is reserved for empty / drop-target states; a populated team
+    // gets a solid border so it no longer reads as an empty "drop here" placeholder.
     const zoneClass = [
         "border-[1.5px] rounded-[var(--radius-md)] px-[0.65rem] py-[0.55rem] min-h-[62px] flex flex-col gap-[0.35rem] transition-all duration-200 max-[560px]:min-h-0 max-[560px]:px-3 max-[560px]:py-1.5 max-[560px]:rounded-[var(--radius-sm)]",
         isSelected
                 ? "bg-[var(--color-accent-soft)] border-solid border-[var(--color-accent)] shadow-[0_0_0_2px_var(--color-accent-soft)]"
             : isOver
                 ? "bg-[var(--color-accent-soft)] border-dashed border-[var(--color-accent)]"
+            : isPopulated
+                ? "bg-[var(--color-surface)] border-solid border-[var(--color-line-strong)]"
                 : "bg-[var(--color-surface)] border-dashed border-[var(--color-line)]",
     ].join(" ");
 
@@ -58,19 +103,22 @@ function TeamDropZone({
                     {isSelected ? 'Tap employees below to add' : 'Tap to select this team'}
                 </div>
             ) : (
-                <div className={(hideMembers ? "hidden" : "contents max-[560px]:hidden")}>
-                    {members.map(member => (
-                        <AssignedEmployeeRow
-                            key={member.uid}
-                            member={member}
-                            isRunner={isRunner}
-                            canEditRole={canEditRole}
-                            onDragStart={(e) => onDragStart(e, member.uid, teamId)}
-                            onRemove={() => onRemove(member.uid, teamId)}
-                            onRoleChange={(uid, role) => onRoleChange(teamId, uid, role)}
-                        />
-                    ))}
-                </div>
+                <>
+                    <div className={(hideMembers ? "hidden" : "contents max-[560px]:hidden")}>
+                        {members.map(member => (
+                            <AssignedEmployeeRow
+                                key={member.uid}
+                                member={member}
+                                isRunner={isRunner}
+                                canEditRole={canEditRole}
+                                onDragStart={(e) => onDragStart(e, member.uid, teamId)}
+                                onRemove={() => onRemove(member.uid, teamId)}
+                                onRoleChange={(uid, role) => onRoleChange(teamId, uid, role)}
+                            />
+                        ))}
+                    </div>
+                    {hideMembers ? null : <AvatarCluster members={members} />}
+                </>
             )}
         </div>
     );

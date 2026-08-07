@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 
+// Captains lead the list per captain direction; the "All" chip is gone - the
+// unfiltered view is the default, and tapping the active role chip again clears it.
 const ROLE_FILTERS = [
-    { value: 'all', label: 'All' },
     { value: 'captain', label: 'Captains' },
     { value: 'server', label: 'Servers' },
     { value: 'back', label: 'Backs' },
@@ -82,13 +83,14 @@ function EmployeePool({
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
 
-            <div className="flex-none flex flex-wrap gap-1.5 pb-0.5 max-[900px]:flex-nowrap max-[900px]:overflow-x-auto max-[900px]:overflow-y-hidden" aria-label="Filter available employees by role">
+            <div className="flex-none flex flex-wrap gap-1.5 pb-0.5" aria-label="Filter available employees by role">
                 {ROLE_FILTERS.map(filter => (
                     <button
                         key={filter.value}
                         type="button"
                         className={filterBtnClass(filter.value)}
-                        onClick={() => setRoleFilter(filter.value)}
+                        aria-pressed={roleFilter === filter.value}
+                        onClick={() => setRoleFilter(prev => prev === filter.value ? 'all' : filter.value)}
                     >
                         {filter.label}
                     </button>

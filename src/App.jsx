@@ -209,7 +209,14 @@ function App() {
         {viewMode === 'week' ? (
           <Calendar weekData={weekData} />
         ) : (
-          <MonthView currentDate={baseDate} allData={allData} />
+          <MonthView
+            currentDate={baseDate}
+            allData={allData}
+            onDaySelect={(day) => {
+              setBaseDate(new Date(day));
+              setViewMode('week');
+            }}
+          />
         )}
         <Suspense fallback={<InlineLoading label="Loading charts..." />}>
           <Charts weekData={chartData} />
