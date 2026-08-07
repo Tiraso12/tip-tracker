@@ -103,19 +103,25 @@ test("Employee dashboard scopes tip subscriptions to the visible date window", (
     );
 });
 
-test("Team Management uses user history flags before legacy merge scans", () => {
+test("Team Management delegates temp merge payout ownership to the ledger utility", () => {
     const teamManagementSource = readSource("src/components/Admin/TeamManagement.jsx");
     const shiftEditorSource = readSource("src/components/Admin/ShiftEditorPanel.jsx");
+    const mergePersistenceSource = readSource("src/utils/tempStaffMergePersistence.js");
 
     assert.match(
         teamManagementSource,
-        /getMergeHistoryState/,
-        "Team Management should use user metadata flags for merge eligibility."
+        /mergeTempStaffIntoAccount/,
+        "Team Management should delegate temp-staff merge persistence to a tested utility."
+    );
+    assert.doesNotMatch(
+        teamManagementSource,
+        /collection\(db,\s*["']shifts["']\)/,
+        "Team Management should not scan every shift while rendering merge controls."
     );
     assert.match(
-        teamManagementSource,
-        /legacyUsers/,
-        "Team Management should scan historical data only for users missing history flags."
+        mergePersistenceSource,
+        /collection\(db,\s*PAYOUT_LEDGER_COLLECTION\)/,
+        "Temp-staff merge should discover payout ownership through canonical ledger dates."
     );
     assert.match(
         shiftEditorSource,
