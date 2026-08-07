@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 
 const PROJECT_ID = "demo-tip-tracker-test";
 const ADMIN_EMAIL = "admin@example.com";
@@ -102,7 +102,7 @@ test.beforeEach(async () => {
     await seedCloseoutData();
 });
 
-test("admin can close out a simple dining room shift and create employee tip records", async ({ page }) => {
+test("admin can close out a simple dining room shift and create ledger payout records", async ({ page }) => {
     await page.goto("/");
 
     await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
@@ -138,22 +138,28 @@ test("admin can close out a simple dining room shift and create employee tip rec
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
         const shiftDoc = await getDoc(doc(db, `shifts/${SHIFT_DATE}`));
+        const captainPayout = await getDoc(doc(db, "payouts", SHIFT_DATE, "entries", "captainUid"));
+        const serverPayout = await getDoc(doc(db, "payouts", SHIFT_DATE, "entries", "serverUid"));
+        const backPayout = await getDoc(doc(db, "payouts", SHIFT_DATE, "entries", "backUid"));
         const captainTip = await getDoc(doc(db, `users/captainUid/tips/${SHIFT_DATE}`));
-        const serverTip = await getDoc(doc(db, `users/serverUid/tips/${SHIFT_DATE}`));
-        const backTip = await getDoc(doc(db, `users/backUid/tips/${SHIFT_DATE}`));
+        const auditEvents = await getDocs(collection(db, "auditEvents"));
 
         expect(shiftDoc.exists()).toBe(true);
         expect(shiftDoc.data().status).toBe("closed");
-        expect(Object.keys(shiftDoc.data().payouts)).toEqual(
-            expect.arrayContaining(["captainUid", "serverUid", "backUid"])
-        );
-        expect(captainTip.exists()).toBe(true);
-        expect(serverTip.exists()).toBe(true);
-        expect(backTip.exists()).toBe(true);
+        expect(shiftDoc.data()).not.toHaveProperty("payouts");
+        expect(shiftDoc.data().summary).not.toHaveProperty("payouts");
+        expect(shiftDoc.data()).toHaveProperty("firstClosedAt");
+        expect(shiftDoc.data()).toHaveProperty("lastRecalculatedAt");
+        expect(shiftDoc.data()).toHaveProperty("operationId");
+        expect(captainPayout.exists()).toBe(true);
+        expect(serverPayout.exists()).toBe(true);
+        expect(backPayout.exists()).toBe(true);
+        expect(captainTip.exists()).toBe(false);
+        expect(auditEvents.size).toBe(1);
     });
 });
 
-test("editing a closed shift's roster preserves payouts and cleans up the removed employee's tip doc", async ({ page }) => {
+test("editing a closed shift's roster preserves payouts and cleans up the removed employee's ledger entry", async ({ page }) => {
     await page.goto("/");
 
     await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
@@ -203,17 +209,22 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
         const shiftDoc = await getDoc(doc(db, `shifts/${SHIFT_DATE}`));
-        const backTip = await getDoc(doc(db, `users/backUid/tips/${SHIFT_DATE}`));
+        const backPayout = await getDoc(doc(db, "payouts", SHIFT_DATE, "entries", "backUid"));
+        const captainPayout = await getDoc(doc(db, "payouts", SHIFT_DATE, "entries", "captainUid"));
+        const serverPayout = await getDoc(doc(db, "payouts", SHIFT_DATE, "entries", "serverUid"));
+        const auditEvents = await getDocs(collection(db, "auditEvents"));
 
         expect(shiftDoc.exists()).toBe(true);
         const shiftData = shiftDoc.data();
         expect(shiftData.status).toBe("closed");
         expect(shiftData).toHaveProperty("summary");
+        expect(shiftData.summary).not.toHaveProperty("payouts");
         expect(shiftData).toHaveProperty("closedAt");
-        expect(Object.keys(shiftData.payouts)).toEqual(
-            expect.arrayContaining(["captainUid", "serverUid"])
-        );
-        expect(shiftData.payouts).not.toHaveProperty("backUid");
-        expect(backTip.exists()).toBe(false);
+        expect(shiftData).toHaveProperty("firstClosedAt");
+        expect(shiftData.closedAt).toBe(shiftData.firstClosedAt);
+        expect(captainPayout.exists()).toBe(true);
+        expect(serverPayout.exists()).toBe(true);
+        expect(backPayout.exists()).toBe(false);
+        expect(auditEvents.size).toBe(2);
     });
 });

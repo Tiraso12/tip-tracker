@@ -1,12 +1,14 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import { Button, Card } from "../ui";
-import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "../../utils/shiftPersistence";
+import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
+import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
 import { RUNNER_FLAT_RATE } from "../../utils/constants";
 import { getHistoryFlagUpdate, getShiftParticipantUids } from "../../utils/userHistoryFlags";
+import { useAuth } from "../../context/AuthContext";
 import {
     buildPayoutReview,
     fmtMoney,
@@ -610,6 +612,7 @@ function CollapsibleSection({ title, subtitle, badge, isOpen, onToggle, children
 }
 
 function ShiftEditorPanel({ date, allEmployees, onClose }) {
+    const { user } = useAuth();
     const [teams, setTeams] = useState([
         { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
     ]);
@@ -827,7 +830,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         });
                     }
                     if (d.runners) setRunners(d.runners);
-                    setShiftStatus(d.status || (d.summary || d.payouts ? "closed" : "setup"));
+                    setShiftStatus(d.status || (d.summary || d.firstClosedAt || d.payouts ? "closed" : "setup"));
                     setTeamSetupOpen(false);
                     setMoneyCloseoutOpen(true);
                 } else {
@@ -974,38 +977,17 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         setIsSaving(true);
         setSaveStatus("Saving…");
         try {
-            const shiftRef = doc(db, "shifts", date);
-            const existingShiftDoc = await getDoc(shiftRef);
-            const previousPayouts = existingShiftDoc.exists() ? existingShiftDoc.data().payouts || {} : {};
-            const removedPayoutUids = getRemovedPayoutUids(previousPayouts, mappedPayoutsForFirebase);
-
-            await setDoc(shiftRef, buildClosedShiftPayload({
+            await saveClosedShiftAtomically({
+                db,
                 date,
                 teams,
                 barTeam,
                 runners,
                 payouts: mappedPayoutsForFirebase,
                 summary: result,
-            }));
-
-            const saves = Object.entries(mappedPayoutsForFirebase).map(([uid, payout]) =>
-                setDoc(doc(db, "users", uid, "tips", date), {
-                    gratuity: payout.gratuity,
-                    tip: payout.tips,
-                    cash: payout.cash,
-                    wineBonus: payout.wineBonus,
-                    points: payout.points || 0,
-                    total: payout.total,
-                    role: payout.role,
-                    shiftDate: date,
-                    updatedAt: new Date().toISOString(),
-                })
-            );
-            const deletes = removedPayoutUids.map(uid =>
-                deleteDoc(doc(db, "users", uid, "tips", date))
-            );
-            await Promise.all([...saves, ...deletes]);
-            await markUserHistoryFlags("closed", mappedPayoutsForFirebase);
+                realEmployeeUids,
+                updatedBy: user?.uid || null,
+            });
             setSaveStatus("Saved.");
             setShiftStatus("closed");
             setCalculatedReview(null);
@@ -1042,7 +1024,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
                         <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                            Shift Workspace — {date}
+                            Shift Workspace - {date}
                         </h2>
                         {shiftStatus ? (
                             <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">

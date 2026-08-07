@@ -142,6 +142,9 @@ export function mapPayoutsForFirebase(result) {
                 cash: p.cash || 0,
                 wineBonus: 0,
                 total: p.total !== undefined ? p.total : (p.payoutAmount || 0),
+                teamId: p.teamId || null,
+                breakdown: p.breakdown || {},
+                payoutAmount: p.payoutAmount || null,
             };
         });
     };

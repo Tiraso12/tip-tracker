@@ -13,7 +13,7 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if request.auth != null &&
         (request.auth.uid == uid || isAdmin());
-      // Enforce safe defaults on self-registration — prevents SDK-level role elevation.
+      // Enforce safe defaults on self-registration - prevents SDK-level role elevation.
       allow create: if request.auth != null &&
         request.auth.uid == uid &&
         request.resource.data.role == "unassigned" &&
@@ -30,26 +30,45 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Shifts (admin creates, employees read their own payouts)
+    // Shifts
     match /shifts/{shiftId} {
       allow read, write: if isAdmin();
     }
 
-    // Per-user tip data — employees read-only; only admins write.
+    // Canonical payout ledger. Employees can read only their own exact entry doc.
+    match /payouts/{shiftDate} {
+      allow read, write: if isAdmin();
+
+      match /entries/{uid} {
+        allow get: if request.auth != null &&
+          (request.auth.uid == uid || isAdmin());
+        allow list: if isAdmin();
+        allow write: if isAdmin();
+      }
+    }
+
+    // Per-user tip data - employees read-only; only admins write.
+    // Legacy data remains readable during migration, but new closeout writes use /payouts.
     match /users/{userId}/tips/{document=**} {
       allow read: if request.auth != null &&
         (request.auth.uid == userId || isAdmin());
       allow write: if isAdmin();
     }
 
-    // Unregistered (temporary) staff — admin-only, explicit rule prevents silent catch-all dependence.
+    // Unregistered (temporary) staff - admin-only, explicit rule prevents silent catch-all dependence.
     match /unregisteredStaff/{document=**} {
       allow read, write: if isAdmin();
     }
 
-    // Fallback: admins can access anything else
+    // Money-changing actions append immutable audit events.
+    match /auditEvents/{eventId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // No broad fallback. New collections need explicit review.
     match /{document=**} {
-      allow read, write: if isAdmin();
+      allow read, write: if false;
     }
   }
 }
