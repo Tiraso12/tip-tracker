@@ -139,7 +139,7 @@ export const generateShiftReport = async (date, summary) => {
     // 2. Header
     doc.setTextColor(...PRIMARY_COLOR);
     doc.setFontSize(22);
-    doc.text('TipTracker Shift Report', 40, 50);
+    doc.text('Tip Tracker Shift Report', 40, 50);
 
     doc.setTextColor(100);
     doc.setFontSize(12);
@@ -482,7 +482,7 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel, reportLabel
     // Header
     doc.setTextColor(...PRIMARY_COLOR);
     doc.setFontSize(22);
-    doc.text(`TipTracker ${reportLabel} Report`, 40, 50);
+    doc.text(`Tip Tracker ${reportLabel} Report`, 40, 50);
 
     doc.setTextColor(100);
     doc.setFontSize(12);
@@ -562,7 +562,7 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
     // Header
     doc.setTextColor(...PRIMARY_COLOR);
     doc.setFontSize(22);
-    doc.text('TipTracker Monthly Report', 40, 50);
+    doc.text('Tip Tracker Monthly Report', 40, 50);
 
     doc.setTextColor(100);
     doc.setFontSize(12);

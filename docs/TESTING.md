@@ -2,7 +2,7 @@
 
 ## Local Safety
 
-TipTracker local development and tests should run against Firebase emulators with the demo project id `demo-tip-tracker-test`. Do not use production Firebase config for routine development or validation.
+Tip Tracker local development and tests should run against Firebase emulators with the demo project id `demo-tip-tracker-test`. Do not use production Firebase config for routine development or validation.
 
 The committed `.env.test` file contains demo Firebase values and enables:
 

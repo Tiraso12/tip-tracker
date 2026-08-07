@@ -12,7 +12,7 @@ const PendingApproval = () => {
             <div className="w-full max-w-md">
                 <div className="mb-8 text-center">
                     <span className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
-                        TipTracker
+                        Tip Tracker
                     </span>
                 </div>
 

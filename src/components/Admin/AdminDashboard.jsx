@@ -267,7 +267,7 @@ function AdminDashboard() {
                         <MenuIcon />
                     </button>
                     <span className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                        TipTracker
+                        Tip Tracker
                     </span>
                     <Badge tone="accent">Admin</Badge>
                 </div>
