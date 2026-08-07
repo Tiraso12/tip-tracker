@@ -8,6 +8,7 @@ import {
     payoutLedgerEntryRef,
     payoutLedgerMetaRef,
     ledgerEntriesToPayoutMap,
+    reconcilePayoutLedger,
 } from "./payoutLedger.js";
 import { getHistoryFlagUpdate, getShiftParticipantUids } from "./userHistoryFlags.js";
 
@@ -86,6 +87,19 @@ export async function saveClosedShiftAtomically({
     const removedPayoutUids = getRemovedPayoutUids(previousPayouts, payouts);
     const nextPayoutUids = Object.keys(payouts).sort();
     const previousPayoutUids = Object.keys(previousPayouts).sort();
+    const nextPayoutEntries = Object.entries(payouts).map(([uid, payout]) => buildPayoutLedgerEntry({
+        date,
+        uid,
+        payout,
+        operationId,
+        updatedAt: savedAt,
+        updatedBy,
+    }));
+    const payoutReconciliation = reconcilePayoutLedger({ summary, entries: nextPayoutEntries });
+
+    if (!payoutReconciliation.ok) {
+        throw new Error(`Payout reconciliation failed: ${payoutReconciliation.messages.join(" ")}`);
+    }
 
     const batch = batchFactory(db);
     const shiftPayload = buildClosedShiftPayload({
@@ -109,17 +123,10 @@ export async function saveClosedShiftAtomically({
         operationId,
     }, { merge: true });
 
-    Object.entries(payouts).forEach(([uid, payout]) => {
+    nextPayoutEntries.forEach((entry) => {
         batch.set(
-            refs.payoutEntry(db, date, uid),
-            buildPayoutLedgerEntry({
-                date,
-                uid,
-                payout,
-                operationId,
-                updatedAt: savedAt,
-                updatedBy,
-            })
+            refs.payoutEntry(db, date, entry.uid),
+            entry
         );
     });
 
@@ -155,5 +162,6 @@ export async function saveClosedShiftAtomically({
         previousPayoutUids,
         nextPayoutUids,
         removedPayoutUids,
+        payoutReconciliation,
     };
 }

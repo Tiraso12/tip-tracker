@@ -3,10 +3,297 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: check if the requester is an admin
+    // Helper: check if the requester is an active admin
     function isAdmin() {
       return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin" &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == "active";
+    }
+
+    function isRole(role) {
+      return role in [
+        "admin",
+        "unassigned",
+        "captain",
+        "server",
+        "back",
+        "assistant",
+        "bartender",
+        "runner"
+      ];
+    }
+
+    function isPayoutRole(role) {
+      return isRole(role) || role == "staff";
+    }
+
+    function isStatus(status) {
+      return status in ["active", "pending", "inactive"];
+    }
+
+    function isShiftStatus(status) {
+      return status in ["setup", "closed"];
+    }
+
+    function isNumber(value) {
+      return value is int || value is float;
+    }
+
+    function isStringOrTimestamp(value) {
+      return value is string || value is timestamp;
+    }
+
+    function validSelfProfileCreate(uid) {
+      return request.resource.data.keys().hasOnly([
+          "uid",
+          "username",
+          "email",
+          "role",
+          "status",
+          "createdAt"
+        ]) &&
+        request.resource.data.keys().hasAll(["uid", "username", "email", "role", "status"]) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.username is string &&
+        request.resource.data.email is string &&
+        request.resource.data.role == "unassigned" &&
+        request.resource.data.status == "pending" &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    function validUserProfile(uid) {
+      return request.resource.data.keys().hasOnly([
+          "uid",
+          "username",
+          "email",
+          "role",
+          "status",
+          "createdAt",
+          "hasShiftHistory",
+          "hasTipHistory"
+        ]) &&
+        request.resource.data.keys().hasAll(["uid", "role", "status"]) &&
+        request.resource.data.uid == uid &&
+        isRole(request.resource.data.role) &&
+        isStatus(request.resource.data.status) &&
+        (!("username" in request.resource.data) || request.resource.data.username is string) &&
+        (!("email" in request.resource.data) || request.resource.data.email is string) &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt)) &&
+        (!("hasShiftHistory" in request.resource.data) || request.resource.data.hasShiftHistory is bool) &&
+        (!("hasTipHistory" in request.resource.data) || request.resource.data.hasTipHistory is bool);
+    }
+
+    function validUsernameMapping() {
+      return request.resource.data.keys().hasOnly(["uid", "username", "email", "createdAt"]) &&
+        request.resource.data.keys().hasAll(["uid", "username", "email"]) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.username is string &&
+        request.resource.data.email is string &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    function validShift(shiftId) {
+      return request.resource.data.keys().hasOnly([
+          "date",
+          "status",
+          "teams",
+          "barTeam",
+          "runners",
+          "setupSavedAt",
+          "closeoutDraftSavedAt",
+          "summary",
+          "payouts",
+          "firstClosedAt",
+          "closedAt",
+          "lastRecalculatedAt",
+          "lastTempStaffMergeAt",
+          "updatedAt",
+          "updatedBy",
+          "operationId"
+        ]) &&
+        request.resource.data.keys().hasAll(["date", "status", "teams", "barTeam", "runners", "updatedAt"]) &&
+        request.resource.data.date == shiftId &&
+        isShiftStatus(request.resource.data.status) &&
+        request.resource.data.teams is list &&
+        request.resource.data.barTeam is map &&
+        request.resource.data.runners is list &&
+        isStringOrTimestamp(request.resource.data.updatedAt) &&
+        (!("setupSavedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.setupSavedAt)) &&
+        (!("closeoutDraftSavedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.closeoutDraftSavedAt)) &&
+        (!("summary" in request.resource.data) || request.resource.data.summary is map) &&
+        (!("payouts" in request.resource.data) || request.resource.data.payouts is map) &&
+        (!("firstClosedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.firstClosedAt)) &&
+        (!("closedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.closedAt)) &&
+        (!("lastRecalculatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.lastRecalculatedAt)) &&
+        (!("lastTempStaffMergeAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.lastTempStaffMergeAt)) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("operationId" in request.resource.data) || request.resource.data.operationId == null || request.resource.data.operationId is string);
+    }
+
+    function validPayoutMeta(shiftDate) {
+      return request.resource.data.keys().hasOnly(["date", "ledgerVersion", "updatedAt", "updatedBy", "operationId"]) &&
+        request.resource.data.keys().hasAll(["date", "ledgerVersion"]) &&
+        request.resource.data.date == shiftDate &&
+        request.resource.data.ledgerVersion == 1 &&
+        (!("updatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.updatedAt)) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("operationId" in request.resource.data) || request.resource.data.operationId == null || request.resource.data.operationId is string);
+    }
+
+    function validPayoutEntry(shiftDate, uid) {
+      return request.resource.data.keys().hasOnly([
+          "ledgerVersion",
+          "date",
+          "uid",
+          "name",
+          "role",
+          "points",
+          "tips",
+          "gratuity",
+          "cash",
+          "wineBonus",
+          "total",
+          "teamId",
+          "breakdown",
+          "payoutAmount",
+          "operationId",
+          "updatedAt",
+          "updatedBy",
+          "source",
+          "previousSource",
+          "mergedFromTempStaff"
+        ]) &&
+        request.resource.data.keys().hasAll([
+          "ledgerVersion",
+          "date",
+          "uid",
+          "name",
+          "role",
+          "tips",
+          "gratuity",
+          "cash",
+          "total",
+          "operationId",
+          "updatedAt",
+          "source"
+        ]) &&
+        request.resource.data.ledgerVersion == 1 &&
+        request.resource.data.date == shiftDate &&
+        request.resource.data.uid == uid &&
+        request.resource.data.name is string &&
+        isPayoutRole(request.resource.data.role) &&
+        isNumber(request.resource.data.tips) &&
+        isNumber(request.resource.data.gratuity) &&
+        isNumber(request.resource.data.cash) &&
+        isNumber(request.resource.data.total) &&
+        request.resource.data.operationId is string &&
+        isStringOrTimestamp(request.resource.data.updatedAt) &&
+        request.resource.data.source is string &&
+        (!("points" in request.resource.data) || isNumber(request.resource.data.points)) &&
+        (!("wineBonus" in request.resource.data) || isNumber(request.resource.data.wineBonus)) &&
+        (!("teamId" in request.resource.data) || request.resource.data.teamId == null || request.resource.data.teamId is string) &&
+        (!("breakdown" in request.resource.data) || request.resource.data.breakdown is map) &&
+        (!("payoutAmount" in request.resource.data) || request.resource.data.payoutAmount == null || isNumber(request.resource.data.payoutAmount)) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("previousSource" in request.resource.data) || request.resource.data.previousSource == null || request.resource.data.previousSource is string) &&
+        (!("mergedFromTempStaff" in request.resource.data) || request.resource.data.mergedFromTempStaff is map);
+    }
+
+    function validLegacyTip(userId, tipDate) {
+      return request.resource.data.keys().hasOnly([
+          "gratuity",
+          "tip",
+          "cash",
+          "wineBonus",
+          "points",
+          "total",
+          "role",
+          "shiftDate",
+          "updatedAt",
+          "name",
+          "updatedBy",
+          "mergeOperationId",
+          "mergedFromTempStaff"
+        ]) &&
+        request.resource.data.keys().hasAll(["gratuity", "tip", "cash", "total", "role"]) &&
+        isNumber(request.resource.data.gratuity) &&
+        isNumber(request.resource.data.tip) &&
+        isNumber(request.resource.data.cash) &&
+        isNumber(request.resource.data.total) &&
+        isPayoutRole(request.resource.data.role) &&
+        (!("shiftDate" in request.resource.data) || request.resource.data.shiftDate == tipDate) &&
+        (!("wineBonus" in request.resource.data) || isNumber(request.resource.data.wineBonus)) &&
+        (!("points" in request.resource.data) || isNumber(request.resource.data.points)) &&
+        (!("updatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.updatedAt)) &&
+        (!("name" in request.resource.data) || request.resource.data.name is string) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("mergeOperationId" in request.resource.data) || request.resource.data.mergeOperationId is string) &&
+        (!("mergedFromTempStaff" in request.resource.data) || request.resource.data.mergedFromTempStaff is map);
+    }
+
+    function validTempStaff(uid) {
+      return request.resource.data.keys().hasOnly([
+          "uid",
+          "name",
+          "username",
+          "role",
+          "status",
+          "isUnregistered",
+          "createdAt"
+        ]) &&
+        request.resource.data.keys().hasAll(["uid", "name", "username", "role", "status", "isUnregistered"]) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.name is string &&
+        request.resource.data.username is string &&
+        isRole(request.resource.data.role) &&
+        request.resource.data.status == "active" &&
+        request.resource.data.isUnregistered == true &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    function validAuditEvent() {
+      return request.resource.data.keys().hasOnly([
+          "type",
+          "date",
+          "shiftId",
+          "operationId",
+          "actorUid",
+          "createdAt",
+          "ledgerVersion",
+          "previousPayoutUids",
+          "nextPayoutUids",
+          "removedPayoutUids",
+          "previousPayoutCount",
+          "nextPayoutCount",
+          "tempStaff",
+          "targetUser",
+          "migratedDates",
+          "migratedLedgerDates",
+          "migratedLegacyTipDates",
+          "updatedShiftDates",
+          "collisionDates"
+        ]) &&
+        request.resource.data.keys().hasAll(["type", "operationId", "createdAt", "ledgerVersion"]) &&
+        request.resource.data.type in ["shift_closed", "shift_recalculated", "temp_staff_merged"] &&
+        request.resource.data.operationId is string &&
+        isStringOrTimestamp(request.resource.data.createdAt) &&
+        request.resource.data.ledgerVersion == 1 &&
+        (!("date" in request.resource.data) || request.resource.data.date is string) &&
+        (!("shiftId" in request.resource.data) || request.resource.data.shiftId is string) &&
+        (!("actorUid" in request.resource.data) || request.resource.data.actorUid == null || request.resource.data.actorUid is string) &&
+        (!("previousPayoutUids" in request.resource.data) || request.resource.data.previousPayoutUids is list) &&
+        (!("nextPayoutUids" in request.resource.data) || request.resource.data.nextPayoutUids is list) &&
+        (!("removedPayoutUids" in request.resource.data) || request.resource.data.removedPayoutUids is list) &&
+        (!("previousPayoutCount" in request.resource.data) || request.resource.data.previousPayoutCount is int) &&
+        (!("nextPayoutCount" in request.resource.data) || request.resource.data.nextPayoutCount is int) &&
+        (!("tempStaff" in request.resource.data) || request.resource.data.tempStaff is map) &&
+        (!("targetUser" in request.resource.data) || request.resource.data.targetUser is map) &&
+        (!("migratedDates" in request.resource.data) || request.resource.data.migratedDates is list) &&
+        (!("migratedLedgerDates" in request.resource.data) || request.resource.data.migratedLedgerDates is list) &&
+        (!("migratedLegacyTipDates" in request.resource.data) || request.resource.data.migratedLegacyTipDates is list) &&
+        (!("updatedShiftDates" in request.resource.data) || request.resource.data.updatedShiftDates is list) &&
+        (!("collisionDates" in request.resource.data) || request.resource.data.collisionDates is list);
     }
 
     // Users collection
@@ -16,9 +303,9 @@ service cloud.firestore {
       // Enforce safe defaults on self-registration - prevents SDK-level role elevation.
       allow create: if request.auth != null &&
         request.auth.uid == uid &&
-        request.resource.data.role == "unassigned" &&
-        request.resource.data.status == "pending";
-      allow update, delete: if isAdmin();
+        validSelfProfileCreate(uid);
+      allow update: if isAdmin() && validUserProfile(uid);
+      allow delete: if isAdmin();
     }
 
     // Minimal public username lookup. This avoids exposing full user profiles
@@ -26,43 +313,52 @@ service cloud.firestore {
     match /usernames/{username} {
       allow read: if true;
       allow create: if request.auth != null &&
-        request.resource.data.uid == request.auth.uid;
+        validUsernameMapping();
       allow update, delete: if isAdmin();
     }
 
     // Shifts
     match /shifts/{shiftId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && validShift(shiftId);
+      allow delete: if isAdmin();
     }
 
     // Canonical payout ledger. Employees can read only their own exact entry doc.
     match /payouts/{shiftDate} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && validPayoutMeta(shiftDate);
+      allow delete: if isAdmin();
 
       match /entries/{uid} {
         allow get: if request.auth != null &&
           (request.auth.uid == uid || isAdmin());
         allow list: if isAdmin();
-        allow write: if isAdmin();
+        allow create, update: if isAdmin() && validPayoutEntry(shiftDate, uid);
+        allow delete: if isAdmin();
       }
     }
 
     // Per-user tip data - employees read-only; only admins write.
     // Legacy data remains readable during migration, but new closeout writes use /payouts.
-    match /users/{userId}/tips/{document=**} {
+    match /users/{userId}/tips/{tipDate} {
       allow read: if request.auth != null &&
         (request.auth.uid == userId || isAdmin());
-      allow write: if isAdmin();
+      allow create, update: if isAdmin() && validLegacyTip(userId, tipDate);
+      allow delete: if isAdmin();
     }
 
     // Unregistered (temporary) staff - admin-only, explicit rule prevents silent catch-all dependence.
-    match /unregisteredStaff/{document=**} {
-      allow read, write: if isAdmin();
+    match /unregisteredStaff/{uid} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && validTempStaff(uid);
+      allow delete: if isAdmin();
     }
 
     // Money-changing actions append immutable audit events.
     match /auditEvents/{eventId} {
-      allow read, create: if isAdmin();
+      allow read: if isAdmin();
+      allow create: if isAdmin() && validAuditEvent();
       allow update, delete: if false;
     }
 

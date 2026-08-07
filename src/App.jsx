@@ -26,7 +26,7 @@ function InlineLoading({ label = "Loading..." }) {
 
 function App() {
   const { user, loading } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" && user?.status === "active";
   const [baseDate, setBaseDate] = useState(new Date());
   const [weekData, setWeekData] = useState(null);
   const [currentWeekDates, setCurrentWeekDates] = useState([]);
@@ -172,8 +172,7 @@ function App() {
     return <Login />;
   }
 
-  // Admins go directly to their own central panel. Some legacy admin
-  // profiles may not have an explicit active status yet.
+  // Admins need an active profile before they can access manager workflows.
   if (isAdmin) {
     return (
       <Suspense fallback={<InlineLoading label="Loading admin workspace..." />}>

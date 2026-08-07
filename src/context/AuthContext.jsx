@@ -26,14 +26,15 @@ export const AuthProvider = ({ children }) => {
 
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
-                // Fetch role and status from Firestore
-                let role = "employee"; // default fallback
-                let status = "active"; // default fallback
+                // Profile state is the authorization source of truth. Missing
+                // or unreadable state must not become an active employee.
+                let role = "unassigned";
+                let status = "profile_error";
                 try {
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
-                        role = userDoc.data().role || "employee";
-                        status = userDoc.data().status || "active";
+                        role = userDoc.data().role || "unassigned";
+                        status = userDoc.data().status || "pending";
                     } else if (registrationInProgressRef.current) {
                         role = "unassigned";
                         status = "pending";
