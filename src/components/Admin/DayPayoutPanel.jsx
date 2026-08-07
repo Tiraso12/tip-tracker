@@ -326,6 +326,20 @@ function DayPayoutPanel({ date, summary, status, loading }) {
                     {/* Summary bar */}
                     <AuditSummary summary={summary} />
 
+                    {/* Reconciliation */}
+                    {summary.payoutReconciliation && !summary.payoutReconciliation.ok ? (
+                        <div className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
+                            <h4 className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-2">
+                                Reconciliation Warning
+                            </h4>
+                            <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
+                                {summary.payoutReconciliation.messages.map((message, i) => (
+                                    <li key={i}>{message}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
+
                     {/* Validations */}
                     {summary.validations && summary.validations.length > 0 ? (
                         <div className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">

@@ -29,6 +29,8 @@ const emptyRoleGroups = () => ({
 });
 
 const toMoney = (value) => Number(value) || 0;
+const r2 = (value) => Math.round((toMoney(value) + Number.EPSILON) * 100) / 100;
+const RECONCILIATION_TOLERANCE = 0.05;
 
 export function payoutLedgerMetaRef(db, date) {
     return doc(db, PAYOUT_LEDGER_COLLECTION, date);
@@ -159,6 +161,66 @@ export function attachLedgerPayoutsToSummary(summary, entries = []) {
         payouts: {
             roleGrouped: groupLedgerEntriesForSummary(entries),
         },
+        payoutReconciliation: reconcilePayoutLedger({ summary, entries }),
+    };
+}
+
+export function getLedgerStaffTotal(entries = []) {
+    return r2(entries.reduce((sum, entry) => (
+        sum + (entry.total === undefined
+            ? toMoney(entry.tips) + toMoney(entry.gratuity) + toMoney(entry.cash)
+            : toMoney(entry.total))
+    ), 0));
+}
+
+export function getExternalFeeTotal(summary = {}) {
+    const allocations = summary.allocations || {};
+
+    return r2(
+        toMoney(allocations.doorCTPAllocation) +
+        toMoney(allocations.doorGRTAllocation) +
+        toMoney(allocations.peCoordinatorGRT) +
+        toMoney(allocations.houseAllocation)
+    );
+}
+
+export function reconcilePayoutLedger({ summary, entries = [], tolerance = RECONCILIATION_TOLERANCE } = {}) {
+    const balances = summary?.balances || {};
+    const totalAvailable = r2(balances.totalAvailable);
+    const totalDistributed = r2(balances.totalDistributed);
+    const hasBalanceFields = balances.totalAvailable !== undefined && balances.totalDistributed !== undefined;
+    const overallBalance = r2(balances.overallBalance !== undefined
+        ? balances.overallBalance
+        : totalAvailable - totalDistributed);
+    const externalFees = getExternalFeeTotal(summary);
+    const expectedStaffTotal = r2(totalDistributed - externalFees);
+    const ledgerStaffTotal = getLedgerStaffTotal(entries);
+    const ledgerStaffBalance = r2(expectedStaffTotal - ledgerStaffTotal);
+    const messages = [];
+
+    if (!hasBalanceFields) {
+        messages.push("Shift summary is missing totalAvailable or totalDistributed.");
+    }
+
+    if (Math.abs(overallBalance) > tolerance) {
+        messages.push(`Available money does not reconcile with distributed money. Difference: ${overallBalance.toFixed(2)}.`);
+    }
+
+    if (Math.abs(ledgerStaffBalance) > tolerance) {
+        messages.push(`Payout ledger does not reconcile with expected staff payouts. Difference: ${ledgerStaffBalance.toFixed(2)}.`);
+    }
+
+    return {
+        ok: messages.length === 0,
+        tolerance,
+        totalAvailable,
+        totalDistributed,
+        overallBalance,
+        externalFees,
+        expectedStaffTotal,
+        ledgerStaffTotal,
+        ledgerStaffBalance,
+        messages,
     };
 }
 

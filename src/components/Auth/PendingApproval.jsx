@@ -5,6 +5,7 @@ import { Button, Card } from '../ui';
 const PendingApproval = () => {
     const { user, logout } = useAuth();
     const isInactive = user?.status === 'inactive';
+    const isProfileError = user?.status === 'profile_error';
 
     return (
         <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-[var(--color-bg)]">
@@ -24,17 +25,21 @@ const PendingApproval = () => {
                     </div>
 
                     <h1 className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
-                        {isInactive ? 'Account Inactive' : 'Account Pending'}
+                        {isProfileError ? 'Account Unavailable' : isInactive ? 'Account Inactive' : 'Account Pending'}
                     </h1>
 
                     <p className="mt-3 text-sm text-[var(--color-ink-soft)] leading-relaxed">
-                        {isInactive
+                        {isProfileError
+                            ? 'Your account profile could not be verified. Log out and try again, or contact your manager.'
+                            : isInactive
                             ? 'Your account is currently inactive. Contact your manager if you need access restored.'
                             : 'Your account has been created, but it needs to be approved by an administrator before you can access your dashboard.'}
                     </p>
 
                     <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
-                        {isInactive
+                        {isProfileError
+                            ? 'Access is blocked until the profile check succeeds.'
+                            : isInactive
                             ? 'You can log out and check back after your account is reactivated.'
                             : 'Check back later or contact your manager.'}
                     </p>

@@ -123,12 +123,22 @@ function saveWithFakeStore(store, options = {}) {
                 tips: 120,
                 gratuity: 40,
                 cash: 20,
-                total: 160,
+                total: 180,
             },
         },
         summary: {
-            balances: { overallBalance: 0 },
-            payouts: { roleGrouped: { servers: [{ uid: "serverUid", total: 160 }] } },
+            allocations: {
+                doorCTPAllocation: 0,
+                doorGRTAllocation: 0,
+                peCoordinatorGRT: 0,
+                houseAllocation: 0,
+            },
+            balances: {
+                totalAvailable: 180,
+                totalDistributed: 180,
+                overallBalance: 0,
+            },
+            payouts: { roleGrouped: { servers: [{ uid: "serverUid", total: 180 }] } },
         },
         realEmployeeUids: new Set(["serverUid"]),
         updatedBy: "adminUid",
@@ -191,6 +201,7 @@ test("saves closed shift, canonical ledger, removed cleanup, flags, and audit in
     assert.deepEqual(audit.previousPayoutUids, ["removedUid"]);
     assert.deepEqual(audit.nextPayoutUids, ["serverUid"]);
     assert.deepEqual(audit.removedPayoutUids, ["removedUid"]);
+    assert.equal(result.payoutReconciliation.ok, true);
 });
 
 test("failed batch commit leaves all money state unchanged", async () => {
@@ -237,6 +248,61 @@ test("missing history flag update rejects the batch before payout state changes"
     await assert.rejects(
         () => saveWithFakeStore(store),
         /missing document for update/
+    );
+
+    assert.deepEqual(Object.fromEntries(store.docs), before);
+});
+
+test("unreconciled closeout rejects before writing money state", async () => {
+    const store = new FakeStore({
+        "users/serverUid": { uid: "serverUid", role: "server", status: "active" },
+    });
+    const before = clone(Object.fromEntries(store.docs));
+
+    await assert.rejects(
+        () => saveClosedShiftAtomically({
+            db: {},
+            date: "2026-05-29",
+            teams: [{
+                teamId: "team-1",
+                members: [{ uid: "serverUid", name: "Server One", role: "server", points: 1 }],
+                pools: {},
+            }],
+            barTeam: { members: [], pools: {} },
+            runners: [],
+            payouts: {
+                serverUid: {
+                    name: "Server One",
+                    role: "server",
+                    tips: 120,
+                    gratuity: 40,
+                    cash: 20,
+                    total: 160,
+                },
+            },
+            summary: {
+                allocations: {
+                    doorCTPAllocation: 0,
+                    doorGRTAllocation: 0,
+                    peCoordinatorGRT: 0,
+                    houseAllocation: 0,
+                },
+                balances: {
+                    totalAvailable: 200,
+                    totalDistributed: 200,
+                    overallBalance: 0,
+                },
+            },
+            realEmployeeUids: new Set(["serverUid"]),
+            updatedBy: "adminUid",
+            now: "2026-05-30T02:00:00.000Z",
+            operationId: "closeout-operation",
+            refs: fakeRefs,
+            batchFactory: () => new FakeBatch(store),
+            readShift: async (shiftRef) => snapshot(store.get(shiftRef.path)),
+            readPayoutEntries: async () => store.payoutEntries("2026-05-29"),
+        }),
+        /Payout reconciliation failed/
     );
 
     assert.deepEqual(Object.fromEntries(store.docs), before);
