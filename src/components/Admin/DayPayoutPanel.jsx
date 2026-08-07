@@ -3,6 +3,8 @@ import { generateShiftReport } from "../../utils/pdfExport";
 import { Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
 
 const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+// singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
+const plural = (count, one, many) => (count === 1 ? one : many);
 const getNonCashPayoutTotal = (payout = {}) => (Number(payout.ctp) || 0) + (Number(payout.grt) || 0);
 
 function StatColumn({ label, children }) {
@@ -178,7 +180,7 @@ function PayoutMobileCards({ summary }) {
                                                     {p.name}
                                                 </h4>
                                                 <p className="mt-1 text-xs text-[var(--color-ink-soft)]">
-                                                    {isRunner ? team : `${team} · ${p.points ?? 0} pts`}
+                                                    {isRunner ? team : `${team} · ${p.points ?? 0} ${plural(p.points ?? 0, 'pt', 'pts')}`}
                                                 </p>
                                             </div>
                                             <strong className="shrink-0 font-mono tabular-nums text-sm text-[var(--color-ink)]">

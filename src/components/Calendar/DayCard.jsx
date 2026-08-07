@@ -17,22 +17,33 @@ const fmt = (value) =>
     });
 
 function WeekCard({ data, total, hasPayout, roleLabel, title }) {
+    // An empty day collapses to a compact muted row rather than a full $0.00 card,
+    // so the days actually worked stand out at a glance.
+    if (!hasPayout) {
+        return (
+            <div className="h-full flex items-center justify-between gap-2 px-4 py-3 border border-dashed border-[var(--color-line)] bg-[var(--color-surface-muted)]/40 rounded-[var(--radius-md)]">
+                <span className="font-display text-sm font-medium tracking-tight text-[var(--color-ink-muted)]">
+                    {title}
+                </span>
+                <span className="text-xs text-[var(--color-ink-muted)]">No payout</span>
+            </div>
+        );
+    }
+
     return (
         <div
             className={
                 "h-full flex flex-col p-4 bg-[var(--color-surface)] border rounded-[var(--radius-md)] " +
                 "transition-colors duration-150 " +
-                (hasPayout
-                    ? "border-[var(--color-line)] hover:border-[var(--color-line-strong)]"
-                    : "border-dashed border-[var(--color-line)] bg-[var(--color-surface-muted)]/40")
+                "border-[var(--color-line)] hover:border-[var(--color-line-strong)]"
             }
         >
             <div className="flex items-start justify-between gap-2 mb-3">
-                <h3 className="font-display text-base font-medium tracking-tight text-[var(--color-ink)]">
+                <h3 className="min-w-0 truncate font-display text-base font-medium tracking-tight text-[var(--color-ink)]">
                     {title}
                 </h3>
                 {roleLabel ? (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-[var(--radius-xs)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                    <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-[var(--radius-xs)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
                         {roleLabel}
                     </span>
                 ) : null}

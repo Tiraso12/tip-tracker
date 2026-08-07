@@ -1,4 +1,4 @@
-# TipTracker
+# Tip Tracker
 
 A full-stack shift and tip distribution management system built for restaurant operations. Managers configure teams, enter shift financials, and the app automatically calculates individual payouts — pooling dining-room tips house-wide by points, handling contract gratuity, captain overrides, bar allocations, and runners — with every cent accounted for.
 

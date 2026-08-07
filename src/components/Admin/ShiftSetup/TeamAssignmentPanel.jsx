@@ -2,6 +2,9 @@ import React from 'react';
 import TeamDropZone from './TeamDropZone';
 import { RUNNER_FLAT_RATE } from '../../../utils/constants';
 
+// singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
+const plural = (count, one, many) => (count === 1 ? one : many);
+
 function TeamAssignmentPanel({
     teams,
     barTeam,
@@ -38,7 +41,7 @@ function TeamAssignmentPanel({
                 <div className="min-w-0">
                     <span className="text-[0.7rem] font-bold text-[var(--color-ink-muted)] uppercase tracking-[0.07em]">Restaurant Teams</span>
                     <div className="hidden max-[560px]:block mt-1 text-[0.72rem] text-[var(--color-ink-soft)]">
-                        {restaurantMemberCount} dining / {barTeam.members.length} bar / {runners.length} runners
+                        {restaurantMemberCount} dining / {barTeam.members.length} bar / {runners.length} {plural(runners.length, 'runner', 'runners')}
                     </div>
                 </div>
                 <div className="flex items-center gap-1.5">
