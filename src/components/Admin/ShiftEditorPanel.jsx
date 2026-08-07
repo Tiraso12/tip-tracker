@@ -460,8 +460,12 @@ function PointAdjustmentsPanel({
     );
 }
 
-function CalculatedPayoutReview({ review }) {
+function CalculatedPayoutReview({ review, poolAvailable }) {
     const { result, payoutRows, staffTotal } = review;
+    // The pool and the staff take-home read as two competing "totals"; the gap is the
+    // house/door cut the engine holds back from the pool. Show it as one small equation
+    // so the two numbers read as related, not contradictory.
+    const houseDoor = Math.max(0, (Number(poolAvailable) || 0) - staffTotal);
     const [showAllMobilePayouts, setShowAllMobilePayouts] = useState(false);
     const verificationPayout = payoutRows.find(payout => payout.role === "captain") || payoutRows[0];
     const reviewRoleLabels = {
@@ -478,7 +482,7 @@ function CalculatedPayoutReview({ review }) {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-[var(--color-accent)]/20 max-[560px]:flex-row max-[560px]:items-start max-[560px]:px-4 max-[560px]:py-3">
                 <div>
                     <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                        Calculated payout review
+                        Staff take-home
                     </div>
                     <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-accent)] max-[560px]:text-xl">
                         {fmtMoney(staffTotal)}
@@ -490,6 +494,24 @@ function CalculatedPayoutReview({ review }) {
                         {fmtMoney(result.balances?.overallBalance)}
                     </strong>
                 </div>
+            </div>
+
+            {/* Reconciliation: how the pool derives the staff take-home (pool − house/door). */}
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-5 py-3 border-b border-[var(--color-accent)]/15 text-center max-[560px]:px-4 max-[560px]:py-2.5">
+                <span className="inline-flex items-baseline gap-1.5">
+                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Pool available</span>
+                    <span className="font-mono tabular-nums text-sm text-[var(--color-ink)]">{fmtMoney(poolAvailable)}</span>
+                </span>
+                <span className="font-mono text-[var(--color-ink-muted)]">−</span>
+                <span className="inline-flex items-baseline gap-1.5">
+                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">House / door</span>
+                    <span className="font-mono tabular-nums text-sm text-[var(--color-ink)]">{fmtMoney(houseDoor)}</span>
+                </span>
+                <span className="font-mono text-[var(--color-ink-muted)]">=</span>
+                <span className="inline-flex items-baseline gap-1.5">
+                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Staff take-home</span>
+                    <span className="font-mono tabular-nums text-sm font-semibold text-[var(--color-accent)]">{fmtMoney(staffTotal)}</span>
+                </span>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-[var(--color-accent)]/15 max-[560px]:gap-x-5 max-[560px]:gap-y-2 max-[560px]:px-4 max-[560px]:py-2.5">
@@ -1193,13 +1215,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                                 onRunnerPayoutChange={updateRunnerPayout}
                             />
 
-                            {calculatedReview ? <CalculatedPayoutReview review={calculatedReview} /> : null}
+                            {calculatedReview ? <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} /> : null}
 
                             {/* Save row */}
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-2 max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
                                 <div className="hidden max-[560px]:flex items-center justify-between gap-3">
                                     <span className="text-[0.7rem] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                        Closeout total
+                                        Pool available
                                     </span>
                                     <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
                                         {fmtMoney(poolSummary.payoutPool)}
