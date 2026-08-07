@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "./shiftPersistence.js";
+import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids, stripPayoutsFromSummary } from "./shiftPersistence.js";
 
 test("builds a setup draft without payout data", () => {
     const teams = [
@@ -52,31 +52,71 @@ test("marks setup drafts that include autosaved closeout inputs", () => {
     assert.equal("summary" in draft, false);
 });
 
-test("builds a closed shift payload with payout data", () => {
+test("builds a closed shift payload without payout data", () => {
     const teams = [{ teamId: "team-1", members: [], pools: {} }];
     const barTeam = { members: [], pools: {} };
     const runners = [];
-    const payouts = { u1: { total: 125 } };
-    const summary = { balances: { overallBalance: 0 } };
+    const summary = {
+        balances: { overallBalance: 0 },
+        payouts: { roleGrouped: { servers: [{ uid: "u1", total: 125 }] } },
+    };
 
     const payload = buildClosedShiftPayload({
         date: "2026-05-22",
         teams,
         barTeam,
         runners,
-        payouts,
         summary,
         now: "2026-05-23T02:00:00.000Z",
+        operationId: "operation-one",
+        updatedBy: "adminUid",
     });
 
     assert.equal(payload.status, "closed");
     assert.deepEqual(payload.teams, teams);
     assert.deepEqual(payload.barTeam, barTeam);
     assert.deepEqual(payload.runners, runners);
-    assert.deepEqual(payload.payouts, payouts);
-    assert.deepEqual(payload.summary, summary);
+    assert.equal("payouts" in payload, false);
+    assert.equal("payouts" in payload.summary, false);
+    assert.deepEqual(payload.summary, { balances: { overallBalance: 0 } });
+    assert.equal(payload.firstClosedAt, "2026-05-23T02:00:00.000Z");
     assert.equal(payload.closedAt, "2026-05-23T02:00:00.000Z");
+    assert.equal(payload.lastRecalculatedAt, "2026-05-23T02:00:00.000Z");
     assert.equal(payload.updatedAt, "2026-05-23T02:00:00.000Z");
+    assert.equal(payload.updatedBy, "adminUid");
+    assert.equal(payload.operationId, "operation-one");
+});
+
+test("preserves first close time on recalculated closed shifts", () => {
+    const payload = buildClosedShiftPayload({
+        date: "2026-05-22",
+        teams: [],
+        barTeam: {},
+        runners: [],
+        summary: { balances: { overallBalance: 0 } },
+        now: "2026-05-24T02:00:00.000Z",
+        existingShift: {
+            firstClosedAt: "2026-05-23T02:00:00.000Z",
+            closedAt: "2026-05-23T02:00:00.000Z",
+        },
+        operationId: "operation-two",
+        updatedBy: "adminUid",
+    });
+
+    assert.equal(payload.firstClosedAt, "2026-05-23T02:00:00.000Z");
+    assert.equal(payload.closedAt, "2026-05-23T02:00:00.000Z");
+    assert.equal(payload.lastRecalculatedAt, "2026-05-24T02:00:00.000Z");
+});
+
+test("removes payout details from calculation summaries", () => {
+    const summary = {
+        allocations: { totalRunnerPay: 85 },
+        payouts: { roleGrouped: { runners: [{ uid: "runnerUid" }] } },
+    };
+
+    assert.deepEqual(stripPayoutsFromSummary(summary), {
+        allocations: { totalRunnerPay: 85 },
+    });
 });
 
 test("finds employees removed from a recalculated shift payout", () => {

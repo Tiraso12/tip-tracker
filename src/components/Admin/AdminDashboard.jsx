@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import DayPayoutPanel from "./DayPayoutPanel";
 import { Badge, Button } from "../ui";
 import { toDateKey } from "../../utils/dateUtils";
+import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -127,11 +128,14 @@ function AdminDashboard() {
         setDaySummary(null);
         setDayShiftStatus(null);
         try {
-            const shiftDoc = await getDoc(doc(db, "shifts", date));
+            const [shiftDoc, payoutEntries] = await Promise.all([
+                getDoc(doc(db, "shifts", date)),
+                fetchPayoutEntriesForDate(db, date),
+            ]);
             if (shiftDoc.exists()) {
                 const d = shiftDoc.data();
-                setDaySummary(d.summary || null);
-                setDayShiftStatus(d.status || (d.summary || d.payouts ? "closed" : "setup"));
+                setDaySummary(attachLedgerPayoutsToSummary(d.summary || null, payoutEntries));
+                setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
             }
         } catch (e) {
             console.error("Failed to fetch day payouts:", e);

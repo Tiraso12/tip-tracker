@@ -3,6 +3,7 @@ import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { doc, setDoc } from "firebase/firestore";
 import { calculateShift } from "../src/utils/engine.js";
 import { mapPayoutsForFirebase } from "../src/components/Admin/shiftEditorUtils.js";
+import { buildPayoutLedgerEntry, PAYOUT_LEDGER_VERSION } from "../src/utils/payoutLedger.js";
 import { buildClosedShiftPayload, buildShiftSetupDraft } from "../src/utils/shiftPersistence.js";
 
 const PROJECT_ID = getProjectId();
@@ -245,9 +246,10 @@ function buildSeedShifts(seedUsers) {
             teams: closedTeams,
             barTeam: closedBarTeam,
             runners: closedRunners,
-            payouts,
             summary,
             now: FIXED_NOW,
+            operationId: "seed-closeout-closed-shift",
+            updatedBy: seedUsers.admin.uid,
         }),
         payouts,
     };
@@ -281,19 +283,27 @@ async function seedFirestore(seedUsers) {
             await setDoc(doc(db, "unregisteredStaff", tempStaff.uid), tempStaff);
             await setDoc(doc(db, "shifts", SETUP_SHIFT_DATE), shifts.setup);
             await setDoc(doc(db, "shifts", CLOSED_SHIFT_DATE), shifts.closed);
+            await setDoc(doc(db, "payouts", CLOSED_SHIFT_DATE), {
+                date: CLOSED_SHIFT_DATE,
+                ledgerVersion: PAYOUT_LEDGER_VERSION,
+                updatedAt: FIXED_NOW,
+                updatedBy: seedUsers.admin.uid,
+                operationId: "seed-closeout-closed-shift",
+            });
 
             await Promise.all(Object.entries(shifts.payouts).map(([uid, payout]) =>
-                setDoc(doc(db, "users", uid, "tips", CLOSED_SHIFT_DATE), {
-                    gratuity: payout.gratuity,
-                    tip: payout.tips,
-                    cash: payout.cash,
-                    wineBonus: payout.wineBonus,
-                    points: payout.points || 0,
-                    total: payout.total,
-                    role: payout.role,
-                    shiftDate: CLOSED_SHIFT_DATE,
-                    updatedAt: FIXED_NOW,
-                })
+                setDoc(
+                    doc(db, "payouts", CLOSED_SHIFT_DATE, "entries", uid),
+                    buildPayoutLedgerEntry({
+                        date: CLOSED_SHIFT_DATE,
+                        uid,
+                        payout,
+                        operationId: "seed-closeout-closed-shift",
+                        updatedAt: FIXED_NOW,
+                        updatedBy: seedUsers.admin.uid,
+                        source: "seed",
+                    })
+                )
             ));
         });
     } finally {

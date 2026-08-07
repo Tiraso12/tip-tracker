@@ -4,6 +4,7 @@ import { db } from "../../config/firebase";
 import { getBiweeklyPeriod, getCurrentWeek, toDateKey } from "../../utils/dateUtils";
 import { generateMonthlyReport, generateWeeklyReport } from "../../utils/pdfExport";
 import { Button, Card, Select, Table, THead, TBody, TR, TH, TD } from "../ui";
+import { fetchPayoutEntriesForDates, ledgerEntriesToPayoutMap } from "../../utils/payoutLedger";
 
 const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
 const ROLE_LABELS = {
@@ -160,7 +161,10 @@ function AdminReportsPanel() {
             setLoading(true);
             try {
                 const q = query(collection(db, "shifts"), where("date", ">=", startStr), where("date", "<=", endStr));
-                const snap = await getDocs(q);
+                const [snap, payoutEntriesByDate] = await Promise.all([
+                    getDocs(q),
+                    fetchPayoutEntriesForDates(db, dateKeys),
+                ]);
                 const shiftMap = {};
                 snap.docs.forEach(d => {
                     shiftMap[d.id] = d.data();
@@ -168,6 +172,7 @@ function AdminReportsPanel() {
 
                 const list = dateKeys.map(key => {
                     const sd = shiftMap[key];
+                    const payouts = ledgerEntriesToPayoutMap(payoutEntriesByDate[key] || []);
                     let t = 0, g = 0, c = 0, rev = 0;
                     if (sd) {
                         rev = getShiftRevenue(sd);
@@ -176,18 +181,19 @@ function AdminReportsPanel() {
                             t = toMoney(dv.ctpTotal);
                             g = toMoney(dv.grtTotal);
                             c = toMoney(dv.baseTeamCash);
-                        } else if (sd.payouts) {
-                            Object.values(sd.payouts).forEach(p => {
-                                t += Number(p.tips) || 0;
-                                g += Number(p.gratuity) || 0;
-                                c += Number(p.cash) || 0;
-                            });
                         }
+                    }
+                    if (!sd?.summary?.derivedValues) {
+                        Object.values(payouts).forEach(p => {
+                            t += Number(p.tips) || 0;
+                            g += Number(p.gratuity) || 0;
+                            c += Number(p.cash) || 0;
+                        });
                     }
                     return {
                         date: key, tip: t, gratuity: g, cash: c,
                         revenue: rev,
-                        payouts: sd?.payouts || {}
+                        payouts,
                     };
                 });
                 setReportData(list);

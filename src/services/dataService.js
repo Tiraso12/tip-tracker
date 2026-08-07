@@ -1,5 +1,6 @@
 import { db } from "../config/firebase";
-import { doc, getDoc, setDoc, collection, getDocs, onSnapshot } from "firebase/firestore";
+import { getDoc, onSnapshot } from "firebase/firestore";
+import { EMPTY_EMPLOYEE_PAYOUT, ledgerEntryToEmployeeData, payoutLedgerEntryRef } from "../utils/payoutLedger";
 
 const DataService = {
     currentUserId: null,
@@ -9,13 +10,13 @@ const DataService = {
     },
 
     /**
-     * Helper to get collection reference for current user
+     * Helper to get the current user's payout ledger query
      */
     getCollection: () => {
         if (!DataService.currentUserId) {
             throw new Error("No user logged in");
         }
-        return collection(db, "users", DataService.currentUserId, "tips");
+        throw new Error("Use bounded payout ledger date reads");
     },
 
     /**
@@ -25,18 +26,18 @@ const DataService = {
      */
     getData: async (dateKey) => {
         try {
-            if (!DataService.currentUserId) return { gratuity: "", tip: "", cash: "" };
-            const docRef = doc(db, "users", DataService.currentUserId, "tips", dateKey);
+            if (!DataService.currentUserId) return { ...EMPTY_EMPLOYEE_PAYOUT };
+            const docRef = payoutLedgerEntryRef(db, dateKey, DataService.currentUserId);
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
-                return docSnap.data();
+                return ledgerEntryToEmployeeData({ uid: docSnap.id, ...docSnap.data() });
             } else {
-                return { gratuity: "", tip: "", cash: "" };
+                return { ...EMPTY_EMPLOYEE_PAYOUT };
             }
         } catch (error) {
             console.error("Error fetching data:", error);
-            return { gratuity: "", tip: "", cash: "" };
+            return { ...EMPTY_EMPLOYEE_PAYOUT };
         }
     },
 
@@ -67,13 +68,13 @@ const DataService = {
         if (!DataService.currentUserId) return () => { };
 
         dateKeys.forEach(key => {
-            const docRef = doc(db, "users", DataService.currentUserId, "tips", key);
+            const docRef = payoutLedgerEntryRef(db, key, DataService.currentUserId);
             const unsub = onSnapshot(docRef, (doc) => {
                 if (doc.exists()) {
-                    onUpdate(key, doc.data());
+                    onUpdate(key, ledgerEntryToEmployeeData({ uid: doc.id, ...doc.data() }));
                 } else {
                     // Document might have been deleted or not exist yet
-                    onUpdate(key, { gratuity: "", tip: "", cash: "" });
+                    onUpdate(key, { ...EMPTY_EMPLOYEE_PAYOUT });
                 }
             }, (error) => {
                 console.error("Error subscribing to tip document:", error);
@@ -91,26 +92,15 @@ const DataService = {
     },
 
     /**
-     * Fetch ALL data (for summaries)
+     * Legacy whole-history helper. Employee payout reads should stay date-bounded.
      * @returns {Promise<Object>}
      */
     getAllData: async () => {
-        try {
-            if (!DataService.currentUserId) return {};
-            const querySnapshot = await getDocs(DataService.getCollection());
-            const result = {};
-            querySnapshot.forEach((doc) => {
-                result[doc.id] = doc.data();
-            });
-            return result;
-        } catch (error) {
-            console.error("Error getting all documents: ", error);
-            return {};
-        }
+        return {};
     },
 
     /**
-     * Subscribe to all tip documents for the current user.
+     * Legacy whole-history subscription. Employee payout reads should stay date-bounded.
      * @param {(data: Object) => void} onUpdate
      * @param {(error: Error) => void} onError
      * @returns {Function}
@@ -118,20 +108,9 @@ const DataService = {
     subscribeToAllData: (onUpdate, onError) => {
         if (!DataService.currentUserId) return () => { };
 
-        return onSnapshot(
-            DataService.getCollection(),
-            (querySnapshot) => {
-                const result = {};
-                querySnapshot.forEach((doc) => {
-                    result[doc.id] = doc.data();
-                });
-                onUpdate(result);
-            },
-            (error) => {
-                console.error("Error subscribing to tip documents:", error);
-                if (onError) onError(error);
-            }
-        );
+        onUpdate({});
+        if (onError) onError(new Error("Use bounded payout ledger date subscriptions"));
+        return () => { };
     },
 
     /**
@@ -143,7 +122,9 @@ const DataService = {
     saveData: async (dateKey, data) => {
         try {
             if (!DataService.currentUserId) throw new Error("No user logged in");
-            await setDoc(doc(db, "users", DataService.currentUserId, "tips", dateKey), data);
+            void dateKey;
+            void data;
+            throw new Error("Payout ledger entries are created by admin closeout only");
         } catch (error) {
             console.error("Error saving document: ", error);
             throw error;

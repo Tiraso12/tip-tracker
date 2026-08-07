@@ -7,9 +7,11 @@ import {
     initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import {
+    collection,
     deleteDoc,
     doc,
     getDoc,
+    getDocs,
     setDoc,
     updateDoc,
 } from "firebase/firestore";
@@ -48,8 +50,14 @@ test.beforeEach(async () => {
             role: "server",
             status: "active",
         });
-        await setDoc(doc(db, "users/employeeUid/tips/2026-05-29"), {
-            tip: 100,
+        await setDoc(doc(db, "payouts/2026-05-29"), {
+            date: "2026-05-29",
+            ledgerVersion: 1,
+        });
+        await setDoc(doc(db, "payouts/2026-05-29/entries/employeeUid"), {
+            uid: "employeeUid",
+            date: "2026-05-29",
+            tips: 100,
             gratuity: 25,
             cash: 10,
             total: 135,
@@ -84,21 +92,27 @@ test("public username lookup is readable, but private user data is not readable 
     await assertSucceeds(getDoc(doc(db, "usernames/employee")));
     await assertFails(getDoc(doc(db, "users/employeeUid")));
     await assertFails(getDoc(doc(db, "users/employeeUid/tips/2026-05-29")));
+    await assertFails(getDoc(doc(db, "payouts/2026-05-29/entries/employeeUid")));
 });
 
-test("an employee can read their own profile and tips only", async () => {
+test("an employee can read their own profile and payout ledger entries only", async () => {
     const db = authedDb("employeeUid");
 
     await assertSucceeds(getDoc(doc(db, "users/employeeUid")));
     await assertSucceeds(getDoc(doc(db, "users/employeeUid/tips/2026-05-29")));
+    await assertSucceeds(getDoc(doc(db, "payouts/2026-05-29/entries/employeeUid")));
+    await assertSucceeds(getDoc(doc(db, "payouts/2026-05-30/entries/employeeUid")));
     await assertFails(getDoc(doc(db, "users/otherEmployeeUid")));
     await assertFails(getDoc(doc(db, "users/otherEmployeeUid/tips/2026-05-29")));
+    await assertFails(getDoc(doc(db, "payouts/2026-05-29/entries/otherEmployeeUid")));
+    await assertFails(getDocs(collection(db, "payouts/2026-05-29/entries")));
 });
 
 test("an employee cannot write payouts, shifts, temporary staff, or self-update role data", async () => {
     const db = authedDb("employeeUid");
 
     await assertFails(setDoc(doc(db, "users/employeeUid/tips/2026-05-30"), { total: 999 }));
+    await assertFails(setDoc(doc(db, "payouts/2026-05-30/entries/employeeUid"), { total: 999 }));
     await assertFails(setDoc(doc(db, "shifts/2026-05-30"), { status: "closed" }));
     await assertFails(setDoc(doc(db, "unregisteredStaff/tempOne"), { name: "Temp One" }));
     await assertFails(updateDoc(doc(db, "users/employeeUid"), { role: "admin" }));
@@ -149,16 +163,36 @@ test("username mappings can be created by their owner but not overwritten by a r
     }));
 });
 
-test("an admin can manage users, shifts, payouts, and temporary staff", async () => {
+test("an admin can manage users, shifts, payout ledger entries, and temporary staff", async () => {
     const db = authedDb("adminUid");
 
     await assertSucceeds(getDoc(doc(db, "users/employeeUid")));
     await assertSucceeds(updateDoc(doc(db, "users/employeeUid"), { status: "inactive" }));
     await assertSucceeds(setDoc(doc(db, "shifts/2026-05-30"), { date: "2026-05-30", status: "closed" }));
     await assertSucceeds(setDoc(doc(db, "users/employeeUid/tips/2026-05-30"), { total: 150 }));
+    await assertSucceeds(setDoc(doc(db, "payouts/2026-05-30"), { date: "2026-05-30", ledgerVersion: 1 }));
+    await assertSucceeds(setDoc(doc(db, "payouts/2026-05-30/entries/employeeUid"), {
+        uid: "employeeUid",
+        date: "2026-05-30",
+        total: 150,
+    }));
     await assertSucceeds(setDoc(doc(db, "unregisteredStaff/tempOne"), { name: "Temp One" }));
     await assertSucceeds(deleteDoc(doc(db, "unregisteredStaff/tempOne")));
 
-    const tipDoc = await getDoc(doc(db, "users/employeeUid/tips/2026-05-30"));
-    assert.equal(tipDoc.data().total, 150);
+    const payoutDoc = await getDoc(doc(db, "payouts/2026-05-30/entries/employeeUid"));
+    assert.equal(payoutDoc.data().total, 150);
+});
+
+test("admin audit events are create-only", async () => {
+    const db = authedDb("adminUid");
+    const auditRef = doc(db, "auditEvents/operationOne");
+
+    await assertSucceeds(setDoc(auditRef, {
+        type: "shift_closed",
+        operationId: "operationOne",
+        date: "2026-05-30",
+    }));
+
+    await assertFails(updateDoc(auditRef, { type: "shift_recalculated" }));
+    await assertFails(deleteDoc(auditRef));
 });
