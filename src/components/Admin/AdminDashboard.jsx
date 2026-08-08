@@ -4,8 +4,10 @@ import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRailLanding from "./DayRailLanding";
+import BarDatePill from "./BarDatePill";
 import { Badge, Button } from "../ui";
 import { toDateKey } from "../../utils/dateUtils";
+import { getLandingStage } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
@@ -103,6 +105,7 @@ function AdminDashboard() {
     const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
     const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor" | "reports"
     const [daySummary, setDaySummary] = useState(null);
+    const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
     const [navCollapsed, setNavCollapsed] = useState(true);
@@ -129,6 +132,7 @@ function AdminDashboard() {
     const fetchDayPayouts = useCallback(async (date) => {
         setDayLoading(true);
         setDaySummary(null);
+        setDayLineup(null);
         setDayShiftStatus(null);
         try {
             const [shiftDoc, payoutEntries] = await Promise.all([
@@ -138,6 +142,13 @@ function AdminDashboard() {
             if (shiftDoc.exists()) {
                 const d = shiftDoc.data();
                 setDaySummary(attachLedgerPayoutsToSummary(d.summary || null, payoutEntries));
+                // Lift the saved floor plan (already returned here) so the setup
+                // landing can confirm the lineup team-by-team without another fetch.
+                setDayLineup({
+                    teams: Array.isArray(d.teams) ? d.teams : [],
+                    barTeam: d.barTeam || { members: [] },
+                    runners: Array.isArray(d.runners) ? d.runners : [],
+                });
                 setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
             }
         } catch (e) {
@@ -192,41 +203,22 @@ function AdminDashboard() {
     // The sidebar treats "editor" as still belonging to the Shifts section.
     const sidebarValue = activeTab === "editor" ? "shifts" : activeTab;
 
+    // The desktop <h1> mirrors where the day actually is, instead of always
+    // reading "Pay out" (which contradicted a fresh/setup day). The date now
+    // lives once in the app-bar Bar Date pill, so there is no date band here.
+    const SHIFTS_STAGE_TITLE = {
+        "build-floor": "Set up the floor",
+        settle: "Confirm the floor",
+        closed: "Pay out",
+    };
+
     const headerForTab = () => {
         if (activeTab === "shifts") {
             return {
                 eyebrow: "Shifts",
-                title: "Pay out",
+                title: SHIFTS_STAGE_TITLE[getLandingStage(dayShiftStatus)] || "Shifts",
                 subtitle: null,
-                actions: (
-                    <div className="flex items-center gap-2 max-[560px]:w-full">
-                        <button
-                            type="button"
-                            onClick={() => changeDate(-1)}
-                            title="Previous day"
-                            aria-label="Previous day"
-                            className="h-10 w-10 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-                        </button>
-                        <input
-                            type="date"
-                            value={selectedDate}
-                            aria-label="Select shift date"
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            className="h-10 px-3 text-sm font-mono tabular-nums bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-line)] rounded-[var(--radius-sm)] hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15 transition-colors max-[560px]:min-w-0 max-[560px]:flex-1"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => changeDate(1)}
-                            title="Next day"
-                            aria-label="Next day"
-                            className="h-10 w-10 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                        </button>
-                    </div>
-                ),
+                actions: null,
             };
         }
         if (activeTab === "editor") {
@@ -273,12 +265,23 @@ function AdminDashboard() {
                     >
                         <MenuIcon />
                     </button>
-                    <span className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
+                    {/* Brand is kept for desktop coherence but dropped on the
+                        mobile admin bar - there the Bar Date + Log Out are enough. */}
+                    <span className="hidden sm:inline font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
                         Tip Tracker
                     </span>
-                    <Badge tone="accent">Admin</Badge>
+                    <span className="hidden sm:inline">
+                        <Badge tone="accent">Admin</Badge>
+                    </span>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3">
+                    {activeTab === "shifts" ? (
+                        <BarDatePill
+                            selectedDate={selectedDate}
+                            onSelectDate={setSelectedDate}
+                            onChangeDate={changeDate}
+                        />
+                    ) : null}
                     {user?.username ? (
                         <span className="hidden sm:inline text-xs text-[var(--color-ink-muted)]">
                             {user.username}
@@ -338,7 +341,11 @@ function AdminDashboard() {
                 <main className="flex-1 min-w-0 px-4 sm:px-8 py-5 lg:py-10">
                     <div className="max-w-6xl mx-auto">
                         <header className={
-                            "flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
+                            // On mobile Shifts the date now lives in the app-bar pill and
+                            // the title is desktop-only, so the whole content header is
+                            // hidden there - the Day Rail sits flush under the app bar.
+                            (activeTab === "shifts" ? "hidden sm:flex " : "flex ") +
+                            "flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
                             (activeTab === "editor" || activeTab === "shifts" ? "pb-3 mb-3 sm:pb-6 sm:mb-6" : "pb-4 sm:pb-6 mb-4 sm:mb-6")
                         }>
                             <div className={
@@ -371,6 +378,7 @@ function AdminDashboard() {
                             <DayRailLanding
                                 date={selectedDate}
                                 summary={daySummary}
+                                lineup={dayLineup}
                                 status={dayShiftStatus}
                                 loading={dayLoading}
                                 onBuildFloor={() => enterEditor("floor")}

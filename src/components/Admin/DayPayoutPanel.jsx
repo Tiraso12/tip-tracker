@@ -5,6 +5,10 @@ import { Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
 const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 // singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
 const plural = (count, one, many) => (count === 1 ? one : many);
+// Display-only relabel of the engine's internal breakdown keys into captain
+// vocabulary (the engine key stays "Manual Split"; only the shown label changes).
+const RUNNER_SOURCE_LABELS = { "Manual Split": "Runner pay" };
+const runnerSourceLabel = (src) => RUNNER_SOURCE_LABELS[src] || src;
 const getNonCashPayoutTotal = (payout = {}) => (Number(payout.ctp) || 0) + (Number(payout.grt) || 0);
 
 function StatColumn({ label, children }) {
@@ -169,7 +173,7 @@ function PayoutMobileCards({ summary }) {
                                 const total = fmt(isRunner ? p.payoutAmount : getNonCashPayoutTotal(p));
                                 const team = isRunner ? "Runner" : p.teamId ? p.teamId.replace("team-", "Team ") : "Bar";
                                 const detail = isRunner
-                                    ? Object.entries(p.breakdown || {}).map(([src, val]) => `${src}: ${fmt(val)}`).join(" · ")
+                                    ? Object.entries(p.breakdown || {}).map(([src, val]) => `${runnerSourceLabel(src)}: ${fmt(val)}`).join(" · ")
                                     : `CTP ${fmt(p.ctp)} · GRT ${fmt(p.grt)} · Cash ${fmt(p.cash)}`;
 
                                 return (
@@ -238,7 +242,7 @@ function PayoutTable({ summary }) {
                                     {isRunner ? (
                                         <td colSpan={4} className="px-4 py-3 text-xs text-[var(--color-ink-muted)] font-mono tabular-nums">
                                             {Object.entries(p.breakdown || {})
-                                                .map(([src, val]) => `${src}: ${fmt(val)}`)
+                                                .map(([src, val]) => `${runnerSourceLabel(src)}: ${fmt(val)}`)
                                                 .join("  ·  ")}
                                         </td>
                                     ) : (

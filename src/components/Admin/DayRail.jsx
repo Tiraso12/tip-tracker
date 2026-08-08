@@ -17,10 +17,7 @@ function StateDot({ state, index }) {
     if (state === "end") {
         return (
             <span
-                className={
-                    "inline-flex h-4 w-4 items-center justify-center rounded-[3px] rotate-45 border " +
-                    (index ? "border-[var(--color-line-strong)]" : "border-[var(--color-line-strong)]")
-                }
+                className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] rotate-45 border border-[var(--color-line-strong)]"
                 aria-hidden="true"
             />
         );
@@ -47,7 +44,7 @@ function DayRail({ steps, onStepClick }) {
             className="flex items-stretch gap-1.5 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
             {steps.map((step) => {
-                const clickable = step.clickable && step.state !== "active";
+                const clickable = step.clickable;
                 return (
                     <button
                         key={step.key}
@@ -56,7 +53,7 @@ function DayRail({ steps, onStepClick }) {
                         disabled={!clickable}
                         aria-current={step.state === "active" ? "step" : undefined}
                         className={
-                            "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-2 text-left transition-colors sm:justify-start sm:px-2.5 " +
+                            "flex min-h-[44px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] px-1.5 py-2 text-left transition-colors sm:justify-start sm:px-2.5 " +
                             (step.state === "active"
                                 ? "bg-[var(--color-accent-soft)] "
                                 : clickable
@@ -71,7 +68,7 @@ function DayRail({ steps, onStepClick }) {
                                     "truncate text-[11px] font-medium sm:text-[12px] " +
                                     (step.state === "active"
                                         ? "text-[var(--color-accent)]"
-                                        : step.state === "pending"
+                                        : step.state === "pending" || step.state === "end"
                                             ? "text-[var(--color-ink-muted)]"
                                             : "text-[var(--color-ink)]")
                                 }

@@ -82,6 +82,15 @@ test("landing rail on a closed day shows every step done", () => {
         review: "done",
         payout: "done",
     });
+    // The day is finished and the review lives in the payout panel below, so all
+    // four identical "done" checks must read as inert rather than have two of them
+    // silently navigate (mismatched affordance fix).
+    assert.deepEqual(clickableByKey(steps), {
+        floor: false,
+        settle: false,
+        review: false,
+        payout: false,
+    });
 });
 
 test("in-editor rail at Floor: later steps pending until floor is saved", () => {
