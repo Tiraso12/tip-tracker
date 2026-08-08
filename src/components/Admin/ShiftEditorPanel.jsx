@@ -4,7 +4,9 @@ import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import DayRail from "./DayRail";
+import ScrollRail from "./ScrollRail";
 import { getRailSteps } from "../../utils/dayFlow";
+import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleStatus";
 import { Button, Card } from "../ui";
 import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
 import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
@@ -100,7 +102,21 @@ const RailPill = memo(function RailPill({ group, selected, onSelect }) {
                 {group.poolLabel === "Pay" ? "Pay " : ""}${Math.round(group.pool).toLocaleString()}
             </span>
             <span
-                className={"h-[7px] w-[7px] rounded-full flex-none " + (group.entered ? "bg-[var(--color-success)]" : "bg-[var(--color-line-strong)]")}
+                className={
+                    "h-[7px] w-[7px] rounded-full flex-none " +
+                    (group.status === "funded"
+                        ? "bg-[var(--color-success)]"
+                        : group.status === "sales-only"
+                            ? "bg-[var(--color-warning)]"
+                            : "bg-[var(--color-line-strong)]")
+                }
+                title={
+                    group.status === "funded"
+                        ? "Money in"
+                        : group.status === "sales-only"
+                            ? "Sales entered - tip pool still $0"
+                            : "No money entered yet"
+                }
                 aria-hidden="true"
             />
         </button>
@@ -126,13 +142,21 @@ function CloseoutEntryPanel({ group, children }) {
                     <span className="font-mono tabular-nums text-[12.5px] text-[var(--color-ink-soft)] whitespace-nowrap">
                         {group.poolLabel} <b className="text-[var(--color-ink)] font-semibold">{fmtMoney(group.pool)}</b>
                     </span>
-                    {group.entered ? (
+                    {group.status === "funded" ? (
                         <span
                             className="h-[18px] w-[18px] rounded-full bg-[var(--color-success)] text-white inline-flex items-center justify-center text-[11px] leading-none"
-                            title="Data entered"
-                            aria-label="Data entered"
+                            title="Money in"
+                            aria-label="Money in"
                         >
                             ✓
+                        </span>
+                    ) : group.status === "sales-only" ? (
+                        <span
+                            className="h-[18px] w-[18px] rounded-full bg-[var(--color-warning)] text-white inline-flex items-center justify-center text-[11px] font-bold leading-none"
+                            title="Sales entered - tip pool still $0"
+                            aria-label="Sales entered, tip pool still $0"
+                        >
+                            !
                         </span>
                     ) : null}
                 </div>
@@ -388,7 +412,7 @@ function PointSplitDisclosure({ title, members, defaultPoints = 0, emptyMessage,
     );
 }
 
-function CalculatedPayoutReview({ review, poolAvailable }) {
+function CalculatedPayoutReview({ review, poolAvailable, availableCash = 0 }) {
     const { result, payoutRows, staffTotal } = review;
     // The pool and the staff take-home read as two competing "totals"; the gap is the
     // house/door cut the engine holds back from the pool. Show it as one small equation
@@ -427,7 +451,7 @@ function CalculatedPayoutReview({ review, poolAvailable }) {
             {/* Reconciliation: how the pool derives the staff take-home (pool − house/door). */}
             <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-5 py-3 border-b border-[var(--color-accent)]/15 text-center max-[560px]:px-4 max-[560px]:py-2.5">
                 <span className="inline-flex items-baseline gap-1.5">
-                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Pool available</span>
+                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Available pool</span>
                     <span className="font-mono tabular-nums text-sm text-[var(--color-ink)]">{fmtMoney(poolAvailable)}</span>
                 </span>
                 <span className="font-mono text-[var(--color-ink-muted)]">−</span>
@@ -443,9 +467,12 @@ function CalculatedPayoutReview({ review, poolAvailable }) {
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-[var(--color-accent)]/15 max-[560px]:gap-x-5 max-[560px]:gap-y-2 max-[560px]:px-4 max-[560px]:py-2.5">
+                {/* Cash is money too, but it is distributed separately and must never fold
+                    into the pool total (CTP + GRT). Show the pool and cash as two clearly
+                    separated figures so "Available" never means two different numbers. */}
                 <SummaryMetric label="Employees" value={payoutRows.length.toLocaleString()} />
-                <SummaryMetric label="Available" value={fmtMoney(result.balances?.totalAvailable)} />
-                <SummaryMetric label="Distributed" value={fmtMoney(result.balances?.totalDistributed)} />
+                <SummaryMetric label="Available pool" value={fmtMoney(poolAvailable)} />
+                <SummaryMetric label="Available cash" value={fmtMoney(availableCash)} />
                 <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
             </div>
 
@@ -569,23 +596,34 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         };
     }, [teams, barTeam, runners]);
 
-    const hasBarCloseoutData = Object.values(barTeam.pools || {}).some(value => toMoney(value) > 0);
-
     // Descriptors for the switcher rail + entry panel: one entry per dining team, then Bar,
     // then Runners. Each carries the display name, roster sub-line, live pool, and whether
     // any money has been entered (drives the status dot / check).
     const closeoutGroups = useMemo(() => {
-        const teamGroups = teams.map((team, index) => ({
-            id: team.teamId,
-            kind: "dining",
-            name: `Team ${index + 1}`,
-            sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"} · dining`,
-            poolLabel: "Pool",
-            pool: poolSummary.teams[index]?.payoutPool ?? 0,
-            entered: Object.values(team.pools || {}).some(value => toMoney(value) > 0)
-                || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0),
-            teamIndex: index,
-        }));
+        const teamGroups = teams.map((team, index) => {
+            const pool = poolSummary.teams[index]?.payoutPool ?? 0;
+            const hasPeople = team.members.length > 0;
+            // "Other input" = non-pool money/context (Sales/Cash/Covers). The pool
+            // itself (Tips + Gratuity + contract gratuity) is what funds payouts.
+            const hasOtherInput = toMoney(team.pools?.sales) > 0
+                || toMoney(team.pools?.cash) > 0
+                || toMoney(team.pools?.covers) > 0;
+            return {
+                id: team.teamId,
+                kind: "dining",
+                name: `Team ${index + 1}`,
+                sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"} · dining`,
+                poolLabel: "Pool",
+                pool,
+                hasPeople,
+                status: getGroupMoneyStatus({ pool, hasOtherInput, hasPeople }),
+                teamIndex: index,
+            };
+        });
+        const barPool = poolSummary.bar.payoutPool;
+        const barHasPeople = barTeam.members.length > 0;
+        const barHasOtherInput = toMoney(barTeam.pools?.sales) > 0 || toMoney(barTeam.pools?.covers) > 0;
+        const runnerPool = poolSummary.totalRunnerPay;
         return [
             ...teamGroups,
             {
@@ -594,8 +632,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 name: "Bar Team",
                 sub: `${barTeam.members.length} ${barTeam.members.length === 1 ? "member" : "members"} · bar`,
                 poolLabel: "Pool",
-                pool: poolSummary.bar.payoutPool,
-                entered: hasBarCloseoutData || barTeam.members.length > 0,
+                pool: barPool,
+                hasPeople: barHasPeople,
+                status: getGroupMoneyStatus({ pool: barPool, hasOtherInput: barHasOtherInput, hasPeople: barHasPeople }),
             },
             {
                 id: "runners",
@@ -603,13 +642,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 name: "Runners",
                 sub: `${runners.length} ${runners.length === 1 ? "runner" : "runners"}`,
                 poolLabel: "Pay",
-                pool: poolSummary.totalRunnerPay,
-                entered: runners.length > 0,
+                pool: runnerPool,
+                hasPeople: runners.length > 0,
+                status: getGroupMoneyStatus({ pool: runnerPool, hasOtherInput: false, hasPeople: runners.length > 0 }),
             },
         ];
-    }, [teams, barTeam, runners, poolSummary, hasBarCloseoutData]);
+    }, [teams, barTeam, runners, poolSummary]);
 
     const activeGroup = closeoutGroups.find(group => group.id === activeGroupId) || closeoutGroups[0];
+    const groupStatusSummary = summarizeGroupStatuses(closeoutGroups);
 
     const hasAssignedStaff = useMemo(() => (
         teams.some(team => team.members.length > 0) || barTeam.members.length > 0 || runners.length > 0
@@ -1083,11 +1124,32 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                             <section className="space-y-4">
                                 {/* Team switcher: a compact horizontal strip above one fixed-height entry
                                     panel. Tapping a pill focuses that group; the strip scrolls sideways on
-                                    phone so page height stays constant no matter how large the roster is. */}
-                                <div
+                                    phone so page height stays constant no matter how large the roster is.
+                                    A status line + edge fade keep off-screen groups and their money status
+                                    discoverable instead of a blind sideways swipe. */}
+                                <div className="flex items-center justify-between gap-3">
+                                    <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                        {groupStatusSummary.total} {groupStatusSummary.total === 1 ? "group" : "groups"}
+                                    </span>
+                                    {groupStatusSummary.total > 0 ? (
+                                        groupStatusSummary.needsMoney > 0 ? (
+                                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)]">
+                                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
+                                                {groupStatusSummary.needsMoney} still need money
+                                            </span>
+                                        ) : (
+                                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
+                                                <span aria-hidden="true">✓</span>
+                                                All groups funded
+                                            </span>
+                                        )
+                                    ) : null}
+                                </div>
+                                <ScrollRail
                                     role="tablist"
-                                    aria-label="Select a group to enter money"
-                                    className="flex gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 [scrollbar-width:thin]"
+                                    ariaLabel="Select a group to enter money"
+                                    depsKey={closeoutGroups.length}
+                                    className="flex gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 pr-8 [scrollbar-width:thin]"
                                 >
                                     {closeoutGroups.map(group => (
                                         <RailPill
@@ -1097,7 +1159,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                             onSelect={() => setActiveGroupId(group.id)}
                                         />
                                     ))}
-                                </div>
+                                </ScrollRail>
 
                                 <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
                                     {activeGroup.kind === "dining" ? (
@@ -1155,7 +1217,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                         </strong>
                                     </div>
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-                                        {saveStatus ? (
+                                        {groupStatusSummary.needsMoney > 0 ? (
+                                            <span className="flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
+                                                <span aria-hidden="true">⚠</span>
+                                                <span>{groupStatusSummary.needsMoney} {groupStatusSummary.needsMoney === 1 ? "group has" : "groups have"} no tip pool yet</span>
+                                            </span>
+                                        ) : saveStatus ? (
                                             <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
                                         ) : draftStatus ? (
                                             <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
@@ -1173,7 +1240,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                         ) : (
                             /* STEP 3 - Review -> Confirm & Save */
                             <section className="space-y-4">
-                                <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} />
+                                <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} availableCash={poolSummary.totalCash} />
                                 <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
                                     <Button
                                         variant="secondary"

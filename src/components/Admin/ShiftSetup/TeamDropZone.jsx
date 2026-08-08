@@ -13,30 +13,34 @@ const getInitials = (name = '') => {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
-// A compact cluster of member initials, shown on mobile in place of the full
-// member list so a populated team reads as "full" at a glance without a long list.
-function AvatarCluster({ members }) {
-    const shown = members.slice(0, 4);
+// Mobile roster preview. Overlapping initials clipped the second letter ("CO"
+// read as "CC"), so a populated team is shown as a wrapped list of readable name
+// chips (initial avatar + name) - the captain wants to read names, not just count
+// heads. Long rosters cap with a "+N more" chip.
+function MemberChips({ members }) {
+    const shown = members.slice(0, 6);
     const overflow = members.length - shown.length;
 
     return (
-        <div className="hidden max-[560px]:flex items-center gap-1.5 pt-0.5">
-            <div className="flex -space-x-1.5">
-                {shown.map(member => (
-                    <span
-                        key={member.uid}
-                        title={member.name}
-                        className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)] text-[0.6rem] font-bold uppercase ring-2 ring-[var(--color-surface)]"
-                    >
+        <div className="hidden max-[560px]:flex flex-wrap items-center gap-1.5 pt-0.5">
+            {shown.map(member => (
+                <span
+                    key={member.uid}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] pl-1 pr-2 py-0.5"
+                >
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--color-accent)] text-[var(--color-surface)] text-[0.55rem] font-bold uppercase leading-none">
                         {getInitials(member.name)}
                     </span>
-                ))}
-                {overflow > 0 ? (
-                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--color-surface-muted)] text-[var(--color-ink-muted)] text-[0.6rem] font-bold ring-2 ring-[var(--color-surface)]">
-                        +{overflow}
+                    <span className="text-[0.72rem] font-medium text-[var(--color-accent)] leading-none">
+                        {member.name}
                     </span>
-                ) : null}
-            </div>
+                </span>
+            ))}
+            {overflow > 0 ? (
+                <span className="inline-flex items-center rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[0.7rem] font-semibold text-[var(--color-ink-muted)]">
+                    +{overflow} more
+                </span>
+            ) : null}
         </div>
     );
 }
@@ -117,7 +121,7 @@ function TeamDropZone({
                             />
                         ))}
                     </div>
-                    {hideMembers ? null : <AvatarCluster members={members} />}
+                    {hideMembers ? null : <MemberChips members={members} />}
                 </>
             )}
         </div>

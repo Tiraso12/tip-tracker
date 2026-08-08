@@ -95,6 +95,24 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         }
     };
 
+    // A role change writes immediately and shifts the person's default point
+    // weight in future shifts, so confirm when *changing* an already-assigned
+    // role. First-time assignment (unassigned -> a role) writes without a prompt.
+    // On cancel we do nothing; the controlled <Select> reverts to the saved role.
+    const handleRoleChange = (user, newRole) => {
+        if (!newRole || newRole === user.role) return;
+        const hadRole = user.role && user.role !== 'unassigned';
+        if (hadRole) {
+            const from = ROLE_LABELS[user.role] || user.role;
+            const to = ROLE_LABELS[newRole] || newRole;
+            const ok = window.confirm(
+                `Change ${user.username || 'this employee'}'s role from ${from} to ${to}?\n\nThis also changes their default point weight in future shifts.`
+            );
+            if (!ok) return;
+        }
+        handleUpdateUser(user.uid, { role: newRole });
+    };
+
     const handleDeactivateUser = async (uid, confirmMessage) => {
         if (!window.confirm(confirmMessage)) return;
         await handleUpdateUser(uid, { status: 'inactive' });
@@ -153,7 +171,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     };
 
     const UserRow = ({ user, isPending }) => (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 max-[560px]:px-4 max-[560px]:py-3">
             <div className="flex flex-col gap-0.5 min-w-0">
                 <span className="text-sm font-medium text-[var(--color-ink)] truncate">
                     {user.username}
@@ -164,7 +182,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
             <div className="flex flex-wrap items-center gap-2">
                 <Select
                     value={user.role || ""}
-                    onChange={(e) => handleUpdateUser(user.uid, { role: e.target.value })}
+                    onChange={(e) => handleRoleChange(user, e.target.value)}
                     disabled={loadingId === user.uid}
                     className="!h-9 !text-xs min-w-[8rem]"
                 >
