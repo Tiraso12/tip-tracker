@@ -3,8 +3,12 @@ import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
 import DayPayoutPanel from "./DayPayoutPanel";
+import DayHomeBase from "./DayHomeBase";
+import DayRailLanding from "./DayRailLanding";
+import FlowDevSwitcher from "./FlowDevSwitcher";
 import { Badge, Button } from "../ui";
 import { toDateKey } from "../../utils/dateUtils";
+import { readFlowMode, writeFlowMode } from "../../utils/flowMode";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
@@ -105,6 +109,12 @@ function AdminDashboard() {
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
     const [navCollapsed, setNavCollapsed] = useState(true);
+    // Dev-only orchestration shell: "rail" (Approach A) | "hub" (Approach B).
+    const [flowMode, setFlowMode] = useState(readFlowMode);
+    // Which day-step the editor opens on when entered from a landing CTA.
+    const [editorStep, setEditorStep] = useState("floor");
+    // Hub (Approach B) focused Pay out spoke.
+    const [hubPayoutOpen, setHubPayoutOpen] = useState(false);
 
     const loadEmployeesIfNeeded = useCallback(async ({ force = false } = {}) => {
         if (employeesLoaded && !force) return;
@@ -172,6 +182,25 @@ function AdminDashboard() {
         }
     }, [loadEmployeesIfNeeded]);
 
+    // Enter the day flow (the shift editor) focused on a specific step. Both the
+    // Rail landing CTAs and the Home Base stage cards route through here.
+    const enterEditor = useCallback((initialStep = "floor") => {
+        setEditorStep(initialStep === "settle" ? "settle" : "floor");
+        setActiveTabWithData("editor");
+    }, [setActiveTabWithData]);
+
+    const handleFlowChange = useCallback((mode) => {
+        writeFlowMode(mode);
+        setFlowMode(mode);
+        setActiveTab("shifts");
+        setHubPayoutOpen(false);
+    }, []);
+
+    // Leaving the day resets the hub's Pay out spoke.
+    useEffect(() => {
+        setHubPayoutOpen(false);
+    }, [selectedDate]);
+
     const handleNavItemClick = useCallback((tab) => {
         setActiveTabWithData(tab);
         if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
@@ -186,7 +215,7 @@ function AdminDashboard() {
         if (activeTab === "shifts") {
             return {
                 eyebrow: "Shifts",
-                title: "Shift Distribution",
+                title: "Pay out",
                 subtitle: null,
                 actions: (
                     <div className="flex items-center gap-2 max-[560px]:w-full">
@@ -215,9 +244,6 @@ function AdminDashboard() {
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                         </button>
-                        <Button onClick={() => setActiveTabWithData("editor")}>
-                            Edit Shift
-                        </Button>
                     </div>
                 ),
             };
@@ -271,7 +297,8 @@ function AdminDashboard() {
                     </span>
                     <Badge tone="accent">Admin</Badge>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
+                    <FlowDevSwitcher flowMode={flowMode} onChange={handleFlowChange} />
                     {user?.username ? (
                         <span className="hidden sm:inline text-xs text-[var(--color-ink-muted)]">
                             {user.username}
@@ -361,12 +388,40 @@ function AdminDashboard() {
                         </header>
 
                         {activeTab === "shifts" ? (
-                            <DayPayoutPanel
-                                date={selectedDate}
-                                summary={daySummary}
-                                status={dayShiftStatus}
-                                loading={dayLoading}
-                            />
+                            flowMode === "hub" ? (
+                                hubPayoutOpen && dayShiftStatus === "closed" ? (
+                                    <div className="space-y-3">
+                                        <Button variant="secondary" size="sm" onClick={() => setHubPayoutOpen(false)}>
+                                            ← Back to the day
+                                        </Button>
+                                        <DayPayoutPanel
+                                            date={selectedDate}
+                                            summary={daySummary}
+                                            status={dayShiftStatus}
+                                            loading={dayLoading}
+                                        />
+                                    </div>
+                                ) : (
+                                    <DayHomeBase
+                                        date={selectedDate}
+                                        status={dayShiftStatus}
+                                        loading={dayLoading}
+                                        onOpenFloor={() => enterEditor("floor")}
+                                        onOpenSettle={() => enterEditor("settle")}
+                                        onViewPayout={() => setHubPayoutOpen(true)}
+                                    />
+                                )
+                            ) : (
+                                <DayRailLanding
+                                    date={selectedDate}
+                                    summary={daySummary}
+                                    status={dayShiftStatus}
+                                    loading={dayLoading}
+                                    onBuildFloor={() => enterEditor("floor")}
+                                    onContinueSettle={() => enterEditor("settle")}
+                                    onEditFloor={() => enterEditor("floor")}
+                                />
+                            )
                         ) : activeTab === "editor" ? (
                             !employeesLoaded && employeesLoading ? (
                                 <PanelLoading label="Loading employees..." />
@@ -378,6 +433,8 @@ function AdminDashboard() {
                                         date={selectedDate}
                                         allEmployees={allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin")}
                                         onClose={handleEditorClose}
+                                        flowMode={flowMode}
+                                        initialStep={editorStep}
                                     />
                                 </Suspense>
                             )

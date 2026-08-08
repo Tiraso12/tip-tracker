@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
+import DayRail from "./DayRail";
 import { Button, Card } from "../ui";
 import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
 import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
@@ -508,58 +509,7 @@ function CalculatedPayoutReview({ review, poolAvailable }) {
 }
 
 
-function CollapsibleSection({ title, subtitle, badge, isOpen, onToggle, children }) {
-    return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] overflow-hidden">
-            <button
-                type="button"
-                onClick={onToggle}
-                aria-expanded={isOpen}
-                className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]/50 transition-colors duration-150 text-left max-[560px]:px-4 max-[560px]:py-2.5"
-            >
-                <div className="flex flex-col gap-0.5">
-                    {subtitle ? (
-                        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)] max-[560px]:hidden">
-                            {subtitle}
-                        </span>
-                    ) : null}
-                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)] max-[560px]:text-base">
-                        {title}
-                    </h3>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                    {badge ? (
-                        <span className="text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
-                            {badge}
-                        </span>
-                    ) : null}
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className={`text-[var(--color-ink-muted)] transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
-                        aria-hidden="true"
-                    >
-                        <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                </div>
-            </button>
-            {isOpen ? (
-                <div className="border-t border-[var(--color-line)]">
-                    {children}
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
-function ShiftEditorPanel({ date, allEmployees, onClose }) {
+function ShiftEditorPanel({ date, allEmployees, onClose, flowMode = "rail", initialStep = "floor" }) {
     const { user } = useAuth();
     const [teams, setTeams] = useState([
         { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
@@ -573,11 +523,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     const [hasLoadedShift, setHasLoadedShift] = useState(false);
     const [calculatedReview, setCalculatedReview] = useState(null);
     const [shiftStatus, setShiftStatus] = useState(null);
-    const [teamSetupOpen, setTeamSetupOpen] = useState(true);
-    const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
+    // Day-step spine (shared by both flow shells): "floor" -> "settle" -> "review".
+    // The old two-accordion editor is retired; each step is its own focused screen.
+    const [step, setStep] = useState(initialStep === "settle" ? "settle" : "floor");
     const [activeGroupId, setActiveGroupId] = useState("team-1");
     const [draftStatus, setDraftStatus] = useState("");
-    const [hasWarnedClosedRosterEdit, setHasWarnedClosedRosterEdit] = useState(false);
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -794,7 +744,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                 setHasLoadedShift(false);
                 setDraftStatus("");
                 setShiftStatus(null);
-                setHasWarnedClosedRosterEdit(false);
                 const shiftDoc = await getDoc(doc(db, "shifts", date));
                 if (shiftDoc.exists()) {
                     const d = shiftDoc.data();
@@ -814,16 +763,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     }
                     if (d.runners) setRunners(d.runners);
                     setShiftStatus(d.status || (d.summary || d.firstClosedAt || d.payouts ? "closed" : "setup"));
-                    setTeamSetupOpen(false);
-                    setMoneyCloseoutOpen(true);
                 } else {
                     setTeams([
                         { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
                     ]);
                     setBarTeam({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
                     setRunners([]);
-                    setTeamSetupOpen(true);
-                    setMoneyCloseoutOpen(false);
                 }
             } catch (e) {
                 console.error("Failed to load shift:", e);
@@ -885,34 +830,55 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
         if (shiftStatus === "closed") {
             setSaveStatus("This shift is already closed and paid out. Use Calculate Payouts → Confirm & Save Shift to update the roster and payouts together.");
-            return;
+            return false;
         }
 
         const inputErrors = validateTeamSetup({ teams, barTeam, runners });
         if (inputErrors.length > 0) {
             setValidationMessages(inputErrors);
-            setSaveStatus("Assign staff before saving setup.");
-            return;
+            setSaveStatus("Assign staff before saving the floor plan.");
+            return false;
         }
 
         setIsSaving(true);
         setValidationMessages([]);
-        setSaveStatus("Saving team setup...");
+        setSaveStatus("Saving floor plan...");
 
         try {
             await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({ date, teams, barTeam, runners }));
             await markUserHistoryFlags("setup");
             setShiftStatus("setup");
-            setSaveStatus("Team setup saved.");
-            setMoneyCloseoutOpen(true);
+            setSaveStatus("Floor plan saved.");
             setTimeout(() => setSaveStatus(""), 3000);
+            return true;
         } catch (e) {
             console.error(e);
-            setSaveStatus("Failed to save team setup.");
-            setValidationMessages(["The team setup could not be saved. Please try again."]);
+            setSaveStatus("Failed to save floor plan.");
+            setValidationMessages(["The floor plan could not be saved. Please try again."]);
+            return false;
         } finally {
             setIsSaving(false);
         }
+    };
+
+    // Floor plan forward action. In the Rail shell this advances to Settle up in
+    // place; in the Home Base shell it returns to the hub (stage now shows Done).
+    const handleContinueFromFloor = async () => {
+        const ok = await handleSaveTeamSetup();
+        if (!ok) return;
+        if (flowMode === "hub") {
+            onClose();
+        } else {
+            setStep("settle");
+        }
+    };
+
+    // Rail/hub step navigation. Earlier steps are always reachable; Review is only
+    // reachable once payouts have been calculated. "payout" exits to the landing.
+    const goToStep = (key) => {
+        if (key === "payout") { onClose(); return; }
+        if (key === "review" && !calculatedReview) return;
+        setStep(key);
     };
 
     const handleCalculateForReview = () => {
@@ -949,6 +915,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         }
 
         setCalculatedReview(buildPayoutReview(result, mappedPayoutsForFirebase));
+        setStep("review");
     };
 
     const handleConfirmSave = async () => {
@@ -986,23 +953,63 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         }
     };
 
-    const handleToggleTeamSetup = () => {
-        const willOpen = !teamSetupOpen;
-        if (willOpen && shiftStatus === "closed" && !hasWarnedClosedRosterEdit) {
-            const confirmed = window.confirm(
-                "This shift is already closed and paid out. Roster changes here won't take effect until you run Calculate Payouts → Confirm & Save Shift.\n\nContinue editing the roster?"
-            );
-            if (!confirmed) return;
-            setHasWarnedClosedRosterEdit(true);
-        }
-        setTeamSetupOpen(willOpen);
-    };
-
     const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
 
+    // Effective step guards a stray "review" with no calculation behind it.
+    const effectiveStep = step === "review" && !calculatedReview ? "settle" : step;
+
+    // Day-level step status for the Rail (Approach A). Status is always shown;
+    // order is never hard-forced - any earlier/reachable step is one tap away.
+    const floorDone = shiftStatus === "setup" || shiftStatus === "closed" || effectiveStep !== "floor";
+    const settleDone = Boolean(calculatedReview) || shiftStatus === "closed" || effectiveStep === "review";
+    const reviewDone = shiftStatus === "closed";
+    const railSteps = [
+        {
+            key: "floor", index: 1, label: "Floor",
+            state: effectiveStep === "floor" ? "active" : floorDone ? "done" : "pending",
+            clickable: true,
+        },
+        {
+            key: "settle", index: 2, label: "Settle",
+            state: effectiveStep === "settle" ? "active" : settleDone ? "done" : "pending",
+            clickable: floorDone || effectiveStep === "settle",
+        },
+        {
+            key: "review", index: 3, label: "Review",
+            state: effectiveStep === "review" ? "active" : reviewDone ? "done" : "pending",
+            clickable: Boolean(calculatedReview),
+        },
+        {
+            key: "payout", index: 4, label: "Pay out",
+            state: reviewDone ? "done" : "end",
+            clickable: true,
+        },
+    ];
+
+    const STEP_META = {
+        floor: { eyebrow: "Step 1", title: "Floor plan", hint: "Build the shift lineup." },
+        settle: { eyebrow: "Step 2", title: "Settle up", hint: "Enter end-of-service money." },
+        review: { eyebrow: "Step 3", title: "Review", hint: "Check take-home before saving." },
+    };
+    const stepMeta = STEP_META[effectiveStep];
+
     return (
-        <div className="space-y-4 sm:space-y-6">
-            {/* Workspace header */}
+        <div className="space-y-3 sm:space-y-4">
+            {/* Day-step chrome. Approach A shows the day rail; Approach B shows a
+                slim "back to the day" bar (the hub is the landing, reached on exit). */}
+            {flowMode === "rail" ? (
+                <DayRail steps={railSteps} onStepClick={goToStep} />
+            ) : (
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-line-strong)] hover:text-[var(--color-ink)]"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                    Back to the day
+                </button>
+            )}
+
             <Card className="!p-0">
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
@@ -1049,180 +1056,195 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                         Loading shift data…
                     </div>
                 ) : (
-                    <div className="p-3 sm:p-6 space-y-3">
-                        {/* Team setup */}
-                        <CollapsibleSection
-                            title="Team Floor Setup"
-                            subtitle="Opening setup"
-                            badge={`${diningCount}d · ${barTeam.members.length}b · ${runners.length}r`}
-                            isOpen={teamSetupOpen}
-                            onToggle={handleToggleTeamSetup}
-                        >
-                            <div className="p-3 sm:p-6">
+                    <div className="p-3 sm:p-6">
+                        {/* Focused step heading (the step spine lives in the day chrome above) */}
+                        <div className="mb-4 flex items-end justify-between gap-3 max-[560px]:mb-3">
+                            <div className="flex flex-col gap-0.5">
+                                <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                                    {stepMeta.eyebrow}
+                                </span>
+                                <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)] max-[560px]:text-lg">
+                                    {stepMeta.title}
+                                </h3>
+                                <p className="text-xs text-[var(--color-ink-soft)]">{stepMeta.hint}</p>
+                            </div>
+                            {effectiveStep === "floor" ? (
+                                <span className="shrink-0 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
+                                    {`${diningCount}d · ${barTeam.members.length}b · ${runners.length}r`}
+                                </span>
+                            ) : null}
+                        </div>
+
+                        {validationMessages.length > 0 ? (
+                            <div role="alert" className="mb-4 px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
+                                <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
+                                    Review before saving
+                                </div>
+                                <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
+                                    {validationMessages.map((message, index) => (
+                                        <li key={`${message}-${index}`}>{message}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : null}
+
+                        {/* STEP 1 - Floor plan */}
+                        {effectiveStep === "floor" ? (
+                            <div>
                                 <ShiftSetupDnd
                                     allEmployees={allEmployees}
                                     teams={teams} setTeams={setTeams}
                                     barTeam={barTeam} setBarTeam={setBarTeam}
                                     runners={runners} setRunners={setRunners}
                                 />
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-5">
+                                <div className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-end max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
                                     {shiftStatus === "closed" ? (
                                         <span className="text-xs text-[var(--color-ink-soft)]">
-                                            This shift is already closed and paid out. Roster changes are saved via Calculate Payouts → Confirm & Save Shift below.
+                                            This shift is already closed and paid out. Roster changes are saved via Settle up → Confirm & Save Shift.
                                         </span>
                                     ) : (
                                         <Button
-                                            variant="secondary"
-                                            onClick={handleSaveTeamSetup}
+                                            onClick={handleContinueFromFloor}
                                             disabled={isSaving}
+                                            className="max-[560px]:w-full"
                                         >
-                                            {isSaving ? "Saving..." : "Save Team Setup"}
+                                            {isSaving
+                                                ? "Saving..."
+                                                : flowMode === "hub"
+                                                    ? "Save floor plan"
+                                                    : "Save & continue to Settle up →"}
                                         </Button>
                                     )}
                                 </div>
                             </div>
-                        </CollapsibleSection>
-
-                        {/* Money closeout */}
-                        <CollapsibleSection
-                            title="Money Closeout"
-                            subtitle="End of shift"
-                            badge={!moneyCloseoutOpen ? fmtMoney(poolSummary.payoutPool) : null}
-                            isOpen={moneyCloseoutOpen}
-                            onToggle={() => setMoneyCloseoutOpen(o => !o)}
-                        >
-                        <section className="p-4 sm:p-6 space-y-4 max-[560px]:px-3">
-
-                            {validationMessages.length > 0 ? (
-                                <div role="alert" className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
-                                    <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
-                                        Review before saving
-                                    </div>
-                                    <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
-                                        {validationMessages.map((message, index) => (
-                                            <li key={`${message}-${index}`}>{message}</li>
-                                        ))}
-                                    </ul>
+                        ) : effectiveStep === "settle" ? (
+                            /* STEP 2 - Settle up (the calm single money switcher, unchanged) */
+                            <section className="space-y-4">
+                                {/* Team switcher: a compact horizontal strip above one fixed-height entry
+                                    panel. Tapping a pill focuses that group; the strip scrolls sideways on
+                                    phone so page height stays constant no matter how large the roster is. */}
+                                <div
+                                    role="tablist"
+                                    aria-label="Select a group to enter money"
+                                    className="flex gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 [scrollbar-width:thin]"
+                                >
+                                    {closeoutGroups.map(group => (
+                                        <RailPill
+                                            key={group.id}
+                                            group={group}
+                                            selected={group.id === activeGroup.id}
+                                            onSelect={() => setActiveGroupId(group.id)}
+                                        />
+                                    ))}
                                 </div>
-                            ) : null}
 
-                            {calculatedReview ? (
-                                <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} />
-                            ) : (
-                                <>
-                                    {/* Team switcher: a compact horizontal strip above one fixed-height entry
-                                        panel. Tapping a pill focuses that group; the strip scrolls sideways on
-                                        phone so page height stays constant no matter how large the roster is. */}
-                                    <div
-                                        role="tablist"
-                                        aria-label="Select a group to enter money"
-                                        className="flex gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 [scrollbar-width:thin]"
-                                    >
-                                        {closeoutGroups.map(group => (
-                                            <RailPill
-                                                key={group.id}
-                                                group={group}
-                                                selected={group.id === activeGroup.id}
-                                                onSelect={() => setActiveGroupId(group.id)}
+                                <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
+                                    {activeGroup.kind === "dining" ? (
+                                        <>
+                                            <TeamPoolFields
+                                                team={teams[activeGroup.teamIndex]}
+                                                onPoolChange={updatePool}
+                                                onToggleContracts={toggleContractVisibility}
+                                                onAddContract={addContract}
+                                                onUpdateContract={updateContract}
+                                                onRemoveContract={removeContract}
                                             />
-                                        ))}
+                                            <PointSplitDisclosure
+                                                title={activeGroup.name}
+                                                members={teams[activeGroup.teamIndex].members}
+                                                emptyMessage="No dining room employees on this team."
+                                                onPointChange={(uid, value) => updateTeamMemberPoints(activeGroup.id, uid, value)}
+                                                onPointAdjust={(uid, delta) => adjustTeamMemberPoints(activeGroup.id, uid, delta)}
+                                            />
+                                        </>
+                                    ) : activeGroup.kind === "bar" ? (
+                                        <>
+                                            <BarPoolFields barTeam={barTeam} onBarPoolChange={updateBarPool} />
+                                            <PointSplitDisclosure
+                                                title="Bar Team"
+                                                members={barTeam.members}
+                                                defaultPoints={1}
+                                                emptyMessage="No bar employees assigned."
+                                                onPointChange={updateBarMemberPoints}
+                                                onPointAdjust={adjustBarMemberPoints}
+                                            />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-[12.5px] leading-relaxed text-[var(--color-ink-soft)] mb-3">
+                                                Runner pay is drawn from the tip pool. Enter each runner's take-home.
+                                            </p>
+                                            <RunnerGroup
+                                                runners={runners}
+                                                totalPay={poolSummary.totalRunnerPay}
+                                                onPayoutChange={updateRunnerPayout}
+                                            />
+                                        </>
+                                    )}
+                                </CloseoutEntryPanel>
+
+                                {/* Settle-up total + advance to Review */}
+                                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
+                                    <div className="flex items-center justify-between gap-3 sm:justify-start">
+                                        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                            Settle-up total
+                                        </span>
+                                        <strong className="font-mono tabular-nums text-base text-[var(--color-ink)]">
+                                            {fmtMoney(poolSummary.payoutPool)}
+                                        </strong>
                                     </div>
-
-                                    <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
-                                        {activeGroup.kind === "dining" ? (
-                                            <>
-                                                <TeamPoolFields
-                                                    team={teams[activeGroup.teamIndex]}
-                                                    onPoolChange={updatePool}
-                                                    onToggleContracts={toggleContractVisibility}
-                                                    onAddContract={addContract}
-                                                    onUpdateContract={updateContract}
-                                                    onRemoveContract={removeContract}
-                                                />
-                                                <PointSplitDisclosure
-                                                    title={activeGroup.name}
-                                                    members={teams[activeGroup.teamIndex].members}
-                                                    emptyMessage="No dining room employees on this team."
-                                                    onPointChange={(uid, value) => updateTeamMemberPoints(activeGroup.id, uid, value)}
-                                                    onPointAdjust={(uid, delta) => adjustTeamMemberPoints(activeGroup.id, uid, delta)}
-                                                />
-                                            </>
-                                        ) : activeGroup.kind === "bar" ? (
-                                            <>
-                                                <BarPoolFields barTeam={barTeam} onBarPoolChange={updateBarPool} />
-                                                <PointSplitDisclosure
-                                                    title="Bar Team"
-                                                    members={barTeam.members}
-                                                    defaultPoints={1}
-                                                    emptyMessage="No bar employees assigned."
-                                                    onPointChange={updateBarMemberPoints}
-                                                    onPointAdjust={adjustBarMemberPoints}
-                                                />
-                                            </>
-                                        ) : (
-                                            <>
-                                                <p className="text-[12.5px] leading-relaxed text-[var(--color-ink-soft)] mb-3">
-                                                    Runner pay is drawn from the tip pool. Enter each runner's take-home.
-                                                </p>
-                                                <RunnerGroup
-                                                    runners={runners}
-                                                    totalPay={poolSummary.totalRunnerPay}
-                                                    onPayoutChange={updateRunnerPayout}
-                                                />
-                                            </>
-                                        )}
-                                    </CloseoutEntryPanel>
-                                </>
-                            )}
-
-                            {/* Save row: one slim closeout total + the primary action, always present.
-                                Calculate → Review → Confirm & Save runs unchanged. */}
-                            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-                                <div className="flex items-center justify-between gap-3 sm:justify-start">
-                                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                        Closeout total
-                                    </span>
-                                    <strong className="font-mono tabular-nums text-base text-[var(--color-ink)]">
-                                        {fmtMoney(poolSummary.payoutPool)}
-                                    </strong>
-                                </div>
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-                                    {shiftStatus === "closed" ? (
-                                        <p className="sm:hidden flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
-                                            <span aria-hidden="true">⚠</span>
-                                            <span>Re-saving overwrites the saved payouts for {date}.</span>
-                                        </p>
-                                    ) : null}
-                                    {saveStatus ? (
-                                        <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
-                                    ) : draftStatus ? (
-                                        <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
-                                    ) : null}
-                                    {calculatedReview ? (
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+                                        {saveStatus ? (
+                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
+                                        ) : draftStatus ? (
+                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
+                                        ) : null}
                                         <Button
-                                            variant="secondary"
                                             onClick={handleCalculateForReview}
                                             disabled={isSaving}
                                             className="max-[560px]:w-full"
                                         >
-                                            Recalculate Payouts
+                                            {isSaving ? "Calculating…" : "Calculate Payouts →"}
                                         </Button>
-                                    ) : null}
+                                    </div>
+                                </div>
+                            </section>
+                        ) : (
+                            /* STEP 3 - Review -> Confirm & Save */
+                            <section className="space-y-4">
+                                <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} />
+                                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
                                     <Button
-                                        onClick={calculatedReview ? handleConfirmSave : handleCalculateForReview}
+                                        variant="secondary"
+                                        onClick={() => setStep("settle")}
                                         disabled={isSaving}
                                         className="max-[560px]:w-full"
                                     >
-                                        {isSaving
-                                            ? "Saving…"
-                                            : calculatedReview
-                                                ? "Confirm & Save Shift"
-                                                : "Calculate Payouts"}
+                                        ← Back to Settle up
                                     </Button>
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+                                        {shiftStatus === "closed" ? (
+                                            <p className="sm:hidden flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
+                                                <span aria-hidden="true">⚠</span>
+                                                <span>Re-saving overwrites the saved payouts for {date}.</span>
+                                            </p>
+                                        ) : null}
+                                        {saveStatus ? (
+                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
+                                        ) : draftStatus ? (
+                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
+                                        ) : null}
+                                        <Button
+                                            onClick={handleConfirmSave}
+                                            disabled={isSaving}
+                                            className="max-[560px]:w-full"
+                                        >
+                                            {isSaving ? "Saving…" : "Confirm & Save Shift"}
+                                        </Button>
+                                    </div>
                                 </div>
-                            </div>
-                        </section>
-                        </CollapsibleSection>
+                            </section>
+                        )}
                     </div>
                 )}
             </Card>
