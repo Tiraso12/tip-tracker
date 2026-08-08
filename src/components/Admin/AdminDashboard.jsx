@@ -168,12 +168,6 @@ function AdminDashboard() {
         }
     }, [activeTab]);
 
-    const changeDate = (delta) => {
-        const d = new Date(selectedDate + "T12:00:00");
-        d.setDate(d.getDate() + delta);
-        setSelectedDate(toDateKey(d));
-    };
-
     const handleEditorClose = () => {
         setActiveTab("shifts");
         fetchDayPayouts(selectedDate);
@@ -279,7 +273,6 @@ function AdminDashboard() {
                         <BarDatePill
                             selectedDate={selectedDate}
                             onSelectDate={setSelectedDate}
-                            onChangeDate={changeDate}
                         />
                     ) : null}
                     {user?.username ? (
