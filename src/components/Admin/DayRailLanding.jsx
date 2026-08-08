@@ -1,5 +1,6 @@
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRail from "./DayRail";
+import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
 import { Button, Card } from "../ui";
 
 // Approach A landing. The day rail leads with its first incomplete step:
@@ -34,15 +35,8 @@ function Hero({ eyebrow, title, body, children }) {
 }
 
 function DayRailLanding({ date, status, summary, loading, onBuildFloor, onContinueSettle, onEditFloor }) {
-    const floorDone = status === "setup" || status === "closed";
-    const closed = status === "closed";
-
-    const railSteps = [
-        { key: "floor", index: 1, label: "Floor", state: floorDone ? "done" : "active", clickable: Boolean(onEditFloor) },
-        { key: "settle", index: 2, label: "Settle", state: closed ? "done" : floorDone ? "active" : "pending", clickable: floorDone },
-        { key: "review", index: 3, label: "Review", state: closed ? "done" : "pending", clickable: false },
-        { key: "payout", index: 4, label: "Pay out", state: closed ? "done" : "end", clickable: false },
-    ];
+    const stage = getLandingStage(status);
+    const railSteps = getRailSteps({ shiftStatus: status });
 
     const onStepClick = (key) => {
         if (key === "floor") onEditFloor?.();
@@ -55,7 +49,7 @@ function DayRailLanding({ date, status, summary, loading, onBuildFloor, onContin
 
             {loading ? (
                 <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">Loading day…</Card>
-            ) : closed ? (
+            ) : stage === "closed" ? (
                 <div className="space-y-3">
                     <DayPayoutPanel date={date} summary={summary} status={status} loading={false} />
                     <div className="flex justify-end">
@@ -64,7 +58,7 @@ function DayRailLanding({ date, status, summary, loading, onBuildFloor, onContin
                         </Button>
                     </div>
                 </div>
-            ) : floorDone ? (
+            ) : stage === "settle" ? (
                 <Hero
                     eyebrow={friendlyDate(date)}
                     title="Floor plan is set"

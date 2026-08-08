@@ -305,9 +305,9 @@ function DayPayoutPanel({ date, summary, status, loading }) {
                             <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                         </svg>
                     </div>
-                    <p className="text-sm text-[var(--color-ink)]">Team setup saved for this date.</p>
+                    <p className="text-sm text-[var(--color-ink)]">Floor plan saved for this date.</p>
                     <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                        Open the shift editor to adjust the team or complete money closeout.
+                        Continue to Settle up to enter the money and calculate the pay out.
                     </p>
                 </div>
             ) : !summary ? (
@@ -320,7 +320,7 @@ function DayPayoutPanel({ date, summary, status, loading }) {
                     </div>
                     <p className="text-sm text-[var(--color-ink)]">No shift saved for this date.</p>
                     <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                        Open the shift editor to input and calculate payouts.
+                        Build the Floor plan to start the day.
                     </p>
                 </div>
             ) : (
