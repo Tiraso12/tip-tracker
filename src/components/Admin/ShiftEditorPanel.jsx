@@ -996,8 +996,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         }
     };
 
-    const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
-
     // Effective step guards a stray "review" with no calculation behind it.
     const effectiveStep = step === "review" && !calculatedReview ? "settle" : step;
 
@@ -1008,13 +1006,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         shiftStatus,
         hasCalculatedReview: Boolean(calculatedReview),
     });
-
-    const STEP_META = {
-        floor: { eyebrow: "Step 1", title: "Floor plan", hint: "Build the shift lineup." },
-        settle: { eyebrow: "Step 2", title: "Settle up", hint: "Enter end-of-service money." },
-        review: { eyebrow: "Step 3", title: "Review", hint: "Check take-home before saving." },
-    };
-    const stepMeta = STEP_META[effectiveStep];
 
     return (
         <div className="space-y-3 sm:space-y-4">
@@ -1069,23 +1060,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                     </div>
                 ) : (
                     <div className="p-3 sm:p-6">
-                        {/* Focused step heading (the step spine lives in the day chrome above) */}
-                        <div className="mb-4 flex items-end justify-between gap-3 max-[560px]:mb-3">
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                    {stepMeta.eyebrow}
-                                </span>
-                                <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)] max-[560px]:text-lg">
-                                    {stepMeta.title}
-                                </h3>
-                                <p className="text-xs text-[var(--color-ink-soft)]">{stepMeta.hint}</p>
-                            </div>
-                            {effectiveStep === "floor" ? (
-                                <span className="shrink-0 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
-                                    {`${diningCount}d · ${barTeam.members.length}b · ${runners.length}r`}
-                                </span>
-                            ) : null}
-                        </div>
+                        {/* The Day Rail above names the active step, so no duplicate
+                            step heading is rendered here. */}
 
                         {validationMessages.length > 0 ? (
                             <div role="alert" className="mb-4 px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">

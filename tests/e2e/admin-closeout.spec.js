@@ -149,7 +149,7 @@ async function openEditor(page) {
     } else {
         await edit.click();
     }
-    await expect(page.getByRole("heading", { name: "Floor plan" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Bar Team/i })).toBeVisible();
 }
 
 // Assign a seeded pool employee to the currently selected team (click-to-assign).
@@ -186,7 +186,7 @@ test("admin can close out a simple dining room shift and create ledger payout re
     await assignFromPool(page, "Back One");
 
     await page.getByRole("button", { name: /continue to Settle up/i }).click();
-    await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
 
     // Settle up: enter the dining team's end-of-service money.
     await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
@@ -195,7 +195,7 @@ test("admin can close out a simple dining room shift and create ledger payout re
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("50");
 
     await page.getByRole("button", { name: /Calculate Payouts/i }).click();
-    await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
     await expect(page.getByText("Captain One").last()).toBeVisible();
     await expect(page.getByText("Server One").last()).toBeVisible();
     await expect(page.getByText("Back One").last()).toBeVisible();
@@ -239,7 +239,7 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await assignFromPool(page, "Back One");
 
     await page.getByRole("button", { name: /continue to Settle up/i }).click();
-    await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
 
     await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("300");
@@ -322,7 +322,7 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
         await page.getByRole("button", { name: "Edit shift" }).click();
-        await expect(page.getByRole("heading", { name: "Floor plan" })).toBeVisible();
+        await expect(page.getByRole("button", { name: /Bar Team/i })).toBeVisible();
 
         // View-only by default: the Edit roster affordance is shown, the team
         // card is inert (disabled, opens no picker), and the stepper is hidden.

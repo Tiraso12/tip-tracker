@@ -258,15 +258,13 @@ function AdminDashboard() {
             };
         }
         if (activeTab === "editor") {
+            // The Day Rail names the active step, so the editor needs no eyebrow,
+            // step labels, or Back action here - the workspace nav handles exit.
             return {
-                eyebrow: "Shift",
+                eyebrow: null,
                 title: "Edit shift",
                 subtitle: null,
-                actions: (
-                    <Button onClick={handleEditorClose} variant="secondary" size="sm">
-                        ← Back
-                    </Button>
-                ),
+                actions: null,
             };
         }
         if (activeTab === "users") {
@@ -376,10 +374,10 @@ function AdminDashboard() {
                 <main className="flex-1 min-w-0 px-4 sm:px-8 py-5 lg:py-10">
                     <div className="max-w-6xl mx-auto">
                         <header className={
-                            // On mobile Shifts the date now lives in the app-bar pill and
-                            // the title is desktop-only, so the whole content header is
-                            // hidden there - the Day Rail sits flush under the app bar.
-                            (activeTab === "shifts" ? "hidden sm:flex " : "flex ") +
+                            // On mobile Shifts and the editor the content header is
+                            // hidden - the Day Rail names the step and sits flush under
+                            // the app bar. Desktop keeps the page title for coherence.
+                            (activeTab === "shifts" || activeTab === "editor" ? "hidden sm:flex " : "flex ") +
                             "flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
                             (activeTab === "editor" || activeTab === "shifts" ? "pb-3 mb-3 sm:pb-6 sm:mb-6" : "pb-4 sm:pb-6 mb-4 sm:mb-6")
                         }>
