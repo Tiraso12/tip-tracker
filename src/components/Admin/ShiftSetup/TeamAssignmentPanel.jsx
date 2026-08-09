@@ -1,6 +1,5 @@
 import React from 'react';
 import TeamDropZone from './TeamDropZone';
-import { RUNNER_FLAT_RATE } from '../../../utils/constants';
 
 // singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
 const plural = (count, one, many) => (count === 1 ? one : many);
@@ -15,7 +14,9 @@ function TeamAssignmentPanel({
     selectedTeamId,
     hideSelectedMembers,
     onTeamClick,
-    handlers
+    handlers,
+    isMobile = false,
+    readOnly = false
 }) {
     const restaurantMemberCount = teams.reduce((total, team) => total + team.members.length, 0);
 
@@ -36,35 +37,38 @@ function TeamAssignmentPanel({
                 </div>
             </div>
 
-            {/* Restaurant Teams Controls */}
+            {/* Restaurant Teams Controls.
+                On phones this collapses to one compact summary row (counts + stepper):
+                the "Restaurant Teams" label, the redundant counts line, and the separate
+                "Tap a team..." helper are gone (the helper is folded into each card's
+                empty state) so team cards rise up the fold. */}
             <div className="flex justify-between items-center bg-[var(--color-bg)] px-3 py-[0.45rem] rounded-[var(--radius-md)] border border-[var(--color-line)] max-[560px]:px-0 max-[560px]:py-0 max-[560px]:border-0 max-[560px]:bg-transparent">
                 <div className="min-w-0">
-                    <span className="text-[0.7rem] font-bold text-[var(--color-ink-muted)] uppercase tracking-[0.07em]">Restaurant Teams</span>
-                    <div className="hidden max-[560px]:block mt-1 text-[0.72rem] text-[var(--color-ink-soft)]">
+                    <span className="text-[0.7rem] font-bold text-[var(--color-ink-muted)] uppercase tracking-[0.07em] max-[560px]:hidden">Restaurant Teams</span>
+                    <div className="hidden max-[560px]:block text-[0.78rem] font-medium text-[var(--color-ink-soft)]">
                         {restaurantMemberCount} dining / {barTeam.members.length} bar / {runners.length} {plural(runners.length, 'runner', 'runners')}
                     </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                    <button
-                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
-                        onClick={onRemoveTeam}
-                        disabled={teams.length <= 1}
-                        title="Remove last team"
-                        aria-label="Remove last restaurant team"
-                    >−</button>
-                    <span className="font-bold text-[0.9rem] min-w-[18px] text-center">{teams.length}</span>
-                    <button
-                        className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
-                        onClick={onAddTeam}
-                        title="Add team"
-                        aria-label="Add restaurant team"
-                        disabled={teams.length >= 6}
-                    >+</button>
-                </div>
+                {readOnly ? null : (
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
+                            onClick={onRemoveTeam}
+                            disabled={teams.length <= 1}
+                            title="Remove last team"
+                            aria-label="Remove last restaurant team"
+                        >−</button>
+                        <span className="font-bold text-[0.9rem] min-w-[18px] text-center">{teams.length}</span>
+                        <button
+                            className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
+                            onClick={onAddTeam}
+                            title="Add team"
+                            aria-label="Add restaurant team"
+                            disabled={teams.length >= 6}
+                        >+</button>
+                    </div>
+                )}
             </div>
-            <p className="hidden max-[560px]:block m-0 text-[0.75rem] leading-5 text-[var(--color-ink-muted)]">
-                Tap a team to add employees.
-            </p>
 
             {/* All team cards in a 2-column card grid */}
             <div className="grid grid-cols-2 gap-2.5 items-start max-[900px]:grid-cols-1">
@@ -78,6 +82,8 @@ function TeamAssignmentPanel({
                         isSelected={selectedTeamId === t.teamId}
                         hideMembers={hideSelectedMembers && selectedTeamId === t.teamId}
                         onTeamClick={onTeamClick}
+                        isMobile={isMobile}
+                        readOnly={readOnly}
                         {...handlers}
                     />
                 ))}
@@ -91,19 +97,24 @@ function TeamAssignmentPanel({
                 isSelected={selectedTeamId === 'bar'}
                 hideMembers={hideSelectedMembers && selectedTeamId === 'bar'}
                 onTeamClick={onTeamClick}
+                isMobile={isMobile}
+                readOnly={readOnly}
                 {...handlers}
             />
 
-                {/* Runners */}
+                {/* Runners - the flat rate is dropped from the title (admin knows it);
+                    "Runners" reads calm and sentence-case on mobile. */}
                 <TeamDropZone
                     teamId="runner"
-                    title={`Runners ($${RUNNER_FLAT_RATE} flat each)`}
+                    title="Runners"
                     members={runners}
                     isRunner={true}
                 isOver={dragOverId === 'runner'}
                 isSelected={selectedTeamId === 'runner'}
                 hideMembers={hideSelectedMembers && selectedTeamId === 'runner'}
                 onTeamClick={onTeamClick}
+                isMobile={isMobile}
+                readOnly={readOnly}
                 {...handlers}
             />
             </div>
@@ -121,6 +132,8 @@ export default React.memo(TeamAssignmentPanel, (prevProps, nextProps) => {
     if (prevProps.dragOverId !== nextProps.dragOverId) return false;
     if (prevProps.selectedTeamId !== nextProps.selectedTeamId) return false;
     if (prevProps.hideSelectedMembers !== nextProps.hideSelectedMembers) return false;
+    if (prevProps.isMobile !== nextProps.isMobile) return false;
+    if (prevProps.readOnly !== nextProps.readOnly) return false;
 
     // Deep exact member comparison for restaurant teams
     for (let i = 0; i < prevProps.teams.length; i++) {

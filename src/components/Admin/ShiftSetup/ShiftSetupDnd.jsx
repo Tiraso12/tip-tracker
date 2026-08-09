@@ -12,8 +12,8 @@ const RESTAURANT_ROLE_OPTIONS = [
     { value: "assistant", label: "Assistant", badge: "A" },
 ];
 
-const ROLE_BADGES = RESTAURANT_ROLE_OPTIONS.reduce((acc, option) => {
-    acc[option.value] = option.badge;
+const ROLE_LABELS = RESTAURANT_ROLE_OPTIONS.reduce((acc, option) => {
+    acc[option.value] = option.label;
     return acc;
 }, {});
 
@@ -21,7 +21,8 @@ function ShiftSetupDnd({
     allEmployees,
     teams, setTeams,
     barTeam, setBarTeam,
-    runners, setRunners
+    runners, setRunners,
+    readOnly = false
 }) {
     const [draggedData, setDraggedData] = useState(null);
     const [dragOverId, setDragOverId] = useState(null);
@@ -110,6 +111,10 @@ function ShiftSetupDnd({
     }, [barTeam.members, runners, selectedTeamId, teams]);
 
     const canEditSelectedRoles = selectedTeamId && selectedTeamId !== "bar" && selectedTeamId !== "runner";
+
+    // F10 is scoped to phones: a closed shift's floor is view-only until the admin
+    // taps "Edit roster". Desktop behavior is intentionally unchanged.
+    const mobileReadOnly = readOnly && isMobile;
 
     // ── Core helpers ─────────────────────────────────────
     const removeEmployee = useCallback((uid, teamId) => {
@@ -209,11 +214,21 @@ function ShiftSetupDnd({
 
     // ── Click-to-assign ──────────────────────────────────
     const handleTeamClick = useCallback((teamId) => {
+        if (mobileReadOnly) return;
         setSelectedTeamId(prev => {
             const nextTeamId = prev === teamId ? null : teamId;
             setMobilePickerOpen(Boolean(nextTeamId));
             return nextTeamId;
         });
+    }, [mobileReadOnly]);
+
+    // Closing the mobile picker also clears the selection. Leaving a team selected
+    // after "Done"/scrim-dismiss made the next tap silently toggle it off (dead
+    // first tap), and left a lingering "active" fill + pulsing dot on a card whose
+    // picker is closed - a selection glow only makes sense while the sheet is open.
+    const closeMobilePicker = useCallback(() => {
+        setMobilePickerOpen(false);
+        setSelectedTeamId(null);
     }, []);
 
     const handlePoolEmployeeClick = useCallback((emp) => {
@@ -286,9 +301,11 @@ function ShiftSetupDnd({
                 hideSelectedMembers={isMobile && mobilePickerOpen}
                 onTeamClick={handleTeamClick}
                 handlers={handlers}
+                isMobile={isMobile}
+                readOnly={mobileReadOnly}
             />
 
-            {isMobile && mobilePickerOpen && selectedTeamId ? (
+            {isMobile && mobilePickerOpen && selectedTeamId && !mobileReadOnly ? (
             <div
                 className="fixed inset-0 z-40"
             >
@@ -296,7 +313,7 @@ function ShiftSetupDnd({
                     type="button"
                     aria-label="Close employee picker"
                     className="absolute inset-0 bg-black/30"
-                    onClick={() => setMobilePickerOpen(false)}
+                    onClick={closeMobilePicker}
                 />
                 <div
                     role="dialog"
@@ -312,7 +329,7 @@ function ShiftSetupDnd({
                         </div>
                         <button
                             type="button"
-                            onClick={() => setMobilePickerOpen(false)}
+                            onClick={closeMobilePicker}
                             className="h-9 px-3 rounded-[var(--radius-sm)] border border-[var(--color-line)] text-sm font-medium text-[var(--color-ink)] bg-[var(--color-surface)]"
                         >
                             Done
@@ -333,18 +350,23 @@ function ShiftSetupDnd({
                                 No employees assigned yet.
                             </div>
                         ) : (
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-col gap-1.5">
                                 {selectedTargetMembers.map(member => (
-                                    <span
+                                    <div
                                         key={member.uid}
-                                        className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface-muted)] px-2 py-1"
+                                        className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface-muted)] pl-3 pr-1.5 py-1"
                                     >
-                                        <span className="max-w-[8rem] truncate text-[0.72rem] font-semibold text-[var(--color-ink)]">
+                                        <span className="min-w-0 flex-1 truncate text-[0.82rem] font-semibold text-[var(--color-ink)]">
                                             {member.name}
                                         </span>
                                         {canEditSelectedRoles ? (
-                                            <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--color-accent)]/20 bg-[var(--color-accent-soft)] text-[0.62rem] font-bold text-[var(--color-accent)]">
-                                                {ROLE_BADGES[member.role] || "S"}
+                                            <div className="relative shrink-0">
+                                                {/* Labeled role pill that reads as a control; the native
+                                                    select overlays the full 40px target for a real tap area. */}
+                                                <span className="inline-flex h-10 min-w-[104px] items-center justify-between gap-1.5 rounded-full border border-[var(--color-line-strong)] bg-[var(--color-surface)] pl-3 pr-2.5 text-[0.78rem] font-semibold text-[var(--color-ink)]">
+                                                    {ROLE_LABELS[member.role] || "Server"}
+                                                    <span aria-hidden="true" className="text-[0.62rem] leading-none text-[var(--color-ink-muted)]">▾</span>
+                                                </span>
                                                 <select
                                                     value={RESTAURANT_ROLE_OPTIONS.some(option => option.value === member.role) ? member.role : "server"}
                                                     onChange={(e) => updateMemberRole(selectedTeamId, member.uid, e.target.value)}
@@ -357,17 +379,17 @@ function ShiftSetupDnd({
                                                         <option key={option.value} value={option.value}>{option.label}</option>
                                                     ))}
                                                 </select>
-                                            </span>
+                                            </div>
                                         ) : null}
                                         <button
                                             type="button"
                                             onClick={() => removeEmployee(member.uid, selectedTeamId)}
                                             aria-label={`Remove ${member.name}`}
-                                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+                                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[1.1rem] leading-none text-[var(--color-ink-muted)] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
                                         >
-                                            x
+                                            ×
                                         </button>
-                                    </span>
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -395,6 +417,8 @@ function ShiftSetupDnd({
 // We deeply compare the MEMBERS array length/content of teams, but ignore the `pools` typing data
 // so that typing Tip/Cash numbers doesn't force this massive component to recalculate its lists.
 export default React.memo(ShiftSetupDnd, (prevProps, nextProps) => {
+    // If the read-only (closed-shift Edit roster) gate changed, re-render
+    if (prevProps.readOnly !== nextProps.readOnly) return false;
     // If employees changed, re-render
     if (prevProps.allEmployees !== nextProps.allEmployees) return false;
     // If runners or barTeam length changed, re-render
