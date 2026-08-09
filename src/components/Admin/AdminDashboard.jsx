@@ -9,6 +9,7 @@ import { Badge, Button } from "../ui";
 import { toDateKey } from "../../utils/dateUtils";
 import { getLandingStage } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
+import { removeShiftAtomically } from "../../utils/closeoutPersistence";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -109,6 +110,7 @@ function AdminDashboard() {
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
     const [navCollapsed, setNavCollapsed] = useState(true);
+    const [removingShift, setRemovingShift] = useState(false);
     // Which day-step the shift editor opens on when entered from a landing CTA.
     const [editorStep, setEditorStep] = useState("floor");
 
@@ -172,6 +174,46 @@ function AdminDashboard() {
         setActiveTab("shifts");
         fetchDayPayouts(selectedDate);
     };
+
+    // Hard-delete a settled shift for the selected date. This permanently removes
+    // the shift and everyone's payouts for that date from all dashboards (the
+    // employee cards clear live because they subscribe to the ledger), and cannot
+    // be undone. To fix a wrong-date settlement, the admin removes it here and
+    // re-enters the shift on the correct date through the normal flow.
+    const handleRemoveShift = useCallback(async () => {
+        if (removingShift) return;
+
+        const [y, m, d] = selectedDate.split("-");
+        const friendlyDate = new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+        });
+        const confirmed = window.confirm(
+            `Remove the shift for ${friendlyDate}?\n\n` +
+            "This permanently deletes the shift and everyone's payouts for that date " +
+            "from all dashboards. Each employee on this shift will no longer see this " +
+            "date's payout. This cannot be undone.\n\n" +
+            "To move a shift to a different date, remove it here and re-enter it on the correct date."
+        );
+        if (!confirmed) return;
+
+        setRemovingShift(true);
+        try {
+            await removeShiftAtomically({
+                db,
+                date: selectedDate,
+                updatedBy: user?.uid || null,
+            });
+            await fetchDayPayouts(selectedDate);
+        } catch (e) {
+            console.error("Failed to remove shift:", e);
+            alert("Could not remove the shift. Please try again.");
+        } finally {
+            setRemovingShift(false);
+        }
+    }, [removingShift, selectedDate, user, fetchDayPayouts]);
 
     const setActiveTabWithData = useCallback((tab) => {
         setActiveTab(tab);
@@ -377,6 +419,8 @@ function AdminDashboard() {
                                 onBuildFloor={() => enterEditor("floor")}
                                 onContinueSettle={() => enterEditor("settle")}
                                 onEditFloor={() => enterEditor("floor")}
+                                onRemoveShift={handleRemoveShift}
+                                removingShift={removingShift}
                             />
                         ) : activeTab === "editor" ? (
                             !employeesLoaded && employeesLoading ? (

@@ -275,7 +275,7 @@ service cloud.firestore {
           "collisionDates"
         ]) &&
         request.resource.data.keys().hasAll(["type", "operationId", "createdAt", "ledgerVersion"]) &&
-        request.resource.data.type in ["shift_closed", "shift_recalculated", "temp_staff_merged"] &&
+        request.resource.data.type in ["shift_closed", "shift_recalculated", "temp_staff_merged", "shift_removed"] &&
         request.resource.data.operationId is string &&
         isStringOrTimestamp(request.resource.data.createdAt) &&
         request.resource.data.ledgerVersion == 1 &&

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { saveClosedShiftAtomically } from "./closeoutPersistence.js";
+import { saveClosedShiftAtomically, removeShiftAtomically } from "./closeoutPersistence.js";
 
 const ref = (path) => ({ path });
 
@@ -103,6 +103,20 @@ class FakeBatch {
         });
         this.store.docs = nextDocs;
     }
+}
+
+function removeWithFakeStore(store, options = {}) {
+    return removeShiftAtomically({
+        db: {},
+        date: "2026-05-29",
+        updatedBy: "adminUid",
+        now: "2026-05-30T02:00:00.000Z",
+        operationId: "removal-operation",
+        refs: fakeRefs,
+        batchFactory: () => new FakeBatch(store, options.batchOptions),
+        readShift: async (shiftRef) => snapshot(store.get(shiftRef.path)),
+        readPayoutEntries: async () => store.payoutEntries("2026-05-29"),
+    });
 }
 
 function saveWithFakeStore(store, options = {}) {
@@ -248,6 +262,72 @@ test("missing history flag update rejects the batch before payout state changes"
     await assert.rejects(
         () => saveWithFakeStore(store),
         /missing document for update/
+    );
+
+    assert.deepEqual(Object.fromEntries(store.docs), before);
+});
+
+test("removeShiftAtomically deletes the shift, ledger meta, and every entry in one batch", async () => {
+    const store = new FakeStore({
+        "shifts/2026-05-29": {
+            status: "closed",
+            firstClosedAt: "2026-05-29T04:00:00.000Z",
+            closedAt: "2026-05-29T04:00:00.000Z",
+        },
+        "payouts/2026-05-29": { date: "2026-05-29", ledgerVersion: 1 },
+        "payouts/2026-05-29/entries/serverUid": {
+            uid: "serverUid", date: "2026-05-29", tips: 120, gratuity: 40, cash: 20, total: 180,
+        },
+        "payouts/2026-05-29/entries/backUid": {
+            uid: "backUid", date: "2026-05-29", tips: 60, gratuity: 20, cash: 10, total: 90,
+        },
+        // A different date must be left untouched.
+        "shifts/2026-05-30": { status: "closed" },
+        "payouts/2026-05-30": { date: "2026-05-30", ledgerVersion: 1 },
+        "payouts/2026-05-30/entries/serverUid": {
+            uid: "serverUid", date: "2026-05-30", tips: 10, gratuity: 5, cash: 0, total: 15,
+        },
+    });
+
+    const result = await removeWithFakeStore(store);
+
+    assert.equal(result.operationId, "removal-operation");
+    assert.deepEqual(result.removedPayoutUids, ["backUid", "serverUid"]);
+    assert.equal(result.removedPayoutCount, 2);
+
+    // The whole target date is gone.
+    assert.equal(store.has("shifts/2026-05-29"), false);
+    assert.equal(store.has("payouts/2026-05-29"), false);
+    assert.equal(store.has("payouts/2026-05-29/entries/serverUid"), false);
+    assert.equal(store.has("payouts/2026-05-29/entries/backUid"), false);
+
+    // Other dates are untouched.
+    assert.equal(store.has("shifts/2026-05-30"), true);
+    assert.equal(store.has("payouts/2026-05-30"), true);
+    assert.equal(store.has("payouts/2026-05-30/entries/serverUid"), true);
+
+    // An audit event records the removal, reusing the existing auditEvents schema.
+    const audit = store.get("auditEvents/removal-operation");
+    assert.equal(audit.type, "shift_removed");
+    assert.equal(audit.date, "2026-05-29");
+    assert.equal(audit.actorUid, "adminUid");
+    assert.deepEqual(audit.removedPayoutUids, ["backUid", "serverUid"]);
+    assert.equal(audit.previousPayoutCount, 2);
+});
+
+test("removeShiftAtomically leaves all state unchanged when the batch commit fails", async () => {
+    const store = new FakeStore({
+        "shifts/2026-05-29": { status: "closed", firstClosedAt: "2026-05-29T04:00:00.000Z" },
+        "payouts/2026-05-29": { date: "2026-05-29", ledgerVersion: 1 },
+        "payouts/2026-05-29/entries/serverUid": {
+            uid: "serverUid", date: "2026-05-29", tips: 120, gratuity: 40, cash: 20, total: 180,
+        },
+    });
+    const before = clone(Object.fromEntries(store.docs));
+
+    await assert.rejects(
+        () => removeWithFakeStore(store, { batchOptions: { failCommit: true } }),
+        /commit failed/
     );
 
     assert.deepEqual(Object.fromEntries(store.docs), before);

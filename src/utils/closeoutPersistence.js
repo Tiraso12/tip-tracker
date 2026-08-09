@@ -20,6 +20,12 @@ export function createCloseoutOperationId(date) {
     return `closeout_${date}_${randomPart}`;
 }
 
+export function createRemovalOperationId(date) {
+    const randomPart = globalThis.crypto?.randomUUID?.()
+        || Math.random().toString(36).slice(2);
+    return `removal_${date}_${randomPart}`;
+}
+
 export const firestoreCloseoutRefs = {
     shift: (db, date) => doc(db, "shifts", date),
     payoutMeta: (db, date) => payoutLedgerMetaRef(db, date),
@@ -163,5 +169,77 @@ export async function saveClosedShiftAtomically({
         nextPayoutUids,
         removedPayoutUids,
         payoutReconciliation,
+    };
+}
+
+function buildRemovalAuditEvent({
+    date,
+    operationId,
+    actorUid,
+    createdAt,
+    removedPayoutUids,
+}) {
+    // Reuses the existing auditEvents key schema (validated by firestore.rules):
+    // removedPayoutUids + previousPayoutCount describe what the removal cleared.
+    return {
+        type: "shift_removed",
+        date,
+        shiftId: date,
+        operationId,
+        actorUid: actorUid || null,
+        createdAt,
+        ledgerVersion: PAYOUT_LEDGER_VERSION,
+        removedPayoutUids,
+        previousPayoutCount: removedPayoutUids.length,
+    };
+}
+
+// Hard-deletes an entire settled date: the shifts/{date} doc, the payouts/{date}
+// meta doc, and every payouts/{date}/entries/* entry, in one atomic batch -
+// mirroring saveClosedShiftAtomically in reverse. Because the employee dashboard
+// subscribes to the ledger live, deleting the entries clears each affected
+// employee's card the moment the batch commits. An auditEvents record is written
+// for the removal. There is no tombstone/voided-status: this is a hard delete.
+export async function removeShiftAtomically({
+    db,
+    date,
+    updatedBy = null,
+    now,
+    operationId = createRemovalOperationId(date),
+    refs = firestoreCloseoutRefs,
+    batchFactory = writeBatch,
+    readPayoutEntries = async () => fetchPayoutEntriesForDate(db, date),
+}) {
+    const removedAt = timestamp(now);
+    const shiftRef = refs.shift(db, date);
+    const previousPayoutEntries = await readPayoutEntries();
+    const removedPayoutUids = previousPayoutEntries
+        .map((entry) => entry.uid)
+        .filter(Boolean)
+        .sort();
+
+    const batch = batchFactory(db);
+
+    batch.delete(shiftRef);
+    batch.delete(refs.payoutMeta(db, date));
+    removedPayoutUids.forEach((uid) => {
+        batch.delete(refs.payoutEntry(db, date, uid));
+    });
+
+    batch.set(refs.auditEvent(db, operationId), buildRemovalAuditEvent({
+        date,
+        operationId,
+        actorUid: updatedBy,
+        createdAt: removedAt,
+        removedPayoutUids,
+    }));
+
+    await batch.commit();
+
+    return {
+        operationId,
+        removedAt,
+        removedPayoutUids,
+        removedPayoutCount: removedPayoutUids.length,
     };
 }

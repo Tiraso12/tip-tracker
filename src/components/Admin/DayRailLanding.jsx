@@ -193,7 +193,7 @@ function Hero({ title, body, tall = false, children }) {
     );
 }
 
-function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, onContinueSettle, onEditFloor }) {
+function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, onContinueSettle, onEditFloor, onRemoveShift, removingShift = false }) {
     const stage = getLandingStage(status);
     const railSteps = getRailSteps({ shiftStatus: status });
 
@@ -211,8 +211,18 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
             ) : stage === "closed" ? (
                 <div className="space-y-3">
                     <DayPayoutPanel date={date} summary={summary} status={status} loading={false} />
-                    <div className="flex justify-end">
-                        <Button variant="secondary" size="sm" onClick={onEditFloor}>
+                    <div className="flex items-center justify-between gap-3">
+                        {onRemoveShift ? (
+                            <button
+                                type="button"
+                                onClick={onRemoveShift}
+                                disabled={removingShift}
+                                className="text-xs font-medium text-[var(--color-danger)] hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+                            >
+                                {removingShift ? "Removing…" : "Remove this shift"}
+                            </button>
+                        ) : <span />}
+                        <Button variant="secondary" size="sm" onClick={onEditFloor} disabled={removingShift}>
                             Edit shift
                         </Button>
                     </div>
