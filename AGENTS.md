@@ -4,6 +4,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 - Add durable project-specific notes here as they are discovered through real work.
 - Local development and validation are emulator-first. Use `docs/TESTING.md` for the authoritative Mac setup, `npm run dev:local` loop, `npm run test:all` gate, and `main`/`develop` branch model.
+- Settled-shift money mutations go through the atomic batches in `src/utils/closeoutPersistence.js` (`saveClosedShiftAtomically` to settle/recalc, `removeShiftAtomically` to hard-delete a date). Each batch appends an `auditEvents` doc, and `firestore.rules` `validAuditEvent()` whitelists the allowed `type` values and keys - a new audit `type` or key must be added there too, or the whole batch is rejected with PERMISSION_DENIED.
 
 ## Maintaining this file
 
