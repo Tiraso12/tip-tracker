@@ -7,6 +7,7 @@ const PROJECT_ID = "demo-tip-tracker-test";
 const ADMIN_EMAIL = "admin@example.com";
 const ADMIN_PASSWORD = "Password123!";
 const SHIFT_DATE = "2026-05-29";
+const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
 let testEnv;
 
@@ -85,6 +86,77 @@ async function seedCloseoutData() {
     });
 }
 
+// Seed an already closed & paid-out shift so tests can exercise the reopen flow
+// without re-running a full closeout.
+async function seedClosedShift(date) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+
+        await setDoc(doc(db, `shifts/${date}`), {
+            date,
+            status: "closed",
+            teams: [{
+                teamId: "team-1",
+                members: [
+                    { uid: "captainUid", name: "Captain One", role: "captain", points: 4 },
+                    { uid: "serverUid", name: "Server One", role: "server", points: 4 },
+                ],
+                pools: { sales: "1000", tips: "200", gratuity: "100", cash: "50" },
+            }],
+            barTeam: { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } },
+            runners: [],
+            summary: { balances: { overallBalance: 0 } },
+            firstClosedAt: "2026-05-20T12:00:00.000Z",
+        });
+        await setDoc(doc(db, "payouts", date), { date, ledgerVersion: 1 });
+        await setDoc(doc(db, "payouts", date, "entries", "captainUid"), {
+            date, uid: "captainUid", name: "Captain One", role: "captain",
+            tips: 184, gratuity: 57.6, cash: 38.4, total: 280, ledgerVersion: 1, source: "closeout",
+        });
+    });
+}
+
+// The Shifts-tab date lives in the app bar as an overlaid native date input
+// (BarDatePill). It is aria-hidden and pointer-events-none by design, so drive it
+// by setting its value directly and firing the change the pill listens for.
+async function setShiftDate(page, date) {
+    await page.locator('input[type="date"]').first().evaluate((el, value) => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(el, value);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, date);
+}
+
+async function login(page) {
+    await page.goto("/");
+    await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
+    await page.getByRole("textbox", { name: "Password" }).fill(ADMIN_PASSWORD);
+    await page.getByRole("button", { name: "Log In" }).click();
+    // Landing (Shifts tab) is ready once the day-step spine renders.
+    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+}
+
+// Open the shift editor from the Shifts landing: a fresh day offers "Build floor
+// plan", a saved/closed day offers "Edit shift".
+async function openEditor(page) {
+    const build = page.getByRole("button", { name: /Build floor plan/i });
+    const edit = page.getByRole("button", { name: "Edit shift" });
+    // Wait out the landing's loading window before deciding which entry to click.
+    await expect(build.or(edit)).toBeVisible();
+    if (await build.count()) {
+        await build.click();
+    } else {
+        await edit.click();
+    }
+    await expect(page.getByRole("heading", { name: "Floor plan" })).toBeVisible();
+}
+
+// Assign a seeded pool employee to the currently selected team (click-to-assign).
+async function assignFromPool(page, name) {
+    await page.locator(`[title="Assign ${name} to selected team"]`).click();
+}
+
 test.beforeAll(async () => {
     testEnv = await initializeTestEnvironment({
         projectId: PROJECT_ID,
@@ -103,37 +175,34 @@ test.beforeEach(async () => {
 });
 
 test("admin can close out a simple dining room shift and create ledger payout records", async ({ page }) => {
-    await page.goto("/");
+    await login(page);
+    await setShiftDate(page, SHIFT_DATE);
+    await openEditor(page);
 
-    await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
-    await page.getByRole("textbox", { name: "Password" }).fill(ADMIN_PASSWORD);
-    await page.getByRole("button", { name: "Log In" }).click();
-
-    await expect(page.getByRole("heading", { name: "Shift Distribution" })).toBeVisible();
-    await page.getByLabel("Select shift date").fill(SHIFT_DATE);
-    await page.getByRole("button", { name: "Edit Shift" }).click();
-
+    // Floor plan: select Team 1, then click-to-assign three dining employees.
     await page.getByRole("button", { name: /Team 1/i }).click();
-    await page.getByText("Captain One").click();
-    await page.getByText("Server One").click();
-    await page.getByText("Back One").click();
+    await assignFromPool(page, "Captain One");
+    await assignFromPool(page, "Server One");
+    await assignFromPool(page, "Back One");
 
-    await page.getByRole("button", { name: "Save Team Setup" }).click();
-    await expect(page.getByText("Team setup saved.").first()).toBeVisible();
+    await page.getByRole("button", { name: /continue to Settle up/i }).click();
+    await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
 
-    await page.getByRole("spinbutton", { name: "Sales ($)", exact: true }).fill("1000");
-    await page.getByRole("spinbutton", { name: "Tips (CTP) ($)", exact: true }).first().fill("200");
-    await page.getByRole("spinbutton", { name: "Gratuity ($)", exact: true }).first().fill("100");
-    await page.getByRole("spinbutton", { name: "Cash ($)", exact: true }).fill("50");
+    // Settle up: enter the dining team's end-of-service money.
+    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
+    await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("200");
+    await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("100");
+    await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("50");
 
-    await page.getByRole("button", { name: "Calculate Payouts" }).click();
-    await expect(page.getByText("Calculated payout review")).toBeVisible();
+    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
+    await expect(page.getByRole("heading", { name: "Review" })).toBeVisible();
     await expect(page.getByText("Captain One").last()).toBeVisible();
     await expect(page.getByText("Server One").last()).toBeVisible();
     await expect(page.getByText("Back One").last()).toBeVisible();
 
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
-    await expect(page.getByText("Saved.").first()).toBeVisible();
+    // On save the editor returns to the paid-out landing (unique Export PDF action).
+    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
@@ -160,51 +229,42 @@ test("admin can close out a simple dining room shift and create ledger payout re
 });
 
 test("editing a closed shift's roster preserves payouts and cleans up the removed employee's ledger entry", async ({ page }) => {
-    await page.goto("/");
-
-    await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
-    await page.getByRole("textbox", { name: "Password" }).fill(ADMIN_PASSWORD);
-    await page.getByRole("button", { name: "Log In" }).click();
-
-    await expect(page.getByRole("heading", { name: "Shift Distribution" })).toBeVisible();
-    await page.getByLabel("Select shift date").fill(SHIFT_DATE);
-    await page.getByRole("button", { name: "Edit Shift" }).click();
+    await login(page);
+    await setShiftDate(page, SHIFT_DATE);
+    await openEditor(page);
 
     await page.getByRole("button", { name: /Team 1/i }).click();
-    await page.getByText("Captain One").click();
-    await page.getByText("Server One").click();
-    await page.getByText("Back One").click();
+    await assignFromPool(page, "Captain One");
+    await assignFromPool(page, "Server One");
+    await assignFromPool(page, "Back One");
 
-    await page.getByRole("button", { name: "Save Team Setup" }).click();
-    await expect(page.getByText("Team setup saved.").first()).toBeVisible();
+    await page.getByRole("button", { name: /continue to Settle up/i }).click();
+    await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
 
-    await page.getByRole("spinbutton", { name: "Sales ($)", exact: true }).fill("1000");
-    await page.getByRole("spinbutton", { name: "Tips (CTP) ($)", exact: true }).first().fill("300");
-    await page.getByRole("spinbutton", { name: "Gratuity ($)", exact: true }).first().fill("150");
-    await page.getByRole("spinbutton", { name: "Cash ($)", exact: true }).fill("80");
+    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
+    await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("300");
+    await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("150");
+    await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("80");
 
-    await page.getByRole("button", { name: "Calculate Payouts" }).click();
+    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
-    await expect(page.getByText("Saved.").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
 
     // Reopen the now-closed, paid-out shift.
-    await page.getByRole("button", { name: "Edit Shift" }).click();
-    await expect(page.getByText("CLOSED SHIFT")).toBeVisible();
+    await page.getByRole("button", { name: "Edit shift" }).click();
+    await expect(page.getByText(/Closed shift/i).first()).toBeVisible();
 
-    // Expanding Team Floor Setup on a closed shift must warn before allowing roster edits.
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: /Team Floor Setup/i }).click();
-
-    // The bare, non-merging "Save Team Setup" overwrite must not be offered on a closed shift.
-    await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
-
+    // On desktop the closed-shift floor stays directly editable; remove Back One.
     await page.getByRole("button", { name: "Remove Back One" }).click();
 
-    // Roster edits on a closed shift go through Calculate Payouts -> Confirm & Save Shift,
-    // which correctly diffs and cleans up the removed employee's tip doc.
-    await page.getByRole("button", { name: "Calculate Payouts" }).click();
+    // The bare, non-merging "Save Team Setup" overwrite is not offered on a closed
+    // shift; roster edits go through Settle up -> Calculate -> Confirm & Save.
+    await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
+
+    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
-    await expect(page.getByText("Saved.").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
@@ -226,5 +286,60 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
         expect(serverPayout.exists()).toBe(true);
         expect(backPayout.exists()).toBe(false);
         expect(auditEvents.size).toBe(2);
+    });
+});
+
+// Mobile-only floor polish regressions (viewport 390x844).
+test.describe("mobile floor polish", () => {
+    test.use({ viewport: MOBILE_VIEWPORT });
+
+    test("F2: closing the assign sheet clears selection so a single tap reopens the team", async ({ page }) => {
+        const date = "2026-05-30";
+        await login(page);
+        await setShiftDate(page, date);
+        await openEditor(page);
+
+        // Tapping the whole card opens the bottom-sheet picker (F1).
+        await page.getByRole("button", { name: /Team 1/i }).click();
+        const sheet = page.getByRole("dialog", { name: /Add employees to Team 1/i });
+        await expect(sheet).toBeVisible();
+
+        // Assign a member, then close the sheet with Done.
+        await sheet.locator('[title="Assign Captain One to selected team"]').click();
+        await sheet.getByRole("button", { name: "Done" }).click();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+
+        // Regression: before the fix the selection lingered, so this first tap only
+        // silently deselected and the sheet stayed closed (it took a second tap).
+        await page.getByRole("button", { name: /Team 1/i }).click();
+        await expect(page.getByRole("dialog", { name: /Add employees to Team 1/i })).toBeVisible();
+    });
+
+    test("F10: a closed shift's floor is view-only until Edit roster is tapped", async ({ page }) => {
+        const date = "2026-05-28";
+        await seedClosedShift(date);
+
+        await login(page);
+        await setShiftDate(page, date);
+        await page.getByRole("button", { name: "Edit shift" }).click();
+        await expect(page.getByRole("heading", { name: "Floor plan" })).toBeVisible();
+
+        // View-only by default: the Edit roster affordance is shown, the team
+        // card is inert (disabled, opens no picker), and the stepper is hidden.
+        await expect(page.getByText("The roster is view-only.")).toBeVisible();
+        const editRoster = page.getByRole("button", { name: "Edit roster" });
+        await expect(editRoster).toBeVisible();
+        await expect(page.getByRole("button", { name: "Add restaurant team" })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /Team 1/i })).toBeDisabled();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+
+        // Opting into editing routes the admin through Settle up -> Confirm & Save
+        // and re-enables the floor.
+        await editRoster.click();
+        await expect(page.getByRole("button", { name: /Continue to Settle up/i })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Add restaurant team" })).toBeVisible();
+
+        await page.getByRole("button", { name: /Team 1/i }).click();
+        await expect(page.getByRole("dialog", { name: /Add employees to Team 1/i })).toBeVisible();
     });
 });
