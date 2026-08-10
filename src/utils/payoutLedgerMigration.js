@@ -1,8 +1,31 @@
 import { buildPayoutLedgerEntry } from "./payoutLedger.js";
 
-const MONEY_FIELDS = ["tips", "gratuity", "cash", "wineBonus", "points", "total"];
+// Genuine money actually paid to staff. `points` is intentionally excluded: it
+// is a distribution WEIGHT (e.g. 2, 2.5, 4), not paid money - the
+// users/{uid}/tips mirror stores points: 0 while the shift payout carries the
+// real weight, so treating it as a money field flags zero-dollar differences as
+// conflicts. `total` is likewise excluded here because it is DERIVED (see below).
+const MONEY_FIELDS = ["tips", "gratuity", "cash", "wineBonus"];
+
+// `total` is derived from the money fields and stored rounded in one source
+// (shift) but raw (tips + gratuity) in the other, so the two can legitimately
+// differ by a rounding cent. Compare it only within a 1-cent tolerance.
+const DERIVED_FIELDS = ["total"];
+
+// Tolerances expressed in whole cents. Money fields must agree to the cent
+// (float noise is snapped away by rounding); the derived total may differ by one
+// cent because one source rounds it and the other stores the raw sum.
+const MONEY_TOLERANCE_CENTS = 0;
+const DERIVED_TOLERANCE_CENTS = 1;
 
 const toMoney = (value) => Number(value) || 0;
+
+// Compare in integer cents so we never subtract two floats directly - e.g. a
+// legitimate 1-cent gap like 531.44 - 531.43 evaluates to 0.01000000000000477
+// in floating point, which would spuriously exceed a 0.01 epsilon.
+const toCents = (value) => Math.round(toMoney(value) * 100);
+const moneyWithin = (left, right, toleranceCents) =>
+    Math.abs(toCents(left) - toCents(right)) <= toleranceCents;
 
 function entryKey(date, uid) {
     return `${date}/${uid}`;
@@ -47,8 +70,14 @@ function normalizeLegacyTipPayout(date, uid, tip = {}) {
     };
 }
 
+// Two legacy payouts represent "the same money paid" when the genuine money
+// fields agree (within float noise) and the derived total agrees within a cent.
+// Weight (`points`) is ignored entirely.
 export function payoutAmountsMatch(left = {}, right = {}) {
-    return MONEY_FIELDS.every((field) => toMoney(left[field]) === toMoney(right[field]));
+    return (
+        MONEY_FIELDS.every((field) => moneyWithin(left[field], right[field], MONEY_TOLERANCE_CENTS)) &&
+        DERIVED_FIELDS.every((field) => moneyWithin(left[field], right[field], DERIVED_TOLERANCE_CENTS))
+    );
 }
 
 export function buildCanonicalPayoutLedgerMigration({ shifts = [], tips = [] } = {}) {
