@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ScrollRail from '../ScrollRail';
 
 // Captains lead the list per captain direction; the "All" chip is gone - the
 // unfiltered view is the default, and tapping the active role chip again clears it.
@@ -83,8 +84,13 @@ function EmployeePool({
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
 
-            <div className="flex-none flex flex-wrap gap-1.5 pb-0.5" aria-label="Filter available employees by role">
-                {ROLE_FILTERS.map(filter => (
+            {/* Role filter chips. Desktop/tablet keep the multi-row wrap; on phones the
+                seven chips would wrap to 2-3 rows and shove the employee list below the
+                fold, so they become a single horizontal scroll rail (shared ScrollRail:
+                edge fades + a "›" cue signal the off-screen chips). Tap-to-toggle-off and
+                aria-pressed are preserved in both layouts. */}
+            {(() => {
+                const chipButtons = ROLE_FILTERS.map(filter => (
                     <button
                         key={filter.value}
                         type="button"
@@ -94,8 +100,24 @@ function EmployeePool({
                     >
                         {filter.label}
                     </button>
-                ))}
-            </div>
+                ));
+                return (
+                    <>
+                        <div className="flex-none flex flex-wrap gap-1.5 pb-0.5 max-[560px]:hidden" aria-label="Filter available employees by role">
+                            {chipButtons}
+                        </div>
+                        <div className="hidden max-[560px]:block flex-none">
+                            <ScrollRail
+                                ariaLabel="Filter available employees by role"
+                                depsKey={roleFilter}
+                                className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                            >
+                                {chipButtons}
+                            </ScrollRail>
+                        </div>
+                    </>
+                );
+            })()}
 
             {selectedTeamId && (
                 <div className="flex-none bg-[var(--color-accent-soft)] border border-[var(--color-line-strong)] rounded-[var(--radius-xs)] px-[0.55rem] py-[0.28rem] text-[0.7rem] text-[var(--color-accent)] font-semibold text-center">

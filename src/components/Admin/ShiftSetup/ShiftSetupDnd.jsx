@@ -319,9 +319,9 @@ function ShiftSetupDnd({
                     role="dialog"
                     aria-modal="true"
                     aria-label={`Add employees to ${selectedTargetLabel || 'selected team'}`}
-                    className="absolute inset-x-0 bottom-0 max-h-[82vh] rounded-t-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[0_-12px_36px_rgba(15,23,42,0.22)] border-t border-[var(--color-line)] overflow-hidden"
+                    className="absolute inset-x-0 bottom-0 flex flex-col h-[82vh] rounded-t-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[0_-12px_36px_rgba(15,23,42,0.22)] border-t border-[var(--color-line)] overflow-hidden"
                 >
-                    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[var(--color-line)]">
+                    <div className="flex-none flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[var(--color-line)]">
                         <div className="min-w-0">
                             <h3 className="text-sm font-semibold text-[var(--color-ink)] truncate">
                                 {selectedTargetLabel || 'Selected team'}
@@ -336,7 +336,7 @@ function ShiftSetupDnd({
                         </button>
                     </div>
 
-                    <div className="px-4 py-2.5 border-b border-[var(--color-line)] bg-[var(--color-surface)]">
+                    <div className="flex-none px-4 py-2.5 border-b border-[var(--color-line)] bg-[var(--color-surface)]">
                         <div className="mb-2 flex items-center justify-between gap-3">
                             <div className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
                                 Assigned
@@ -350,7 +350,7 @@ function ShiftSetupDnd({
                                 No employees assigned yet.
                             </div>
                         ) : (
-                            <div className="flex flex-col gap-1.5">
+                            <div className="flex flex-col gap-1.5 max-h-[26vh] overflow-y-auto">
                                 {selectedTargetMembers.map(member => (
                                     <div
                                         key={member.uid}
@@ -404,7 +404,7 @@ function ShiftSetupDnd({
                         selectedTargetLabel={selectedTargetLabel}
                         onAddUnregistered={handleAddUnregistered}
                         title="Choose Employees"
-                        className="h-[calc(82vh-135px)] min-h-0 bg-[var(--color-surface-muted)] p-3 flex flex-col gap-2.5 overflow-hidden"
+                        className="flex-1 min-h-0 bg-[var(--color-surface-muted)] p-3 flex flex-col gap-2.5 overflow-hidden"
                     />
                 </div>
             </div>

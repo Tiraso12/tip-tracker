@@ -52,7 +52,7 @@ function TeamAssignmentPanel({
                 {readOnly ? null : (
                     <div className="flex items-center gap-1.5">
                         <button
-                            className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
+                            className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-11 max-[560px]:w-11"
                             onClick={onRemoveTeam}
                             disabled={teams.length <= 1}
                             title="Remove last team"
@@ -60,7 +60,7 @@ function TeamAssignmentPanel({
                         >−</button>
                         <span className="font-bold text-[0.9rem] min-w-[18px] text-center">{teams.length}</span>
                         <button
-                            className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-8 max-[560px]:w-8"
+                            className="bg-[var(--color-surface-muted)] border-0 text-[var(--color-ink)] w-[22px] h-[22px] rounded-[var(--radius-xs)] flex items-center justify-center cursor-pointer transition-opacity duration-150 text-base hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed max-[560px]:h-11 max-[560px]:w-11"
                             onClick={onAddTeam}
                             title="Add team"
                             aria-label="Add restaurant team"
