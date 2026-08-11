@@ -539,6 +539,33 @@ function CalculatedPayoutReview({ review, poolAvailable, availableCash = 0 }) {
 }
 
 
+// The floating action pair pinned to the bottom-right corner, shared by the Floor
+// plan and Settle up editors so both screens enter/exit edit identically. Cancel is
+// a neutral pill that never competes with the accent primary; each is its own 44px+
+// tap target. (Single source of truth - do not fork a parallel FAB per screen.)
+function EditorActionPair({ onCancel, onPrimary, primaryLabel, busy }) {
+    return (
+        <div className="fixed bottom-5 right-5 z-30 flex items-center gap-2.5">
+            <button
+                type="button"
+                onClick={onCancel}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-strong)] bg-[var(--color-surface)] px-5 py-3.5 text-sm font-semibold text-[var(--color-ink-soft)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-transform active:scale-95 disabled:opacity-60"
+            >
+                Cancel
+            </button>
+            <button
+                type="button"
+                onClick={onPrimary}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+            >
+                {primaryLabel}
+            </button>
+        </div>
+    );
+}
+
 // A stable fingerprint of the editable shift (roster + money), ignoring transient
 // UI-only fields like `_showContracts`. Comparing the live fingerprint to the one
 // captured at load tells us whether the admin has actually changed anything - used
@@ -574,10 +601,17 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     // The old two-accordion editor is retired; each step is its own focused screen.
     const [step, setStep] = useState(initialStep === "settle" ? "settle" : "floor");
     const [activeGroupId, setActiveGroupId] = useState("team-1");
+    // Settle up lands LOCKED: the money form is visible but its fields are disabled
+    // until the admin taps the floating Edit. Done/Cancel re-lock in place (they do
+    // not leave the settle screen). The group switcher stays tappable while locked.
+    const [settleEditable, setSettleEditable] = useState(false);
     const [draftStatus, setDraftStatus] = useState("");
     // Fingerprint of the shift as loaded, so Cancel can tell an untouched view from
     // one with real edits and only confirm a discard when work would actually be lost.
     const loadedFingerprintRef = useRef("");
+    // Snapshot of the money taken when Settle up is unlocked, so Cancel can revert to
+    // exactly what was showing before this edit and truly discard the changes.
+    const settleSnapshotRef = useRef(null);
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -801,6 +835,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         setCalculatedReview(null);
     }, [teams, barTeam, runners, date]);
 
+    // Settle up always (re-)enters locked: switching day-steps or loading a new day
+    // returns the money form to its read-only view.
+    useEffect(() => {
+        setSettleEditable(false);
+    }, [step, date]);
+
     useEffect(() => {
         const loadShift = async () => {
             try {
@@ -851,7 +891,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     }, [date]);
 
     useEffect(() => {
-        if (!hasLoadedShift || loading || isSaving || shiftStatus === "closed") return undefined;
+        // Pause autosave while Settle up is unlocked: in-progress money edits must not
+        // persist until Done, so Cancel can restore the pre-edit snapshot and discard.
+        if (!hasLoadedShift || loading || isSaving || shiftStatus === "closed" || settleEditable) return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
         let cancelled = false;
@@ -891,6 +933,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         isSaving,
         loading,
         runners,
+        settleEditable,
         shiftStatus,
         teams,
     ]);
@@ -939,6 +982,34 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         onClose();
     };
 
+    // Settle up "Done": persist the entered money (as the shift's setup draft, the
+    // same shape autosave writes) and RE-LOCK in place - stays on the Settle screen,
+    // returning to the locked view. A closed shift instead takes the paid-out path
+    // (Done -> Calculate -> Review -> Confirm & Save), so this only runs for a setup
+    // shift; the closed case is wired to handleCalculateForReview on the button.
+    const handleDoneSettle = async () => {
+        if (isSaving) return;
+        setIsSaving(true);
+        setSaveStatus("Saving money…");
+        try {
+            await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
+                date,
+                teams,
+                barTeam,
+                runners,
+                includeCloseoutDraft: true,
+            }));
+            setShiftStatus("setup");
+            setSaveStatus("Money saved.");
+            setSettleEditable(false);
+        } catch (e) {
+            console.error("Failed to save settle-up money:", e);
+            setSaveStatus("Failed to save money.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     // Has the admin actually changed anything since the shift loaded?
     const isDirty = hasLoadedShift
         && loadedFingerprintRef.current !== ""
@@ -963,6 +1034,40 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
             if (!confirmed) return;
         }
         onClose();
+    };
+
+    // Settle up "Edit": snapshot the money as it stands, then unlock the fields.
+    // Autosave is paused while unlocked (see the draft effect), so nothing persists
+    // until Done - which lets Cancel restore this snapshot and truly discard.
+    const handleEditSettle = () => {
+        settleSnapshotRef.current = { teams, barTeam, runners };
+        setSettleEditable(true);
+    };
+
+    // Settle up "Cancel": discard the in-progress edits by restoring the snapshot from
+    // when Edit was pressed, then re-lock in place (stay on the Settle screen). On a
+    // closed shift, confirm first when there are real changes to drop.
+    const handleCancelSettle = () => {
+        if (isSaving) return;
+        const snapshot = settleSnapshotRef.current;
+        const changed = snapshot
+            && fingerprintShift(teams, barTeam, runners)
+                !== fingerprintShift(snapshot.teams, snapshot.barTeam, snapshot.runners);
+        if (shiftStatus === "closed" && changed) {
+            const confirmed = window.confirm(
+                "Discard your changes to this closed shift's money?\n\n" +
+                "Edits to a paid-out shift are only saved when you Calculate Payouts and " +
+                "Confirm & Save Shift. Discarding keeps the saved payouts unchanged."
+            );
+            if (!confirmed) return;
+        }
+        if (snapshot) {
+            setTeams(snapshot.teams);
+            setBarTeam(snapshot.barTeam);
+            setRunners(snapshot.runners);
+        }
+        setSaveStatus("");
+        setSettleEditable(false);
     };
 
     // Day rail step navigation (Floor -> Settle -> Review). Earlier steps are always
@@ -1049,6 +1154,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     // Effective step guards a stray "review" with no calculation behind it.
     const effectiveStep = step === "review" && !calculatedReview ? "settle" : step;
 
+    // The editing "layer" (accent frame + "Editing" strip) is active on the floor and
+    // review steps, and on Settle up only once it is unlocked. A locked Settle up reads
+    // as a neutral, read-only view.
+    const isEditingLayer = effectiveStep === "settle" ? settleEditable : true;
+    // Closed-shift money steps keep their warning frame, so the accent editing frame
+    // shows only when we are in the editing layer and not on a closed money step.
+    const showEditFrame = isEditingLayer && !(shiftStatus === "closed" && effectiveStep !== "floor");
+
     // Day-level step status for the rail. Status is always shown; order is never
     // hard-forced - any earlier/reachable step is one tap away.
     const railSteps = getRailSteps({
@@ -1069,9 +1182,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 review) keep a neutral frame so the accent never competes with their
                 warning styling, but its FLOOR step gets the same accent editing frame
                 as a setup shift (v3: identical in-place edit look). */}
-            <Card className={"!p-0 " + ((shiftStatus === "closed" && effectiveStep !== "floor")
-                ? ""
-                : "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]")
+            <Card className={"!p-0 " + (showEditFrame
+                ? "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]"
+                : "")
                 + (effectiveStep === "floor" ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
@@ -1110,7 +1223,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                         </span>
                         <span className="text-[11px] tabular-nums text-[var(--color-warning)]/80">{date}</span>
                     </div>
-                ) : (
+                ) : isEditingLayer ? (
                     <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
@@ -1119,6 +1232,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                 : effectiveStep === "review"
                                     ? "Editing · Review"
                                     : "Editing floor plan"}
+                        </span>
+                    </div>
+                ) : (
+                    // Locked Settle up: a neutral view header, not an editing cue -
+                    // tap the floating Edit button to change the money.
+                    <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-line)] bg-[var(--color-surface-muted)]/60">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-ink-soft)]">
+                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-ink-muted)]" />
+                            Settle up
                         </span>
                     </div>
                 )}
@@ -1159,45 +1281,37 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                     runners={runners} setRunners={setRunners}
                                     readOnly={false}
                                 />
-                                {/* Floating action pair. Cancel leaves edit mode WITHOUT saving and
-                                    returns to the read-only floor view; Done commits. Cancel is a
-                                    neutral pill so it never competes with the accent Done, and each is
-                                    its own 44px+ tap target. Done keeps its behaviour for both cases -
-                                    setup: save the draft and return to the read-only floor view;
-                                    settled/paid: route into the EXISTING overwrite-confirmed save
-                                    (handleCalculateForReview -> Review step with the "Re-saving
+                                {/* Floating action pair (shared with Settle up). Cancel leaves edit
+                                    mode WITHOUT saving and returns to the read-only floor view; Done
+                                    commits. For a setup shift Done saves the draft and returns; for a
+                                    settled/paid shift it routes into the EXISTING overwrite-confirmed
+                                    save (handleCalculateForReview -> Review with the "Re-saving
                                     overwrites the saved payouts for {date}" warning + Confirm & Save).
                                     Nothing is written until that explicit confirm. */}
-                                <div className="fixed bottom-5 right-5 z-30 flex items-center gap-2.5">
-                                    <button
-                                        type="button"
-                                        onClick={handleCancelEdit}
-                                        disabled={isSaving}
-                                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-strong)] bg-[var(--color-surface)] px-5 py-3.5 text-sm font-semibold text-[var(--color-ink-soft)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-transform active:scale-95 disabled:opacity-60"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={shiftStatus === "closed" ? handleCalculateForReview : handleDoneFloor}
-                                        disabled={isSaving}
-                                        className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-                                    >
-                                        {isSaving ? "Saving…" : "✓ Done"}
-                                    </button>
-                                </div>
+                                <EditorActionPair
+                                    onCancel={handleCancelEdit}
+                                    onPrimary={shiftStatus === "closed" ? handleCalculateForReview : handleDoneFloor}
+                                    primaryLabel={isSaving ? "Saving…" : "✓ Done"}
+                                    busy={isSaving}
+                                />
                             </div>
                         ) : effectiveStep === "settle" ? (
-                            /* STEP 2 - Settle up (the calm single money switcher, unchanged) */
-                            <section className="space-y-4">
+                            /* STEP 2 - Settle up: the calm single money switcher, edited in place and
+                               saved with the same bottom-right FAB as the floor plan. */
+                            <section className="space-y-4 max-[560px]:pb-24">
                                 {/* Team switcher: a compact horizontal strip above one fixed-height entry
                                     panel. Tapping a pill focuses that group; the strip scrolls sideways on
                                     phone so page height stays constant no matter how large the roster is.
                                     A status line + edge fade keep off-screen groups and their money status
                                     discoverable instead of a blind sideways swipe. */}
                                 <div className="flex items-center justify-between gap-3">
-                                    <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                        {groupStatusSummary.total} {groupStatusSummary.total === 1 ? "group" : "groups"}
+                                    <span className="inline-flex items-baseline gap-2">
+                                        <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                                            {groupStatusSummary.total} {groupStatusSummary.total === 1 ? "group" : "groups"} · Pool
+                                        </span>
+                                        <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
+                                            {fmtMoney(poolSummary.payoutPool)}
+                                        </strong>
                                     </span>
                                     {groupStatusSummary.total > 0 ? (
                                         groupStatusSummary.needsMoney > 0 ? (
@@ -1229,6 +1343,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                     ))}
                                 </ScrollRail>
 
+                                {/* Locked view = these very same fields, disabled. A native
+                                    disabled fieldset switches every input/stepper off at once; Edit
+                                    flips it back on in place. The group switcher above stays outside
+                                    the fieldset so you can still page through each group while locked. */}
+                                <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0">
                                 <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
                                     {activeGroup.kind === "dining" ? (
                                         <>
@@ -1273,49 +1392,49 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                         </>
                                     )}
                                 </CloseoutEntryPanel>
+                                </fieldset>
 
-                                {/* Settle-up total + advance to Review */}
-                                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-                                    <div className="flex items-center justify-between gap-3 sm:justify-start">
-                                        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                            Settle-up total
-                                        </span>
-                                        <strong className="font-mono tabular-nums text-base text-[var(--color-ink)]">
-                                            {fmtMoney(poolSummary.payoutPool)}
-                                        </strong>
-                                    </div>
-                                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
-                                        {groupStatusSummary.needsMoney > 0 ? (
-                                            <span className="flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
-                                                <span aria-hidden="true">⚠</span>
-                                                <span>{groupStatusSummary.needsMoney} {groupStatusSummary.needsMoney === 1 ? "group has" : "groups have"} no tip pool yet</span>
-                                            </span>
-                                        ) : saveStatus ? (
-                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
-                                        ) : draftStatus ? (
-                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
-                                        ) : null}
-                                        {/* Cancel leaves Settle up without committing (same exit as the
-                                            floor Cancel); Calculate advances to Review. */}
-                                        <div className="flex items-center gap-2.5 max-[560px]:w-full">
-                                            <Button
-                                                variant="secondary"
-                                                onClick={handleCancelEdit}
-                                                disabled={isSaving}
-                                                className="flex-none max-[560px]:h-11"
-                                            >
-                                                Cancel
-                                            </Button>
-                                            <Button
-                                                onClick={handleCalculateForReview}
-                                                disabled={isSaving}
-                                                className="max-[560px]:h-11 max-[560px]:flex-1"
-                                            >
-                                                {isSaving ? "Calculating…" : "Calculate Payouts →"}
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
+                                {/* A closed shift disables draft autosave, so surface the live save/
+                                    draft status inline; a setup shift's money autosaves silently. */}
+                                {(saveStatus || draftStatus) ? (
+                                    <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
+                                        {saveStatus || draftStatus}
+                                    </p>
+                                ) : null}
+
+                                {settleEditable ? (
+                                    /* Editing: the floor plan's floating pair. Cancel re-locks without
+                                       saving; Done saves the money and re-locks in place (a closed shift
+                                       instead takes the paid-out path: Done -> Calculate -> Review). */
+                                    <EditorActionPair
+                                        onCancel={handleCancelSettle}
+                                        onPrimary={shiftStatus === "closed" ? handleCalculateForReview : handleDoneSettle}
+                                        primaryLabel={isSaving ? "Saving…" : "✓ Done"}
+                                        busy={isSaving}
+                                    />
+                                ) : (
+                                    <>
+                                        {/* Locked view: Calculate Payouts stays available so the shift
+                                            can always advance to Review -> Confirm & Save without
+                                            unlocking, and the single floating Edit button unlocks the
+                                            very same fields for changes. */}
+                                        <Button
+                                            onClick={handleCalculateForReview}
+                                            disabled={isSaving}
+                                            size="lg"
+                                            className="w-full"
+                                        >
+                                            Calculate Payouts →
+                                        </Button>
+                                        <button
+                                            type="button"
+                                            onClick={handleEditSettle}
+                                            className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95"
+                                        >
+                                            ✎ Edit
+                                        </button>
+                                    </>
+                                )}
                             </section>
                         ) : (
                             /* STEP 3 - Review -> Confirm & Save */

@@ -179,6 +179,28 @@ async function assignFromPool(page, name) {
     await page.locator(`[title="Assign ${name} to selected team"]`).click();
 }
 
+// Setup-shift Settle up flow. Settle up lands LOCKED (the money form is visible but
+// its fields are disabled); the floating Edit unlocks the same fields in place, Done
+// saves and re-locks, and Calculate Payouts (available in the locked view) advances
+// to Review.
+async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
+    const rail = page.getByRole("navigation", { name: "Day steps" });
+    await rail.getByRole("button", { name: "Settle" }).click();
+
+    // Unlock the same fields in place, enter the money, then save + re-lock with Done.
+    await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
+    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
+    await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
+    await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
+    await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
+    await page.getByRole("button", { name: "✓ Done" }).click();
+    await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toBeVisible();
+
+    // Calculate Payouts advances to Review.
+    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
+    await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
+}
+
 test.beforeAll(async () => {
     testEnv = await initializeTestEnvironment({
         projectId: PROJECT_ID,
@@ -207,21 +229,13 @@ test("admin can close out a simple dining room shift and create ledger payout re
     await assignFromPool(page, "Server One");
     await assignFromPool(page, "Back One");
 
-    // New nav: ✓ Done saves the floor and returns to the read-only floor view; the
-    // old "Continue to Settle up" button is gone - advance to Settle from the rail.
+    // ✓ Done saves the floor and returns to the read-only floor view.
     await page.getByRole("button", { name: "✓ Done" }).click();
     await expect(page.getByText("Floor plan is set")).toBeVisible();
-    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
-    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
 
-    // Settle up: enter the dining team's end-of-service money.
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
-    await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("200");
-    await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("100");
-    await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("50");
-
-    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
-    await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
+    // Settle up mirrors the floor plan: open its read-only summary, edit the money in
+    // place, save with Done, then Calculate Payouts to reach Review.
+    await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
     await expect(page.getByText("Captain One").last()).toBeVisible();
     await expect(page.getByText("Server One").last()).toBeVisible();
     await expect(page.getByText("Back One").last()).toBeVisible();
@@ -264,19 +278,11 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await assignFromPool(page, "Server One");
     await assignFromPool(page, "Back One");
 
-    // New nav: ✓ Done saves the floor and returns to the read-only floor view; the
-    // old "Continue to Settle up" button is gone - advance to Settle from the rail.
+    // ✓ Done saves the floor; Settle up mirrors the floor plan (summary -> Edit -> money
+    // -> Done -> Calculate) to reach Review, then confirm to close the shift.
     await page.getByRole("button", { name: "✓ Done" }).click();
     await expect(page.getByText("Floor plan is set")).toBeVisible();
-    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
-    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
-
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
-    await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("300");
-    await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("150");
-    await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("80");
-
-    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
+    await settleMoneyAndReview(page, { sales: "1000", tips: "300", gratuity: "150", cash: "80" });
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
     await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
 
@@ -292,6 +298,8 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     // shift; roster edits go through Settle up -> Calculate -> Confirm & Save.
     await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
 
+    // Closed shift: Settle up lands locked; Calculate Payouts is available without
+    // unlocking and routes into the overwrite-confirmed Review.
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
     await page.getByRole("button", { name: /Calculate Payouts/i }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
@@ -372,9 +380,11 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByText("Editing floor plan")).toHaveCount(0);
         await expect(page.getByRole("tab", { name: /Team 1/ })).toHaveCount(0); // not the money step
 
-        // Advancing to Settle is a deliberate tap on the rail's Settle step.
+        // Advancing to Settle shows the money screen (locked); the group switcher is
+        // present and the floating Edit unlocks the fields in place.
         await rail.getByRole("button", { name: "Settle" }).click();
         await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+        await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toBeVisible();
     });
 
     test("the day-step rail is Floor -> Settle -> Review with no Pay out step", async ({ page }) => {
@@ -476,5 +486,51 @@ test.describe("mobile floor polish", () => {
             const backPayout = await getDoc(doc(db, "payouts", date, "entries", "backUid"));
             expect(backPayout.exists()).toBe(false);
         });
+    });
+
+    test("Settle up lands locked: the money fields are disabled until Edit, and Done re-locks them in place", async ({ page }) => {
+        const date = "2026-05-23";
+        await seedSetupShift(date);
+        await login(page);
+        await setShiftDate(page, date);
+
+        // Lands showing the REAL money fields, but locked (disabled) - not a separate
+        // read-only representation.
+        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+        const sales = page.getByRole("spinbutton", { name: "Sales", exact: true });
+        await expect(sales).toBeVisible();
+        await expect(sales).toBeDisabled();
+        await expect(page.getByText(/Editing · Settle up/)).toHaveCount(0);
+
+        // Edit unlocks the very same fields in place.
+        await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
+        await expect(page.getByText(/Editing · Settle up/)).toBeVisible();
+        await expect(sales).toBeEnabled();
+        await sales.fill("500");
+
+        // Done saves and re-locks in place (stays on Settle up; the value persists).
+        await page.getByRole("button", { name: "✓ Done" }).click();
+        await expect(page.getByText(/Editing · Settle up/)).toHaveCount(0);
+        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toBeDisabled();
+        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toHaveValue("500");
+    });
+
+    test("Settle up: Cancel discards the in-progress money edit and re-locks in place", async ({ page }) => {
+        const date = "2026-05-22";
+        await seedSetupShift(date);
+        await login(page);
+        await setShiftDate(page, date);
+
+        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+        await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
+        await expect(page.getByText(/Editing · Settle up/)).toBeVisible();
+        const tips = page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true });
+        await tips.fill("500");
+
+        // Cancel discards the typed value (reverts to the pre-edit snapshot) and re-locks.
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(page.getByText(/Editing · Settle up/)).toHaveCount(0);
+        await expect(page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true })).toBeDisabled();
+        await expect(page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true })).toHaveValue("");
     });
 });

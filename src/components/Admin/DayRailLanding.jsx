@@ -105,6 +105,22 @@ function FloorTeamCard({ title, members, kind }) {
     );
 }
 
+// The read-only screens' single floating Edit button, pinned to the bottom-right
+// corner. Shared by the Floor plan and Settle up views (and the closed-shift view)
+// so entering edit feels identical everywhere - one source of truth for the FAB.
+function EditFab({ onClick, label = "✎ Edit", disabled = false }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+        >
+            {label}
+        </button>
+    );
+}
+
 // Read-only card grid of the saved floor, shown before Settle up. Same two-up
 // card layout and chips as the editor - just no drag/select/step controls - so
 // the floor is consistent to read whether building or confirming.
@@ -144,15 +160,9 @@ function FloorLineup({ lineup, onEditFloor }) {
             </div>
 
         </Card>
-        {/* PROTOTYPE: floating Edit FAB - the floor is edited in place (no separate
-            screen). Settle up is reached from the day rail above. */}
-        <button
-            type="button"
-            onClick={onEditFloor}
-            className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95"
-        >
-            ✎ Edit
-        </button>
+        {/* Floating Edit FAB - the floor is edited in place. Settle up is reached
+            from the day rail above and mirrors this same view/edit pattern. */}
+        <EditFab onClick={onEditFloor} />
         </>
     );
 }
@@ -175,8 +185,7 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
     const stage = getLandingStage(status);
     // On the read-only floor view (settle stage) the rail's active step is Floor -
     // you are looking at the floor. Settle is the reachable "next" pill you tap to
-    // advance. (Prototype fix #2: the old focus highlighted Settle here, so tapping
-    // Done read as "jumped to Settle".)
+    // advance into the (directly-editable) money screen.
     let railSteps = getRailSteps({ shiftStatus: status });
     if (stage === "settle") {
         railSteps = railSteps.map((s) =>
@@ -187,9 +196,8 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
     }
 
     const onStepClick = (key) => {
-        // Prototype fix #1: Floor = the read-only view you are already on. Edit is
-        // entered ONLY via the floating ✎ Edit button, so tapping Floor never drops
-        // into edit mode. Settle advances to the money step.
+        // Floor = the read-only view you are already on; Edit is entered via the
+        // floating ✎ Edit button. Settle advances into the money screen.
         if (key === "settle") onContinueSettle?.();
     };
 
@@ -223,18 +231,9 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
                         </div>
                     ) : null}
                 </div>
-                {/* Prototype fix #4: "Edit shift" is a floating button (same feel as
-                    the floor's ✎ Edit) that switches the saved shift into edit mode.
-                    Destination (onEditFloor) and the closed-shift save-safety path are
-                    unchanged - only the affordance moved. */}
-                <button
-                    type="button"
-                    onClick={onEditFloor}
-                    disabled={removingShift}
-                    className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-                >
-                    ✎ Edit shift
-                </button>
+                {/* "Edit shift" is the same floating Edit button as the floor/settle
+                    views, switching the saved shift into edit mode. */}
+                <EditFab onClick={onEditFloor} label="✎ Edit shift" disabled={removingShift} />
                 </>
             ) : stage === "settle" ? (
                 <FloorLineup lineup={lineup} onEditFloor={onEditFloor} />
