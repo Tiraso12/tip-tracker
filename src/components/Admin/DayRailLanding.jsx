@@ -1,12 +1,11 @@
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRail from "./DayRail";
 import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
-import { RUNNER_FLAT_RATE } from "../../utils/constants";
 import { Button, Card } from "../ui";
 
 // Approach A landing. The day rail leads with its first incomplete step:
 //  - no floor plan yet  -> first-run hero into Floor plan (step 1)
-//  - floor built (setup) -> team-by-team floor confirmation, then Settle up
+//  - floor built (setup) -> read-only card grid of the floor, then Settle up
 //  - closed / paid       -> the Pay out review (as today), rail all done
 //
 // The friendly date lives once in the app-bar Bar Date pill, so the heroes no
@@ -14,108 +13,99 @@ import { Button, Card } from "../ui";
 
 const plural = (count, one, many) => (count === 1 ? one : many);
 
-// Role -> confirmation label. Restaurant roles keep their name; bartender reads
-// "Bar", runner reads "Runner" (both handled explicitly at the row).
-const ROLE_LABELS = {
-    captain: "Captain",
-    server: "Server",
-    back: "Back",
-    assistant: "Assistant",
-    bartender: "Bar",
-    runner: "Runner",
-};
+// Compact role badge for a roster chip, mirroring the editor's TeamDropZone
+// chips so the floor "reads the same" whether you are editing or reviewing.
+const ROLE_BADGES = { captain: "C", server: "S", back: "B", assistant: "A" };
 
-// Initials for the roster avatar. Skips parenthetical tags so "Temp Staff
-// (Temp)" reads "TS", matching the editor's avatar logic.
-function getInitials(name = "") {
-    const parts = name.trim().split(/\s+/).filter((part) => /[a-z0-9]/i.test(part[0]));
-    if (parts.length === 0) {
-        const alnum = name.replace(/[^a-z0-9]/gi, "");
-        return alnum ? alnum.slice(0, 2).toUpperCase() : "?";
-    }
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-// The temp seed name is literally "Temp Staff (Temp)"; drop the doubled tag for
-// display and surface it once as a small marker instead.
-const isTempMember = (member) =>
-    /\(temp\)/i.test(member?.name || "") || String(member?.uid || "").startsWith("unreg");
+// The temp seed name is literally "Temp Staff (Temp)"; the saved lineup usually
+// stores the plain username, but strip a trailing "(Temp)" defensively so chips
+// read "Frankie Lee", not "Frankie Lee (Temp)".
 const cleanName = (name = "") => name.replace(/\s*\((?:temp)\)\s*$/i, "").trim() || name;
 
-function Avatar({ name }) {
+// Role/points tag, e.g. "C·4". Runners and bar staff are flat-rate, so they read
+// as a plain label rather than points math - matching the editor exactly.
+const memberTag = (member, kind) => {
+    if (kind === "runner") return "Runner";
+    if (kind === "bar") return "Bar";
+    const badge = ROLE_BADGES[member.role] || "S";
+    const points = member.points;
+    return points === null || points === undefined || points === ""
+        ? badge
+        : `${badge}·${points}`;
+};
+
+// One read-only roster chip: name + compact role/points tag. The captain gets an
+// accent treatment so the team lead stays scannable, same as the editor card.
+function MemberChip({ member, kind }) {
+    const isCaptain = kind === "team" && member.role === "captain";
     return (
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-[0.6rem] font-bold uppercase leading-none text-[var(--color-accent)]">
-            {getInitials(name)}
-        </span>
-    );
-}
-
-function TempTag() {
-    return (
-        <span className="inline-flex items-center rounded-full bg-[var(--color-surface-muted)] px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-[var(--color-ink-muted)]">
-            Temp
-        </span>
-    );
-}
-
-// One roster row: avatar · name (+ Temp marker) · role/points on the right.
-function PersonRow({ member, kind }) {
-    const name = cleanName(member.name || "");
-    const roleLabel = kind === "runner"
-        ? "Runner"
-        : kind === "bar"
-            ? "Bar"
-            : ROLE_LABELS[member.role] || "Server";
-
-    let meta;
-    if (kind === "runner") {
-        meta = `Runner · $${member.payoutAmount ?? RUNNER_FLAT_RATE}`;
-    } else if (kind === "bar") {
-        meta = (
-            <span className="inline-flex items-center rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-[0.68rem] font-medium text-[var(--color-ink-soft)]">
-                Bar
+        <span
+            className={[
+                "inline-flex max-w-full items-center gap-1.5 rounded-full border pl-2 pr-1 py-0.5",
+                isCaptain
+                    ? "border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]"
+                    : "border-[var(--color-line)] bg-[var(--color-surface-muted)]",
+            ].join(" ")}
+        >
+            <span
+                className={[
+                    "max-w-[7rem] truncate text-[0.72rem] font-medium leading-none",
+                    isCaptain ? "text-[var(--color-accent)]" : "text-[var(--color-ink)]",
+                ].join(" ")}
+            >
+                {cleanName(member.name || "")}
             </span>
-        );
-    } else {
-        const pts = member.points === null || member.points === undefined || member.points === ""
-            ? "Auto pts"
-            : `${member.points} ${plural(member.points, "pt", "pts")}`;
-        meta = `${roleLabel} · ${pts}`;
-    }
+            <span
+                className={[
+                    "shrink-0 rounded-full px-1.5 py-0.5 text-[0.6rem] font-bold uppercase leading-none tracking-[0.02em]",
+                    isCaptain
+                        ? "bg-[var(--color-accent)] text-[var(--color-surface)]"
+                        : "bg-[var(--color-surface)] text-[var(--color-ink-muted)]",
+                ].join(" ")}
+            >
+                {memberTag(member, kind)}
+            </span>
+        </span>
+    );
+}
 
+// One read-only team card: header (title + count) then wrapped member chips.
+// Populated cards get a solid border; empty teams stay dashed and read "Empty",
+// mirroring the editor's TeamDropZone so the floor looks the same in both places.
+function FloorTeamCard({ title, members, kind }) {
+    const count = members.length;
+    const populated = count > 0;
     return (
-        <div className="flex items-center gap-2.5 px-4 py-2.5 max-[560px]:px-3">
-            <Avatar name={name} />
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <span className="truncate text-sm font-medium text-[var(--color-ink)]">{name}</span>
-                {isTempMember(member) ? <TempTag /> : null}
+        <div
+            className={[
+                "flex flex-col gap-[0.4rem] rounded-[var(--radius-md)] border-[1.5px] px-[0.65rem] py-[0.55rem] bg-[var(--color-surface)] max-[560px]:rounded-[var(--radius-sm)] max-[560px]:px-3 max-[560px]:py-2",
+                populated
+                    ? "border-solid border-[var(--color-line-strong)]"
+                    : "border-dashed border-[var(--color-line)]",
+            ].join(" ")}
+        >
+            <div className="flex items-center justify-between gap-2">
+                <h4 className="m-0 min-w-0 truncate text-[0.82rem] font-semibold text-[var(--color-ink)]">
+                    {title}
+                </h4>
+                <span className="shrink-0 text-[0.72rem] font-semibold text-[var(--color-ink-muted)]">
+                    {populated ? `${count} ${plural(count, "member", "members")}` : "Empty"}
+                </span>
             </div>
-            <span className="shrink-0 text-right text-xs font-medium tabular-nums text-[var(--color-ink-soft)]">
-                {meta}
-            </span>
+            {populated ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {members.map((member) => (
+                        <MemberChip key={member.uid} member={member} kind={kind} />
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 }
 
-function TeamBlock({ title, count, children }) {
-    return (
-        <section className="border-b border-[var(--color-line)] last:border-b-0">
-            <div className="flex items-center justify-between gap-3 bg-[var(--color-surface-muted)]/60 px-4 py-2 max-[560px]:px-3">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
-                    {title}
-                </span>
-                <span className="text-[11px] font-medium tabular-nums text-[var(--color-ink-muted)]">
-                    {count} {plural(count, "person", "people")}
-                </span>
-            </div>
-            <div className="divide-y divide-[var(--color-line)]">{children}</div>
-        </section>
-    );
-}
-
-// Read-only team-by-team confirmation of the saved floor, shown before Settle
-// up. No edit controls, drag handles, or +/- here - just the lineup to confirm.
+// Read-only card grid of the saved floor, shown before Settle up. Same two-up
+// card layout and chips as the editor - just no drag/select/step controls - so
+// the floor is consistent to read whether building or confirming.
 function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
     const teams = lineup?.teams || [];
     const barMembers = lineup?.barTeam?.members || [];
@@ -137,30 +127,17 @@ function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
                 </p>
             </header>
 
-            <div>
+            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4">
                 {teams.map((team, index) => (
-                    <TeamBlock key={team.teamId || index} title={`Team ${index + 1}`} count={team.members?.length || 0}>
-                        {(team.members || []).map((member) => (
-                            <PersonRow key={member.uid} member={member} kind="team" />
-                        ))}
-                    </TeamBlock>
+                    <FloorTeamCard
+                        key={team.teamId || index}
+                        title={`Team ${index + 1}`}
+                        members={team.members || []}
+                        kind="team"
+                    />
                 ))}
-
-                {barCount > 0 ? (
-                    <TeamBlock title="Bar" count={barCount}>
-                        {barMembers.map((member) => (
-                            <PersonRow key={member.uid} member={member} kind="bar" />
-                        ))}
-                    </TeamBlock>
-                ) : null}
-
-                {runnerCount > 0 ? (
-                    <TeamBlock title="Runners" count={runnerCount}>
-                        {runners.map((member) => (
-                            <PersonRow key={member.uid} member={member} kind="runner" />
-                        ))}
-                    </TeamBlock>
-                ) : null}
+                <FloorTeamCard title="Bar Team" members={barMembers} kind="bar" />
+                <FloorTeamCard title="Runners" members={runners} kind="runner" />
             </div>
 
             <footer className="flex flex-col items-stretch gap-2 border-t border-[var(--color-line)] px-5 py-4 max-[560px]:px-4">
