@@ -556,11 +556,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     const [step, setStep] = useState(initialStep === "settle" ? "settle" : "floor");
     const [activeGroupId, setActiveGroupId] = useState("team-1");
     const [draftStatus, setDraftStatus] = useState("");
-    // F10 (mobile): a closed/paid-out shift's floor is view-only until the admin
-    // opts into editing. Roster edits still persist only via Settle up -> Confirm &
-    // Save (the atomic closeout path), so this gate just protects a paid-out roster
-    // from an accidental tap; it changes no save behavior.
-    const [editRoster, setEditRoster] = useState(false);
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -791,7 +786,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 setHasLoadedShift(false);
                 setDraftStatus("");
                 setShiftStatus(null);
-                setEditRoster(false);
                 const shiftDoc = await getDoc(doc(db, "shifts", date));
                 if (shiftDoc.exists()) {
                     const d = shiftDoc.data();
@@ -1016,9 +1010,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
 
             {/* Edit mode reads as a distinct layer: an accent stroke + soft accent
                 elevation lifts the workspace off the page, versus the plain bordered
-                cards of the read-only landing. Closed shifts keep a neutral frame so
-                the accent never competes with their warning styling. */}
-            <Card className={"!p-0 " + (shiftStatus === "closed"
+                cards of the read-only landing. A settled shift's money steps (settle /
+                review) keep a neutral frame so the accent never competes with their
+                warning styling, but its FLOOR step gets the same accent editing frame
+                as a setup shift (v3: identical in-place edit look). */}
+            <Card className={"!p-0 " + ((shiftStatus === "closed" && effectiveStep !== "floor")
                 ? ""
                 : "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]")}>
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
@@ -1026,7 +1022,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                         <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
                             Shift Workspace - {date}
                         </h2>
-                        {shiftStatus === "closed" ? (
+                        {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
                             <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
                                 Closed shift
                             </span>
@@ -1050,7 +1046,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                     always-visible strip. Non-closed shows an accent "Editing floor plan"
                     cue (matching the workspace's accent frame) so it is clear you are in
                     the editing layer, not the read-only floor view. */}
-                {shiftStatus === "closed" ? (
+                {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
                     <div className="sm:hidden flex items-center justify-between gap-2 px-3 py-2.5 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-warning)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
@@ -1092,71 +1088,31 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                         {/* STEP 1 - Floor plan */}
                         {effectiveStep === "floor" ? (
                             <div>
+                                {/* PROTOTYPE v3: identical in-place editor for setup AND settled
+                                    shifts - the redesigned cards are always editable (the entry
+                                    was an explicit "Edit"; autosave is disabled for closed shifts
+                                    so nothing persists until the confirmed save below). */}
                                 <ShiftSetupDnd
                                     allEmployees={allEmployees}
                                     teams={teams} setTeams={setTeams}
                                     barTeam={barTeam} setBarTeam={setBarTeam}
                                     runners={runners} setRunners={setRunners}
-                                    readOnly={shiftStatus === "closed" && !editRoster}
+                                    readOnly={false}
                                 />
-                                {shiftStatus === "closed" ? (
-                                    /* Closed/paid-out shift: existing safety-checked edit path, unchanged. */
-                                    <div className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-end max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-                                        {/* Desktop keeps its existing behavior/copy (unchanged). */}
-                                        <span className="hidden sm:inline text-xs text-[var(--color-ink-soft)]">
-                                            This shift is already closed and paid out. Roster changes are saved via Settle up → Confirm & Save Shift.
-                                        </span>
-                                        {/* Mobile (F10, Option A): view-only floor behind an explicit
-                                            "Edit roster" affordance; editing routes through Confirm & Save. */}
-                                        {editRoster ? (
-                                            <div className="flex w-full flex-col gap-2 sm:hidden">
-                                                <span className="text-xs text-[var(--color-ink-soft)]">
-                                                    Editing the roster of a paid-out shift. Changes are saved via Settle up → Confirm & Save Shift.
-                                                </span>
-                                                <div className="flex gap-2">
-                                                    <Button
-                                                        variant="secondary"
-                                                        onClick={() => setEditRoster(false)}
-                                                        className="flex-1"
-                                                    >
-                                                        Done
-                                                    </Button>
-                                                    <Button
-                                                        onClick={() => setStep("settle")}
-                                                        className="flex-1"
-                                                    >
-                                                        Continue to Settle up →
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="flex w-full flex-col gap-2 sm:hidden">
-                                                <span className="text-xs text-[var(--color-ink-soft)]">
-                                                    This shift is closed and paid out. The roster is view-only.
-                                                </span>
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={() => setEditRoster(true)}
-                                                    className="w-full"
-                                                >
-                                                    Edit roster
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    /* PROTOTYPE (setup shift): a floating Done FAB replaces the old
-                                       "Save & continue". It saves the floor and returns to the
-                                       read-only landing; Settle is reached from the day rail. */
-                                    <button
-                                        type="button"
-                                        onClick={handleDoneFloor}
-                                        disabled={isSaving}
-                                        className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-                                    >
-                                        {isSaving ? "Saving…" : "✓ Done"}
-                                    </button>
-                                )}
+                                {/* Floating Done FAB - same look for both. Setup: save the draft
+                                    and return to the read-only floor view. Settled/paid: route into
+                                    the EXISTING overwrite-confirmed save - handleCalculateForReview
+                                    lands on the Review step showing "Re-saving overwrites the saved
+                                    payouts for {date}" + Confirm & Save Shift. Nothing is written
+                                    until that explicit confirm; money/recalc/persistence unchanged. */}
+                                <button
+                                    type="button"
+                                    onClick={shiftStatus === "closed" ? handleCalculateForReview : handleDoneFloor}
+                                    disabled={isSaving}
+                                    className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                                >
+                                    {isSaving ? "Saving…" : "✓ Done"}
+                                </button>
                             </div>
                         ) : effectiveStep === "settle" ? (
                             /* STEP 2 - Settle up (the calm single money switcher, unchanged) */
