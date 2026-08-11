@@ -117,8 +117,8 @@ function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
     const floorTotal = diningCount + barCount + runnerCount;
 
     return (
-        <Card className="!p-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
-            <header className="px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-4 max-[560px]:shrink-0">
+        <Card className="!p-0">
+            <header className="px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-4">
                 <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
                     Floor plan is set
                 </h2>
@@ -127,7 +127,7 @@ function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
                 </p>
             </header>
 
-            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto">
+            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4">
                 {teams.map((team, index) => (
                     <FloorTeamCard
                         key={team.teamId || index}
@@ -140,7 +140,7 @@ function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
                 <FloorTeamCard title="Runners" members={runners} kind="runner" />
             </div>
 
-            <footer className="flex flex-col items-stretch gap-2 border-t border-[var(--color-line)] px-5 py-4 max-[560px]:px-4 max-[560px]:shrink-0">
+            <footer className="flex flex-col items-stretch gap-2 border-t border-[var(--color-line)] px-5 py-4 max-[560px]:px-4">
                 <Button size="lg" onClick={onContinueSettle} className="w-full">
                     Continue to Settle up →
                 </Button>
@@ -180,11 +180,7 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
     };
 
     return (
-        // On phones the landing fills the viewport (100dvh minus the app bar + main
-        // padding) so the saved-floor review reaches the bottom of the screen with its
-        // actions pinned there, instead of floating with dead space below. Desktop keeps
-        // its natural top-aligned height. Only the settle view opts into flex-1 fill.
-        <div className="space-y-3 sm:space-y-4 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]">
+        <div className="space-y-3 sm:space-y-4">
             <DayRail steps={railSteps} onStepClick={onStepClick} />
 
             {loading ? (

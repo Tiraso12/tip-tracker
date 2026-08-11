@@ -1013,17 +1013,28 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 shown; earlier/reachable steps are one tap away (order never forced). */}
             <DayRail steps={railSteps} onStepClick={goToStep} />
 
-            <Card className="!p-0">
+            {/* Edit mode reads as a distinct layer: an accent stroke + soft accent
+                elevation lifts the workspace off the page, versus the plain bordered
+                cards of the read-only landing. Closed shifts keep a neutral frame so
+                the accent never competes with their warning styling. */}
+            <Card className={"!p-0 " + (shiftStatus === "closed"
+                ? ""
+                : "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]")}>
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
                         <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
                             Shift Workspace - {date}
                         </h2>
-                        {shiftStatus ? (
+                        {shiftStatus === "closed" ? (
                             <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                {shiftStatus === "closed" ? "Closed shift" : "Floor plan saved"}
+                                Closed shift
                             </span>
-                        ) : null}
+                        ) : (
+                            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
+                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+                                Editing
+                            </span>
+                        )}
                         {saveStatus ? (
                             <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
                         ) : draftStatus ? (
@@ -1035,24 +1046,25 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 {/* Mobile status strip: the workspace header above is `hidden sm:flex`,
                     so on phones the closed / paid-out cue would otherwise vanish and an
                     admin could re-save a paid-out shift blind. Surface a compact,
-                    always-visible strip that mirrors the desktop badge. */}
-                {shiftStatus ? (
-                    shiftStatus === "closed" ? (
-                        <div className="sm:hidden flex items-center justify-between gap-2 px-3 py-2.5 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-warning)]">
-                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
-                                Closed shift · Paid out
-                            </span>
-                            <span className="text-[11px] tabular-nums text-[var(--color-warning)]/80">{date}</span>
-                        </div>
-                    ) : (
-                        <div className="sm:hidden px-3 py-2.5 border-b border-[var(--color-line)]">
-                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                Floor plan saved
-                            </span>
-                        </div>
-                    )
-                ) : null}
+                    always-visible strip. Non-closed shows an accent "Editing floor plan"
+                    cue (matching the workspace's accent frame) so it is clear you are in
+                    the editing layer, not the read-only floor view. */}
+                {shiftStatus === "closed" ? (
+                    <div className="sm:hidden flex items-center justify-between gap-2 px-3 py-2.5 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-warning)]">
+                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
+                            Closed shift · Paid out
+                        </span>
+                        <span className="text-[11px] tabular-nums text-[var(--color-warning)]/80">{date}</span>
+                    </div>
+                ) : (
+                    <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent)]">
+                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
+                            Editing floor plan
+                        </span>
+                    </div>
+                )}
 
                 {loading ? (
                     <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
