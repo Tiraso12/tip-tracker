@@ -44,13 +44,17 @@ const buildEmployeeTotals = (days = []) => {
             const tips = n(pay.tips);
             const gratuity = n(pay.gratuity);
             const cash = n(pay.cash);
-            const total = pay.total !== undefined ? n(pay.total) : tips + gratuity + cash;
+            // Total is CTP + GRT, matching the on-screen reports panel. Cash is
+            // its own column and is deliberately not added in here.
+            const total = tips + gratuity;
+            const activityTotal = total + cash;
 
             employeeTotals[uid].tips += tips;
             employeeTotals[uid].gratuity += gratuity;
             employeeTotals[uid].cash += cash;
             employeeTotals[uid].total += total;
-            employeeTotals[uid].shifts += total > 0 ? 1 : 0;
+            // A cash-only shift is still a shift worked.
+            employeeTotals[uid].shifts += activityTotal > 0 ? 1 : 0;
         });
     });
 

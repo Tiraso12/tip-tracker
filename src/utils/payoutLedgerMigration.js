@@ -1,4 +1,4 @@
-import { buildPayoutLedgerEntry } from "./payoutLedger.js";
+import { buildPayoutLedgerEntry, getPayoutTotal } from "./payoutLedger.js";
 
 // Genuine money actually paid to staff. `points` is intentionally excluded: it
 // is a distribution WEIGHT (e.g. 2, 2.5, 4), not paid money - the
@@ -10,6 +10,10 @@ const MONEY_FIELDS = ["tips", "gratuity", "cash", "wineBonus"];
 // `total` is derived from the money fields and stored rounded in one source
 // (shift) but raw (tips + gratuity) in the other, so the two can legitimately
 // differ by a rounding cent. Compare it only within a 1-cent tolerance.
+// Both sides are re-derived as CTP + GRT by the normalizers below rather than
+// read from the legacy docs: legacy dining totals were written cash-inclusive,
+// and comparing those against a canonical total would report every dining
+// payout with cash as a bogus conflict.
 const DERIVED_FIELDS = ["total"];
 
 // Tolerances expressed in whole cents. Money fields must agree to the cent
@@ -32,17 +36,20 @@ function entryKey(date, uid) {
 }
 
 function normalizeLegacyShiftPayout(date, uid, payout = {}) {
+    const tips = toMoney(payout.tips ?? payout.tip);
+    const gratuity = toMoney(payout.gratuity);
+
     return {
         date,
         uid,
         name: payout.name || "Unknown",
         role: payout.role || "staff",
         points: toMoney(payout.points),
-        tips: toMoney(payout.tips ?? payout.tip),
-        gratuity: toMoney(payout.gratuity),
+        tips,
+        gratuity,
         cash: toMoney(payout.cash),
         wineBonus: toMoney(payout.wineBonus),
-        total: toMoney(payout.total),
+        total: getPayoutTotal({ tips, gratuity }),
         teamId: payout.teamId || null,
         breakdown: payout.breakdown || {},
         payoutAmount: payout.payoutAmount ?? null,
@@ -63,20 +70,29 @@ function normalizeLegacyTipPayout(date, uid, tip = {}) {
         gratuity,
         cash: toMoney(tip.cash),
         wineBonus: toMoney(tip.wineBonus),
-        total: toMoney(tip.total !== undefined ? tip.total : tips + gratuity),
+        total: getPayoutTotal({ tips, gratuity }),
         teamId: tip.teamId || null,
         breakdown: tip.breakdown || {},
         payoutAmount: tip.payoutAmount ?? null,
     };
 }
 
+// Re-derive `total` for both sides instead of reading the stored field. One
+// side of a comparison can be a ledger doc written before `total` became
+// CTP + GRT (dining totals used to include cash) or a legacy shift payout with
+// the same problem; comparing stored totals would flag those as conflicts even
+// though the underlying money is identical.
+const canonicalTotal = (payout = {}) => getPayoutTotal(payout);
+
 // Two legacy payouts represent "the same money paid" when the genuine money
 // fields agree (within float noise) and the derived total agrees within a cent.
 // Weight (`points`) is ignored entirely.
 export function payoutAmountsMatch(left = {}, right = {}) {
+    const derived = { total: [canonicalTotal(left), canonicalTotal(right)] };
+
     return (
         MONEY_FIELDS.every((field) => moneyWithin(left[field], right[field], MONEY_TOLERANCE_CENTS)) &&
-        DERIVED_FIELDS.every((field) => moneyWithin(left[field], right[field], DERIVED_TOLERANCE_CENTS))
+        DERIVED_FIELDS.every((field) => moneyWithin(derived[field][0], derived[field][1], DERIVED_TOLERANCE_CENTS))
     );
 }
 

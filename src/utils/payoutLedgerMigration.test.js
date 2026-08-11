@@ -26,11 +26,24 @@ test("payoutAmountsMatch: derived total off by a rounding cent is a MATCH", () =
     assert.equal(payoutAmountsMatch(shift, tip), true);
 });
 
-test("payoutAmountsMatch: a derived total off by two cents is still a CONFLICT", () => {
+test("payoutAmountsMatch: a stale stored total does not create a conflict on its own", () => {
+    // `total` is re-derived as CTP + GRT on both sides, so a stored total that
+    // disagrees with the money fields cannot manufacture a conflict. Money still
+    // has to agree to the cent (covered by the next test).
     const shift = { tips: 100, gratuity: 25, cash: 10, wineBonus: 0, points: 2, total: 135.00 };
     const tip = { tips: 100, gratuity: 25, cash: 10, wineBonus: 0, points: 0, total: 135.02 };
 
-    assert.equal(payoutAmountsMatch(shift, tip), false);
+    assert.equal(payoutAmountsMatch(shift, tip), true);
+});
+
+test("payoutAmountsMatch: a legacy cash-inclusive total is not a conflict", () => {
+    // The exact pending-migration case: a dining payout in `shifts` stored
+    // total = CTP + GRT + cash, while the users/{uid}/tips mirror stored
+    // CTP + GRT. Same money paid, so the migration must not plan a conflict.
+    const shift = { tips: 100, gratuity: 25, cash: 10, wineBonus: 0, points: 2.5, total: 135 };
+    const tip = { tips: 100, gratuity: 25, cash: 10, wineBonus: 0, points: 0, total: 125 };
+
+    assert.equal(payoutAmountsMatch(shift, tip), true);
 });
 
 test("payoutAmountsMatch: a genuine dollar difference in money fields is a CONFLICT", () => {
@@ -191,4 +204,63 @@ test("plans only missing ledger writes and is idempotent after entries exist", (
     assert.equal(secondPlan.writes.length, 0);
     assert.equal(secondPlan.skipped.length, 1);
     assert.equal(secondPlan.conflicts.length, 0);
+});
+
+test("legacy cash-inclusive totals plan cleanly against canonical ledger entries", () => {
+    // A dining payout whose legacy docs stored total = CTP + GRT + cash, planned
+    // against a ledger entry already written under the CTP + GRT rule. This is
+    // the shape the pending production migration will meet; it must skip, not
+    // conflict, and must not rewrite the entry.
+    const legacyDiningPayout = {
+        date: "2026-05-29",
+        uid: "captainUid",
+        name: "Dining Captain",
+        role: "captain",
+        tips: 321.35,
+        gratuity: 39.99,
+        cash: 39.99,
+        wineBonus: 0,
+        points: 4,
+        total: 401.33,
+    };
+
+    const existingCanonicalEntry = {
+        ...legacyDiningPayout,
+        total: 361.34,
+    };
+
+    const plan = planPayoutLedgerWrites({
+        desiredEntries: [legacyDiningPayout],
+        existingEntries: [existingCanonicalEntry],
+        operationId: "migration-legacy",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    assert.equal(plan.conflicts.length, 0);
+    assert.equal(plan.writes.length, 0);
+    assert.equal(plan.skipped.length, 1);
+});
+
+test("a legacy payout that must be written lands with a CTP + GRT total", () => {
+    const plan = planPayoutLedgerWrites({
+        desiredEntries: [{
+            date: "2026-05-29",
+            uid: "captainUid",
+            name: "Dining Captain",
+            role: "captain",
+            tips: 321.35,
+            gratuity: 39.99,
+            cash: 39.99,
+            wineBonus: 0,
+            points: 4,
+            total: 401.33,
+        }],
+        existingEntries: [],
+        operationId: "migration-legacy-write",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    assert.equal(plan.writes.length, 1);
+    assert.equal(plan.writes[0].data.total, 361.34);
+    assert.equal(plan.writes[0].data.cash, 39.99);
 });

@@ -3,6 +3,8 @@ import test from "node:test";
 import { calculateShift } from "./engine.js";
 import { RUNNER_FLAT_RATE } from "./constants.js";
 
+const r2 = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+
 const getOnly = (items) => {
     assert.equal(items.length, 1);
     return items[0];
@@ -54,9 +56,16 @@ test("calculates a balanced role-point shift with bar CTP allocation", () => {
     const assistant = getOnly(result.payouts.roleGrouped.assistants);
     const bartender = getOnly(result.payouts.roleGrouped.bar);
 
+    // `total` is CTP + GRT for every role. Cash is paid separately and stays out
+    // of it - these dining totals are each exactly their cash short of the
+    // employee's full take-home, which is the intended reporting split.
     assert.deepEqual(
         [captain.total, server.total, back.total, assistant.total, bartender.total],
-        [564, 464, 290, 232, 100],
+        [500, 400, 250, 200, 100],
+    );
+    assert.deepEqual(
+        [captain.cash, server.cash, back.cash, assistant.cash, bartender.cash],
+        [64, 64, 40, 32, 0],
     );
 
     assert.deepEqual(result.balances.poolBalances, {
@@ -257,4 +266,64 @@ test("reconciles rounding to keep distributed totals balanced", () => {
     assert.equal(payouts.reduce((sum, payout) => sum + payout.ctp, 0), 100);
     assert.equal(payouts.reduce((sum, payout) => sum + payout.cash, 0), 100);
     assert.equal(payouts.reduce((sum, payout) => sum + payout.grt, 0), 100);
+
+    // The rounding pass rewrites the last payout's total; it must rewrite it to
+    // CTP + GRT, not sneak the cash adjustment back in.
+    payouts.forEach((payout) => {
+        assert.equal(payout.total, r2(payout.ctp + payout.grt));
+    });
+    assert.equal(payouts.reduce((sum, payout) => sum + payout.total, 0), 200);
+});
+
+// THE CONTRACT: `total` means CTP + GRT for every role. Cash is always paid and
+// reported separately and must never be folded into a total. This test walks the
+// whole shape of a shift - dining, bar, runners, cash-heavy and cash-free teams -
+// so no future edit can quietly reintroduce a cash-inclusive total for one role.
+test("total excludes cash for every role, dining and bar alike", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [
+                    { uid: "captain-1", name: "Captain One", role: "captain" },
+                    { uid: "server-1", name: "Server One", role: "server" },
+                ],
+                pools: { sales: 12000, tips: 1800, cash: 400, gratuity: 300 },
+                contracts: [{ gratuity: 260 }],
+            },
+            {
+                teamId: "team-2",
+                members: [{ uid: "back-1", name: "Back One", role: "back" }],
+                pools: { sales: 4000, tips: 600, cash: 0, gratuity: 0 },
+                contracts: [],
+            },
+        ],
+        barTeam: {
+            members: [{ uid: "bar-1", name: "Bar One", role: "bartender", points: 2 }],
+            pools: { sales: 3000, tips: 500, gratuity: 100 },
+        },
+        runners: [{ uid: "runner-1", name: "Runner One", role: "runner", payoutAmount: 90 }],
+    });
+
+    const { captains, servers, backs, assistants, bar } = result.payouts.roleGrouped;
+    const staff = [...captains, ...servers, ...backs, ...assistants, ...bar];
+
+    assert.equal(staff.length, 4);
+    // At least one dining payout actually carries cash, or this proves nothing.
+    assert.ok(staff.some((payout) => payout.cash > 0));
+
+    staff.forEach((payout) => {
+        assert.equal(
+            payout.total,
+            r2(payout.ctp + payout.grt),
+            `${payout.name} total must be CTP + GRT`,
+        );
+    });
+
+    // Cash is still fully distributed - it moved out of `total`, it did not vanish.
+    assert.equal(
+        r2(staff.reduce((sum, payout) => sum + (payout.cash || 0), 0)),
+        result.adjustedPools.adjustedTeamCashPool,
+    );
+    assert.equal(result.balances.overallBalance, 0);
 });

@@ -32,6 +32,16 @@ const toMoney = (value) => Number(value) || 0;
 const r2 = (value) => Math.round((toMoney(value) + Number.EPSILON) * 100) / 100;
 const RECONCILIATION_TOLERANCE = 0.05;
 
+// THE TOTAL RULE: `total` is CTP (tips) + GRT (gratuity), for EVERY role.
+// Cash is always a separate payment - employees are handed cash on its own and
+// must see all three numbers - so it is NEVER folded into a total. Every read
+// path below derives the total with this helper rather than trusting a stored
+// `total`, so ledger docs written under the old cash-inclusive rule still
+// produce correct numbers and reconcile correctly without a data backfill.
+export function getPayoutTotal(payout = {}) {
+    return r2(toMoney(payout.tips ?? payout.tip) + toMoney(payout.gratuity));
+}
+
 export function payoutLedgerMetaRef(db, date) {
     return doc(db, PAYOUT_LEDGER_COLLECTION, date);
 }
@@ -56,7 +66,9 @@ export function buildPayoutLedgerEntry({
     const tips = toMoney(payout.tips ?? payout.tip);
     const gratuity = toMoney(payout.gratuity);
     const cash = toMoney(payout.cash);
-    const total = toMoney(payout.total !== undefined ? payout.total : tips + gratuity);
+    // Derived, never passed through: an incoming cash-inclusive `total` (old
+    // engine output, or a legacy doc being migrated) must not enter the ledger.
+    const total = getPayoutTotal({ tips, gratuity });
     const role = payout.role || "staff";
 
     return {
@@ -90,7 +102,7 @@ export function ledgerEntryToEmployeeData(entry) {
         cash: entry.cash ?? "",
         wineBonus: entry.wineBonus ?? 0,
         points: entry.points ?? 0,
-        total: entry.total ?? 0,
+        total: getPayoutTotal(entry),
         role: entry.role || "",
         shiftDate: entry.date || "",
         updatedAt: entry.updatedAt || "",
@@ -108,7 +120,7 @@ export function ledgerEntriesToPayoutMap(entries = []) {
             gratuity: toMoney(entry.gratuity),
             cash: toMoney(entry.cash),
             wineBonus: toMoney(entry.wineBonus),
-            total: toMoney(entry.total),
+            total: getPayoutTotal(entry),
             teamId: entry.teamId || null,
             breakdown: entry.breakdown || {},
             payoutAmount: entry.payoutAmount ?? null,
@@ -120,7 +132,7 @@ export function ledgerEntriesToPayoutMap(entries = []) {
 export function ledgerEntryToSummaryPayout(entry) {
     const tips = toMoney(entry.tips);
     const gratuity = toMoney(entry.gratuity);
-    const total = toMoney(entry.total !== undefined ? entry.total : tips + gratuity);
+    const total = getPayoutTotal(entry);
 
     return {
         uid: entry.uid,
@@ -165,12 +177,29 @@ export function attachLedgerPayoutsToSummary(summary, entries = []) {
     };
 }
 
+// Non-cash money the ledger says staff were paid (CTP + GRT across all roles).
 export function getLedgerStaffTotal(entries = []) {
-    return r2(entries.reduce((sum, entry) => (
-        sum + (entry.total === undefined
-            ? toMoney(entry.tips) + toMoney(entry.gratuity) + toMoney(entry.cash)
-            : toMoney(entry.total))
-    ), 0));
+    return r2(entries.reduce((sum, entry) => sum + getPayoutTotal(entry), 0));
+}
+
+// Cash the ledger says staff were paid. Tracked as its own side of the books
+// rather than being absorbed into the staff total.
+export function getLedgerStaffCash(entries = []) {
+    return r2(entries.reduce((sum, entry) => sum + toMoney(entry.cash), 0));
+}
+
+// The cash the shift intended to hand out: after rounding reconciliation the
+// dining cash payouts sum exactly to the adjusted team cash pool. Older summaries
+// that predate `adjustedPools` fall back to the base team cash input; if neither
+// is present the caller has nothing to check cash against and gets null.
+export function getExpectedStaffCash(summary = {}) {
+    const pool = summary?.adjustedPools?.adjustedTeamCashPool;
+    if (pool !== undefined) return r2(pool);
+
+    const baseTeamCash = summary?.derivedValues?.baseTeamCash;
+    if (baseTeamCash !== undefined) return r2(baseTeamCash);
+
+    return null;
 }
 
 export function getExternalFeeTotal(summary = {}) {
@@ -193,9 +222,22 @@ export function reconcilePayoutLedger({ summary, entries = [], tolerance = RECON
         ? balances.overallBalance
         : totalAvailable - totalDistributed);
     const externalFees = getExternalFeeTotal(summary);
-    const expectedStaffTotal = r2(totalDistributed - externalFees);
+
+    // `totalDistributed` is everything the shift handed out, cash included, so
+    // stripping the external fees leaves all staff money - cash and non-cash.
+    // Ledger totals are now CTP + GRT only, so cash has to be split off here
+    // explicitly instead of riding along inside each entry's `total`.
+    const expectedStaffPayout = r2(totalDistributed - externalFees);
+    const ledgerStaffCash = getLedgerStaffCash(entries);
+    const summaryStaffCash = getExpectedStaffCash(summary);
+    // With no cash figure in the summary there is nothing independent to check
+    // cash against, so fall back to the ledger's own cash. The combined
+    // (cash + non-cash) invariant below is still enforced either way.
+    const expectedStaffCash = summaryStaffCash === null ? ledgerStaffCash : summaryStaffCash;
+    const expectedStaffTotal = r2(expectedStaffPayout - expectedStaffCash);
     const ledgerStaffTotal = getLedgerStaffTotal(entries);
     const ledgerStaffBalance = r2(expectedStaffTotal - ledgerStaffTotal);
+    const ledgerCashBalance = r2(expectedStaffCash - ledgerStaffCash);
     const messages = [];
 
     if (!hasBalanceFields) {
@@ -210,6 +252,10 @@ export function reconcilePayoutLedger({ summary, entries = [], tolerance = RECON
         messages.push(`Payout ledger does not reconcile with expected staff payouts. Difference: ${ledgerStaffBalance.toFixed(2)}.`);
     }
 
+    if (Math.abs(ledgerCashBalance) > tolerance) {
+        messages.push(`Payout ledger cash does not reconcile with the shift's cash pool. Difference: ${ledgerCashBalance.toFixed(2)}.`);
+    }
+
     return {
         ok: messages.length === 0,
         tolerance,
@@ -217,9 +263,13 @@ export function reconcilePayoutLedger({ summary, entries = [], tolerance = RECON
         totalDistributed,
         overallBalance,
         externalFees,
+        expectedStaffPayout,
+        expectedStaffCash,
         expectedStaffTotal,
         ledgerStaffTotal,
+        ledgerStaffCash,
         ledgerStaffBalance,
+        ledgerCashBalance,
         messages,
     };
 }

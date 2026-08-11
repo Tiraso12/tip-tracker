@@ -29,8 +29,9 @@ function reconcile(arr, targetTotal, key) {
         const lastItem = arr[arr.length - 1];
         lastItem[key] = r2(lastItem[key] + diff);
         if (lastItem.total !== undefined) {
-            // Recalculate total if the item has one
-            lastItem.total = r2(lastItem.ctp + (lastItem.grt || 0) + (lastItem.cash || 0));
+            // Recalculate total if the item has one. `total` is CTP + GRT only -
+            // cash is always paid and reported separately, never folded into a total.
+            lastItem.total = r2(lastItem.ctp + (lastItem.grt || 0));
         }
     }
 }
@@ -161,15 +162,18 @@ export function calculateShift(inputs) {
 
     const barPayouts = config.barTeam.members.map(emp => {
         const pts = n(emp.points);
-        const ctp = pts * barCTPPointValue;
-        const grt = pts * barGRTPointValue;
+        // Sum the ROUNDED components, not the raw ones: the employee sees the
+        // rounded CTP and GRT, so the total has to be exactly what those two add
+        // to. Summing raw values first can land a cent above the visible sum.
+        const ctp = r2(pts * barCTPPointValue);
+        const grt = r2(pts * barGRTPointValue);
         return {
             uid: emp.uid,
             name: emp.name,
             role: 'bartender',
             points: pts,
-            ctp: r2(ctp),
-            grt: r2(grt),
+            ctp,
+            grt,
             cash: 0,
             total: r2(ctp + grt)
         };
@@ -268,15 +272,20 @@ export function calculateShift(inputs) {
                 grt += splitGRT;
             }
 
+            const roundedCTP = r2(ctp);
+            const roundedGRT = r2(grt);
+
             const payoutObj = {
                 uid: emp.uid,
                 name: emp.name,
                 role: emp._stdRole,
                 points: emp.points,
-                ctp: r2(ctp),
+                ctp: roundedCTP,
                 cash: r2(cash),
-                grt: r2(grt),
-                total: r2(ctp + cash + grt),
+                grt: roundedGRT,
+                // CTP + GRT only, matching bar payouts above. Cash is a separate
+                // payment to the employee and is never rolled into `total`.
+                total: r2(roundedCTP + roundedGRT),
                 teamId: team.teamId
             };
 
