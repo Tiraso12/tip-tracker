@@ -22,10 +22,12 @@ const ROLE_BADGES = { captain: "C", server: "S", back: "B", assistant: "A" };
 // read "Frankie Lee", not "Frankie Lee (Temp)".
 const cleanName = (name = "") => name.replace(/\s*\((?:temp)\)\s*$/i, "").trim() || name;
 
-// Role/points tag, e.g. "C·4". Runners and bar staff are flat-rate, so they read
-// as a plain label rather than points math - matching the editor exactly.
+// Role tag for a chip badge. One visual family for all chips: dining carries a
+// role letter + points ("S·4", "C·4"); bar and runners genuinely have no points,
+// so they read as a compact role label of the same size ("BAR", "RUN") - never a
+// faked "·0". Matches the editor's chips exactly.
 const memberTag = (member, kind) => {
-    if (kind === "runner") return "Runner";
+    if (kind === "runner") return "Run";
     if (kind === "bar") return "Bar";
     const badge = ROLE_BADGES[member.role] || "S";
     const points = member.points;
@@ -128,7 +130,7 @@ function FloorLineup({ lineup, onEditFloor }) {
                 </p>
             </header>
 
-            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:content-start">
+            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:content-start max-[560px]:pb-24">
                 {teams.map((team, index) => (
                     <FloorTeamCard
                         key={team.teamId || index}
@@ -206,7 +208,7 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
                 <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">Loading day…</Card>
             ) : stage === "closed" ? (
                 <>
-                <div className="space-y-3">
+                <div className="space-y-3 max-[560px]:pb-24">
                     <DayPayoutPanel date={date} summary={summary} status={status} loading={false} />
                     {onRemoveShift ? (
                         <div className="flex">

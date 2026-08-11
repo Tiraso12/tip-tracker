@@ -1003,7 +1003,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     });
 
     return (
-        <div className="space-y-3 sm:space-y-4">
+        <div className={"space-y-3 sm:space-y-4" + (effectiveStep === "floor" ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]" : "")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
                 shown; earlier/reachable steps are one tap away (order never forced). */}
             <DayRail steps={railSteps} onStepClick={goToStep} />
@@ -1016,7 +1016,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 as a setup shift (v3: identical in-place edit look). */}
             <Card className={"!p-0 " + ((shiftStatus === "closed" && effectiveStep !== "floor")
                 ? ""
-                : "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]")}>
+                : "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]")
+                + (effectiveStep === "floor" ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
                         <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
@@ -1068,7 +1069,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                         Loading shift data…
                     </div>
                 ) : (
-                    <div className="p-3 sm:p-6">
+                    <div className={"p-3 sm:p-6" + (effectiveStep === "floor" ? " max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
                         {/* The Day Rail above names the active step, so no duplicate
                             step heading is rendered here. */}
 
@@ -1087,7 +1088,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
 
                         {/* STEP 1 - Floor plan */}
                         {effectiveStep === "floor" ? (
-                            <div>
+                            <div className="max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0">
                                 {/* PROTOTYPE v3: identical in-place editor for setup AND settled
                                     shifts - the redesigned cards are always editable (the entry
                                     was an explicit "Edit"; autosave is disabled for closed shifts

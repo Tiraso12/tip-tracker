@@ -272,7 +272,7 @@ function ShiftSetupDnd({
     }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee, updateMemberRole]);
 
     return (
-        <div className="grid grid-cols-[minmax(340px,0.9fr)_minmax(440px,1.3fr)] gap-4 h-[min(68vh,720px)] min-h-[420px] items-stretch max-[900px]:grid-cols-1 max-[900px]:h-auto max-[560px]:min-h-0">
+        <div className="grid grid-cols-[minmax(340px,0.9fr)_minmax(440px,1.3fr)] gap-4 h-[min(68vh,720px)] min-h-[420px] items-stretch max-[900px]:grid-cols-1 max-[900px]:h-auto max-[560px]:min-h-0 max-[560px]:flex max-[560px]:flex-col max-[560px]:flex-1">
             <div
                 className="min-h-0 h-full flex flex-col max-[900px]:order-2 max-[560px]:hidden"
                 onDragOver={(e) => { e.preventDefault(); if (dragOverId !== 'pool') setDragOverId('pool'); }}
