@@ -23,6 +23,7 @@ function EmployeePool({
     onAddUnregistered,
     title = 'Available Employees',
     className,
+    hideSearch = false,
 }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState('all');
@@ -75,14 +76,19 @@ function EmployeePool({
                     {filtered.length} available
                 </span>
             </div>
-            <input
-                type="text"
-                className={inputClass}
-                placeholder="Search employee..."
-                value={searchTerm}
-                aria-label="Search available employees"
-                onChange={(e) => setSearchTerm(e.target.value)}
-            />
+            {/* The mobile bottom-sheet picker passes hideSearch: the staff lists are
+                short, search is rarely used, and dropping it reclaims vertical space for
+                the list. Desktop keeps the search input (no hideSearch prop). */}
+            {hideSearch ? null : (
+                <input
+                    type="text"
+                    className={inputClass}
+                    placeholder="Search employee..."
+                    value={searchTerm}
+                    aria-label="Search available employees"
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            )}
 
             {/* Role filter chips. Desktop/tablet keep the multi-row wrap; on phones the
                 seven chips would wrap to 2-3 rows and shove the employee list below the

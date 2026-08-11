@@ -118,14 +118,14 @@ function TeamDropZone({
     // Title: calm sentence-case on phones (the Day Rail voice); the shouty
     // letter-spaced all-caps stays only on the wider desktop layout.
     const titleEl = (
-        <h4 className="text-[0.72rem] font-bold text-[var(--color-ink-muted)] m-0 uppercase tracking-[0.05em] max-[560px]:normal-case max-[560px]:tracking-normal max-[560px]:text-[0.82rem] max-[560px]:text-[var(--color-ink)]">
+        <h4 className="text-[0.72rem] font-bold text-[var(--color-ink-muted)] m-0 uppercase tracking-[0.05em] max-[560px]:min-w-0 max-[560px]:truncate max-[560px]:normal-case max-[560px]:tracking-normal max-[560px]:text-[0.82rem] max-[560px]:text-[var(--color-ink)]">
             {isSelected && <span className="text-[var(--color-accent)] text-[0.5rem] mr-[0.35rem] align-middle animate-pulse max-[560px]:hidden">●</span>}
             {title}
         </h4>
     );
     const countEl = (
         <span className={
-            "text-[0.67rem] opacity-70 max-[560px]:text-[0.78rem] max-[560px]:font-semibold max-[560px]:opacity-100 " +
+            "text-[0.67rem] opacity-70 max-[560px]:shrink-0 max-[560px]:text-[0.78rem] max-[560px]:font-semibold max-[560px]:opacity-100 " +
             (members.length === 0 ? "max-[560px]:text-[var(--color-accent)] text-[var(--color-ink-muted)]" : "text-[var(--color-ink-muted)]")
         }>
             {members.length === 0
@@ -162,19 +162,13 @@ function TeamDropZone({
             )}
 
             {members.length === 0 ? (
-                <>
-                    <div className="text-[var(--color-ink-muted)] text-[0.75rem] text-center py-2 pointer-events-none opacity-60 max-[560px]:hidden">
-                        {readOnly ? 'No one assigned' : isSelected ? 'Tap employees below to add' : 'Tap to select this team'}
-                    </div>
-                    {/* Mobile in-card cue (F8/F9): the separate "Tap a team..." helper
-                        is folded in here so the first action is signposted on the card
-                        itself. Decorative - the whole card is the tap target. */}
-                    {interactive ? (
-                        <div className="hidden max-[560px]:flex items-center justify-center rounded-[var(--radius-sm)] border border-dashed border-[var(--color-line-strong)] px-3 py-2 text-[0.75rem] font-semibold text-[var(--color-ink-muted)] pointer-events-none">
-                            + Add employees
-                        </div>
-                    ) : null}
-                </>
+                // Desktop keeps its centered helper line. On phones the empty card shows
+                // no in-card box (B5): the top-right "+ Add" cue is enough, and the whole
+                // card stays the tap target that opens the add/assign flow. Dropping the
+                // dashed "+ Add employees" box reclaims vertical space in the 2-up grid.
+                <div className="text-[var(--color-ink-muted)] text-[0.75rem] text-center py-2 pointer-events-none opacity-60 max-[560px]:hidden">
+                    {readOnly ? 'No one assigned' : isSelected ? 'Tap employees below to add' : 'Tap to select this team'}
+                </div>
             ) : (
                 <>
                     <div className={(hideMembers ? "hidden" : "contents max-[560px]:hidden")}>

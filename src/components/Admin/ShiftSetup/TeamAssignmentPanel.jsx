@@ -70,8 +70,12 @@ function TeamAssignmentPanel({
                 )}
             </div>
 
-            {/* All team cards in a 2-column card grid */}
-            <div className="grid grid-cols-2 gap-2.5 items-start max-[900px]:grid-cols-1">
+            {/* All team cards in a 2-column card grid.
+                Phones (<=560px) get a tighter 2-up compact grid (B4) so lower teams
+                (Bar, Runners) are reachable with roughly half the scroll; the 561-900px
+                tablet range keeps its single column and desktop keeps two - both unchanged.
+                max-[560px] is emitted after max-[900px], so it wins at phone widths. */}
+            <div className="grid grid-cols-2 gap-2.5 items-start max-[900px]:grid-cols-1 max-[560px]:grid-cols-2 max-[560px]:gap-2">
                 {teams.map((t, index) => (
                     <TeamDropZone
                         key={t.teamId}
