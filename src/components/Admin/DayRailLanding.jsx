@@ -171,11 +171,24 @@ function Hero({ title, body, tall = false, children }) {
 
 function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, onContinueSettle, onEditFloor, onRemoveShift, removingShift = false }) {
     const stage = getLandingStage(status);
-    const railSteps = getRailSteps({ shiftStatus: status });
+    // On the read-only floor view (settle stage) the rail's active step is Floor -
+    // you are looking at the floor. Settle is the reachable "next" pill you tap to
+    // advance. (Prototype fix #2: the old focus highlighted Settle here, so tapping
+    // Done read as "jumped to Settle".)
+    let railSteps = getRailSteps({ shiftStatus: status });
+    if (stage === "settle") {
+        railSteps = railSteps.map((s) =>
+            s.key === "floor" ? { ...s, state: "active" }
+                : s.key === "settle" ? { ...s, state: "pending" }
+                    : s
+        );
+    }
 
     const onStepClick = (key) => {
-        if (key === "floor") onEditFloor?.();
-        else if (key === "settle") onContinueSettle?.();
+        // Prototype fix #1: Floor = the read-only view you are already on. Edit is
+        // entered ONLY via the floating ✎ Edit button, so tapping Floor never drops
+        // into edit mode. Settle advances to the money step.
+        if (key === "settle") onContinueSettle?.();
     };
 
     return (
@@ -185,15 +198,18 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
         // above the pinned actions, never gaps between the rows. Desktop keeps its
         // natural top-aligned height.
         <div className="space-y-3 sm:space-y-4 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]">
-            <DayRail steps={railSteps} onStepClick={onStepClick} />
+            {/* Prototype fix #3: once a shift is fully settled + saved (closed) the
+                process is complete, so the step rail is hidden - no steps left to show. */}
+            {stage === "closed" ? null : <DayRail steps={railSteps} onStepClick={onStepClick} />}
 
             {loading ? (
                 <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">Loading day…</Card>
             ) : stage === "closed" ? (
+                <>
                 <div className="space-y-3">
                     <DayPayoutPanel date={date} summary={summary} status={status} loading={false} />
-                    <div className="flex items-center justify-between gap-3">
-                        {onRemoveShift ? (
+                    {onRemoveShift ? (
+                        <div className="flex">
                             <button
                                 type="button"
                                 onClick={onRemoveShift}
@@ -202,12 +218,22 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
                             >
                                 {removingShift ? "Removing…" : "Remove this shift"}
                             </button>
-                        ) : <span />}
-                        <Button variant="secondary" size="sm" onClick={onEditFloor} disabled={removingShift}>
-                            Edit shift
-                        </Button>
-                    </div>
+                        </div>
+                    ) : null}
                 </div>
+                {/* Prototype fix #4: "Edit shift" is a floating button (same feel as
+                    the floor's ✎ Edit) that switches the saved shift into edit mode.
+                    Destination (onEditFloor) and the closed-shift save-safety path are
+                    unchanged - only the affordance moved. */}
+                <button
+                    type="button"
+                    onClick={onEditFloor}
+                    disabled={removingShift}
+                    className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                >
+                    ✎ Edit shift
+                </button>
+                </>
             ) : stage === "settle" ? (
                 <FloorLineup lineup={lineup} onEditFloor={onEditFloor} />
             ) : (
