@@ -909,11 +909,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         }
     };
 
-    // Floor plan forward action: save the lineup, then advance to Settle up.
-    const handleContinueFromFloor = async () => {
+    // PROTOTYPE (in-place edit): "Done" saves the floor and returns to the read-only
+    // landing instead of advancing to Settle. Settle is reached from the day rail.
+    const handleDoneFloor = async () => {
         const ok = await handleSaveTeamSetup();
         if (!ok) return;
-        setStep("settle");
+        onClose();
     };
 
     // Day rail step navigation. Earlier steps are always reachable; Review is only
@@ -1098,61 +1099,64 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                     runners={runners} setRunners={setRunners}
                                     readOnly={shiftStatus === "closed" && !editRoster}
                                 />
-                                <div className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-end max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-                                    {shiftStatus === "closed" ? (
-                                        <>
-                                            {/* Desktop keeps its existing behavior/copy (unchanged). */}
-                                            <span className="hidden sm:inline text-xs text-[var(--color-ink-soft)]">
-                                                This shift is already closed and paid out. Roster changes are saved via Settle up → Confirm & Save Shift.
-                                            </span>
-                                            {/* Mobile (F10, Option A): view-only floor behind an explicit
-                                                "Edit roster" affordance; editing routes through Confirm & Save. */}
-                                            {editRoster ? (
-                                                <div className="flex w-full flex-col gap-2 sm:hidden">
-                                                    <span className="text-xs text-[var(--color-ink-soft)]">
-                                                        Editing the roster of a paid-out shift. Changes are saved via Settle up → Confirm & Save Shift.
-                                                    </span>
-                                                    <div className="flex gap-2">
-                                                        <Button
-                                                            variant="secondary"
-                                                            onClick={() => setEditRoster(false)}
-                                                            className="flex-1"
-                                                        >
-                                                            Done
-                                                        </Button>
-                                                        <Button
-                                                            onClick={() => setStep("settle")}
-                                                            className="flex-1"
-                                                        >
-                                                            Continue to Settle up →
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex w-full flex-col gap-2 sm:hidden">
-                                                    <span className="text-xs text-[var(--color-ink-soft)]">
-                                                        This shift is closed and paid out. The roster is view-only.
-                                                    </span>
+                                {shiftStatus === "closed" ? (
+                                    /* Closed/paid-out shift: existing safety-checked edit path, unchanged. */
+                                    <div className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-end max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
+                                        {/* Desktop keeps its existing behavior/copy (unchanged). */}
+                                        <span className="hidden sm:inline text-xs text-[var(--color-ink-soft)]">
+                                            This shift is already closed and paid out. Roster changes are saved via Settle up → Confirm & Save Shift.
+                                        </span>
+                                        {/* Mobile (F10, Option A): view-only floor behind an explicit
+                                            "Edit roster" affordance; editing routes through Confirm & Save. */}
+                                        {editRoster ? (
+                                            <div className="flex w-full flex-col gap-2 sm:hidden">
+                                                <span className="text-xs text-[var(--color-ink-soft)]">
+                                                    Editing the roster of a paid-out shift. Changes are saved via Settle up → Confirm & Save Shift.
+                                                </span>
+                                                <div className="flex gap-2">
                                                     <Button
                                                         variant="secondary"
-                                                        onClick={() => setEditRoster(true)}
-                                                        className="w-full"
+                                                        onClick={() => setEditRoster(false)}
+                                                        className="flex-1"
                                                     >
-                                                        Edit roster
+                                                        Done
+                                                    </Button>
+                                                    <Button
+                                                        onClick={() => setStep("settle")}
+                                                        className="flex-1"
+                                                    >
+                                                        Continue to Settle up →
                                                     </Button>
                                                 </div>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <Button
-                                            onClick={handleContinueFromFloor}
-                                            disabled={isSaving}
-                                            className="max-[560px]:w-full"
-                                        >
-                                            {isSaving ? "Saving..." : "Save & continue to Settle up →"}
-                                        </Button>
-                                    )}
-                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex w-full flex-col gap-2 sm:hidden">
+                                                <span className="text-xs text-[var(--color-ink-soft)]">
+                                                    This shift is closed and paid out. The roster is view-only.
+                                                </span>
+                                                <Button
+                                                    variant="secondary"
+                                                    onClick={() => setEditRoster(true)}
+                                                    className="w-full"
+                                                >
+                                                    Edit roster
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* PROTOTYPE (setup shift): a floating Done FAB replaces the old
+                                       "Save & continue". It saves the floor and returns to the
+                                       read-only landing; Settle is reached from the day rail. */
+                                    <button
+                                        type="button"
+                                        onClick={handleDoneFloor}
+                                        disabled={isSaving}
+                                        className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                                    >
+                                        {isSaving ? "Saving…" : "✓ Done"}
+                                    </button>
+                                )}
                             </div>
                         ) : effectiveStep === "settle" ? (
                             /* STEP 2 - Settle up (the calm single money switcher, unchanged) */

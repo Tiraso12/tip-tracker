@@ -106,7 +106,7 @@ function FloorTeamCard({ title, members, kind }) {
 // Read-only card grid of the saved floor, shown before Settle up. Same two-up
 // card layout and chips as the editor - just no drag/select/step controls - so
 // the floor is consistent to read whether building or confirming.
-function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
+function FloorLineup({ lineup, onEditFloor }) {
     const teams = lineup?.teams || [];
     const barMembers = lineup?.barTeam?.members || [];
     const runners = lineup?.runners || [];
@@ -117,6 +117,7 @@ function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
     const floorTotal = diningCount + barCount + runnerCount;
 
     return (
+        <>
         <Card className="!p-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
             <header className="px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-4 max-[560px]:shrink-0">
                 <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
@@ -140,19 +141,17 @@ function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
                 <FloorTeamCard title="Runners" members={runners} kind="runner" />
             </div>
 
-            <footer className="flex flex-col items-stretch gap-2 border-t border-[var(--color-line)] px-5 py-4 max-[560px]:px-4 max-[560px]:shrink-0">
-                <Button size="lg" onClick={onContinueSettle} className="w-full">
-                    Continue to Settle up →
-                </Button>
-                <button
-                    type="button"
-                    onClick={onEditFloor}
-                    className="mx-auto text-xs font-medium text-[var(--color-accent)] hover:underline"
-                >
-                    Edit floor plan
-                </button>
-            </footer>
         </Card>
+        {/* PROTOTYPE: floating Edit FAB - the floor is edited in place (no separate
+            screen). Settle up is reached from the day rail above. */}
+        <button
+            type="button"
+            onClick={onEditFloor}
+            className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95"
+        >
+            ✎ Edit
+        </button>
+        </>
     );
 }
 
@@ -210,7 +209,7 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
                     </div>
                 </div>
             ) : stage === "settle" ? (
-                <FloorLineup lineup={lineup} onContinueSettle={onContinueSettle} onEditFloor={onEditFloor} />
+                <FloorLineup lineup={lineup} onEditFloor={onEditFloor} />
             ) : (
                 <Hero
                     tall
