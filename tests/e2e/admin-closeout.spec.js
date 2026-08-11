@@ -236,11 +236,19 @@ test("admin can close out a simple dining room shift and create ledger payout re
     // Settle up mirrors the floor plan: open its read-only summary, edit the money in
     // place, save with Done, then Calculate Payouts to reach Review.
     await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
-    await expect(page.getByText("Captain One").last()).toBeVisible();
-    await expect(page.getByText("Server One").last()).toBeVisible();
-    await expect(page.getByText("Back One").last()).toBeVisible();
 
-    await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
+    // Review is a spot check on ONE person - the first captain at full points - not a
+    // roster dump, so only that person is named up front. Their CTP/GRT/Cash/Total are
+    // what gets compared against the restaurant's spreadsheet by eye.
+    await expect(page.getByText("Captain One").last()).toBeVisible();
+    // Total is CTP + GRT; cash is never folded into it.
+    await expect(page.getByText("CTP + GRT")).toBeVisible();
+
+    // Everyone else is one tap away, in the read-only floor rung.
+    await page.getByRole("button", { name: /Who's on the floor/ }).click();
+    await expect(page.getByText("Captain One · Server One · Back One")).toBeVisible();
+
+    await page.getByRole("button", { name: /Confirm & Save Shift/ }).click();
     // On save the editor returns to the paid-out landing (unique Export PDF action).
     await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
 

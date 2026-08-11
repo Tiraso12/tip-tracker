@@ -74,9 +74,15 @@ export function getRailSteps({ activeStep = null, shiftStatus = null, hasCalcula
     // & Save happens. (The old "Pay out" pill was vestigial - it only exited the
     // editor to the landing, which the side nav / save flows already do; the saved
     // payout summary is reached after Confirm & Save, not through a rail step.)
+    // A saved shift already HAS its payouts, so Review is reachable in the editor
+    // without a detour through Settle up to press Calculate Payouts again - the
+    // editor recomputes them from the saved inputs on the way in. On a setup shift
+    // there is genuinely nothing to review until that calculation exists.
+    const reviewReachable = hasCalculatedReview || (closed && inEditor);
+
     return [
         { key: "floor", index: 1, label: RAIL_LABELS.floor, state: stateFor("floor", floorDone), clickable: !closedLanding },
         { key: "settle", index: 2, label: RAIL_LABELS.settle, state: stateFor("settle", settleDone), clickable: !closedLanding && (floorDone || activeStep === "settle") },
-        { key: "review", index: 3, label: RAIL_LABELS.review, state: stateFor("review", reviewDone), clickable: hasCalculatedReview },
+        { key: "review", index: 3, label: RAIL_LABELS.review, state: stateFor("review", reviewDone), clickable: reviewReachable },
     ];
 }

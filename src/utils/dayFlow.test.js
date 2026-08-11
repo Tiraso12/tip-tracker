@@ -121,3 +121,26 @@ test("editing a closed shift shows floor/settle/review done but still navigable"
     assert.equal(steps.find((s) => s.key === "settle").clickable, true);
     assert.equal(steps.find((s) => s.key === "review").state, "done");
 });
+
+// A saved shift already has payouts, so Review must not dead-end behind a detour
+// through Settle up just to press Calculate Payouts again.
+test("editing a closed shift can open Review directly, without a calculation in hand", () => {
+    const steps = getRailSteps({ activeStep: "floor", shiftStatus: "closed", hasCalculatedReview: false });
+
+    assert.equal(steps.find((s) => s.key === "review").clickable, true);
+});
+
+// The closed-day landing stays inert: its pills are status, not navigation - the
+// payout panel below has its own "Edit shift" action.
+test("the closed-day landing rail keeps Review unclickable", () => {
+    const steps = getRailSteps({ shiftStatus: "closed" });
+
+    assert.equal(steps.find((s) => s.key === "review").clickable, false);
+});
+
+// A setup shift genuinely has nothing to review until payouts are calculated.
+test("a setup shift still cannot open Review before payouts are calculated", () => {
+    const steps = getRailSteps({ activeStep: "floor", shiftStatus: "setup", hasCalculatedReview: false });
+
+    assert.equal(steps.find((s) => s.key === "review").clickable, false);
+});

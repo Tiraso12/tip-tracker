@@ -10,18 +10,21 @@ import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleS
 import { Button, Card } from "../ui";
 import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
 import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
-import { RUNNER_FLAT_RATE } from "../../utils/constants";
+import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/constants";
 import { getHistoryFlagUpdate, getShiftParticipantUids } from "../../utils/userHistoryFlags";
 import { useAuth } from "../../context/AuthContext";
 import {
     buildPayoutReview,
+    fmtAmount,
     fmtMoney,
     getBarSummary,
     getPayoutNonCashTotal,
     getTeamSummary,
     ignoreMissingUserDoc,
+    isNegativeMoney,
     mapPayoutsForFirebase,
     roleLabels,
+    selectSpotCheckSubject,
     toMoney,
     validateShiftInputs,
     validateTeamSetup,
@@ -414,126 +417,290 @@ function PointSplitDisclosure({ title, members, defaultPoints = 0, emptyMessage,
     );
 }
 
-function CalculatedPayoutReview({ review, poolAvailable, availableCash = 0 }) {
+// The "everyone" roster under the spot-check card. Three money columns just wide
+// enough for a four-figure payout, so a 390px phone still leaves the name column
+// enough room to read; the columns are fixed rather than fluid so the digits stay in
+// their own vertical run down the list.
+// One figure, rendered for the eye to compare against a spreadsheet column. The "$"
+// is small, muted and floats with the digits instead of sitting in its own column -
+// a pinned "$" would push a 3-digit figure out of alignment with a 2-digit one, and
+// the decimal points lining up is the whole point of the card. Always two decimals:
+// the captain's tolerance is measured in cents, so the cents are load-bearing.
+function HeroMoney({ value, className = "" }) {
+    return (
+        <span className={"inline-flex items-baseline whitespace-nowrap font-mono tabular-nums " + className}>
+            {isNegativeMoney(value) ? <span aria-hidden="true">−</span> : null}
+            <span className="text-[0.55em] font-normal text-[var(--color-ink-muted)] mr-px">$</span>
+            {fmtAmount(value)}
+        </span>
+    );
+}
+
+// A row of the spot-check card: label hard left, figure hard right, nothing in
+// between, hairline underneath. The hairline is what re-anchors the eye each time it
+// comes back from the spreadsheet, so a row is never silently skipped.
+function SpotCheckRow({ label, sub, value, rule = "hairline", emphasis = false }) {
+    const ruleClass = rule === "total"
+        ? "border-b-2 border-[var(--color-ink)]/70"
+        : rule === "none"
+            ? ""
+            : "border-b border-[var(--color-line)]";
+    return (
+        <div className={"flex items-baseline justify-between gap-4 px-4 py-3 min-h-[44px] " + ruleClass}>
+            <span className="flex flex-col">
+                <span className={"text-[13px] font-semibold uppercase tracking-[0.1em] "
+                    + (emphasis ? "text-[var(--color-ink)]" : "text-[var(--color-ink-soft)]")}>
+                    {label}
+                </span>
+                {/* Sub-lines stay lowercase: uppercased they are wide enough to wrap
+                    beside a 28px figure on a 390px phone, which breaks the row rhythm. */}
+                {sub ? (
+                    <span className="mt-0.5 text-[10px] tracking-[0.02em] text-[var(--color-ink-muted)]">{sub}</span>
+                ) : null}
+            </span>
+            <HeroMoney
+                value={value}
+                className={"text-[22px] leading-none max-[380px]:text-[20px] "
+                    + (emphasis ? "font-semibold text-[var(--color-accent)]" : "text-[var(--color-ink)]")}
+            />
+        </div>
+    );
+}
+
+// The whole point of the Review step. One person, their figures, laid out as the
+// vertical column a spreadsheet is read from. Nothing on the page outranks these
+// figures - the card carries no eyebrow label, because the screen is the spot check.
+function SpotCheckCard({ subject }) {
+    const { payout, atFullPoints, isCaptain } = subject;
+    const isRunner = payout.role === "runner";
+    // A runner has no CTP/GRT/cash in the engine at all - only a flat payout
+    // (engine.js:99-110). Rendering the usual three rows would show two convincing
+    // $0.00 figures that mean nothing, so a runner gets a single Runner pay figure.
+    const points = toMoney(payout.points);
+
+    return (
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-accent)]/25 bg-[var(--color-surface)] overflow-hidden shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
+            <div className="px-4 pt-3 pb-2.5 border-b border-[var(--color-line)]">
+                <div className="text-lg font-semibold leading-tight text-[var(--color-ink)]">{payout.name}</div>
+                <div className="mt-0.5 text-[11px] text-[var(--color-ink-soft)]">
+                    {roleLabels[payout.role] || payout.role}
+                    {isRunner ? null : <> · {points} {points === 1 ? "pt" : "pts"}</>}
+                    {payout.teamId ? <> · {payout.teamId}</> : null}
+                </div>
+            </div>
+
+            {/* The subject is the first captain at full point weighting. When there is
+                none, say so out loud: a captain who left early takes home less than the
+                full-shift captain the spreadsheet is read from, and a silent swap would
+                read as a mismatch that is not one. */}
+            {!atFullPoints ? (
+                <p className="px-4 py-2 border-b border-[var(--color-line)] bg-[var(--color-warning-soft)] text-[11px] leading-snug text-[var(--color-warning)]">
+                    {isCaptain
+                        ? `No captain at full points tonight - this one worked ${points} of ${ROLE_POINTS.captain}, so expect less than your sheet's full-shift captain.`
+                        : "No captain on this shift - checking the first payout instead."}
+                </p>
+            ) : null}
+
+            {isRunner ? (
+                <SpotCheckRow
+                    label="Runner pay"
+                    sub="flat rate · not pooled"
+                    value={getPayoutNonCashTotal(payout)}
+                    rule="none"
+                    emphasis
+                />
+            ) : (
+                <>
+                    <SpotCheckRow label="CTP" value={payout.tips} />
+                    <SpotCheckRow label="GRT" value={payout.gratuity} />
+                    <SpotCheckRow label="Cash" value={payout.cash} rule="none" />
+                    {/* Total reads last and is the one row lifted onto its own background,
+                        closed by the accent bar - it is the bottom line, so it is what the
+                        card emphasises. Cash needs no fencing of its own: the "CTP + GRT"
+                        line under the figure already says what is in it, and staff know cash
+                        is paid out separately. Computed from tips + gratuity - the stored
+                        per-person `total` folds cash in for dining staff and is never read. */}
+                    <div className="border-t-[3px] border-[var(--color-accent)] bg-[var(--color-surface-muted)]">
+                        <SpotCheckRow
+                            label="Total"
+                            sub="CTP + GRT"
+                            value={getPayoutNonCashTotal(payout)}
+                            rule="none"
+                            emphasis
+                        />
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+// One collapsed row of supporting evidence under the spot-check card. All three rows
+// (money, floor, totals) share this shell so none of them reads as more urgent than
+// the others - the card is the screen, these are where you look if it disagrees.
+//
+// Everything inside is READ-ONLY, and that is structural rather than a preference: any
+// edit to money or roster nulls the calculation (ShiftEditorPanel `setCalculatedReview(null)`
+// on [teams, barTeam, runners, date]) and Review immediately falls back to Settle up.
+// So diagnosis happens here and each row offers one jump out to where writes belong.
+function ReviewDisclosure({ title, meta, open, onToggle, children }) {
+    return (
+        <div className={"rounded-[var(--radius-md)] border "
+            + (open
+                ? "border-[var(--color-line-strong)] bg-[var(--color-surface-muted)]"
+                : "border-[var(--color-line)] bg-[var(--color-surface)]")}>
+            <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={open}
+                className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left min-h-[44px]"
+            >
+                <span className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-ink)]">
+                    <span aria-hidden="true" className={"text-[var(--color-ink-muted)] transition-transform duration-150 " + (open ? "rotate-90" : "")}>▸</span>
+                    {title}
+                </span>
+                <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">{meta}</span>
+            </button>
+            {open ? <div className="px-3.5 pb-3.5">{children}</div> : null}
+        </div>
+    );
+}
+
+// The jump out of a read-only row to the screen where that thing is actually edited.
+// Full width rather than a right-aligned link: the save button floats bottom-right, so
+// a short right-aligned action sits exactly where the pill lands and reads as missing.
+function FixJump({ label, onClick }) {
+    return (
+        <button
+            type="button"
+            onClick={() => onClick?.()}
+            className="w-full rounded-[var(--radius-sm)] border border-[var(--color-line-strong)] bg-[var(--color-surface)] px-3 py-2.5 text-[13px] font-semibold text-[var(--color-accent)] transition-colors hover:border-[var(--color-accent)]"
+        >
+            {label} <span aria-hidden="true">→</span>
+        </button>
+    );
+}
+
+function CalculatedPayoutReview({
+    review,
+    poolAvailable,
+    availableCash = 0,
+    moneyGroups = [],
+    floorGroups = [],
+    floorPoints = 0,
+    onFixMoney,
+    onFixFloor,
+}) {
     const { result, payoutRows, staffTotal } = review;
     // The pool and the staff take-home read as two competing "totals"; the gap is the
     // house/door cut the engine holds back from the pool. Show it as one small equation
     // so the two numbers read as related, not contradictory.
     const houseDoor = Math.max(0, (Number(poolAvailable) || 0) - staffTotal);
-    const [showAllMobilePayouts, setShowAllMobilePayouts] = useState(false);
-    const verificationPayout = payoutRows.find(payout => payout.role === "captain") || payoutRows[0];
-    const reviewRoleLabels = {
-        captain: "Captains",
-        server: "Servers",
-        back: "Backs",
-        assistant: "Assistants",
-        bartender: "Bar",
-        runner: "Runners",
-    };
+    // One row open at a time: the spot-check card is the point of the screen and must
+    // not be pushed off the top by two expanded blocks at once.
+    const [openRow, setOpenRow] = useState(null);
+    const subject = selectSpotCheckSubject(payoutRows);
+    const floorHeadcount = floorGroups.reduce((sum, group) => sum + group.members.length, 0);
+    const toggle = (row) => setOpenRow(current => (current === row ? null : row));
 
     return (
-        <div className="border border-[var(--color-accent)]/20 rounded-[var(--radius-md)] bg-[var(--color-accent-soft)]/40">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-[var(--color-accent)]/20 max-[560px]:flex-row max-[560px]:items-start max-[560px]:px-4 max-[560px]:py-3">
-                <div>
-                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                        Staff take-home
-                    </div>
-                    <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-accent)] max-[560px]:text-xl">
-                        {fmtMoney(staffTotal)}
-                    </div>
-                </div>
-                <div className="flex flex-col items-end max-[560px]:pt-0.5">
-                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Balance</span>
-                    <strong className="font-mono tabular-nums text-[var(--color-ink)]">
-                        {fmtMoney(result.balances?.overallBalance)}
-                    </strong>
-                </div>
-            </div>
+        <div className="space-y-2.5">
+            {subject ? <SpotCheckCard subject={subject} /> : null}
 
-            {/* Reconciliation: how the pool derives the staff take-home (pool − house/door). */}
-            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-5 py-3 border-b border-[var(--color-accent)]/15 text-center max-[560px]:px-4 max-[560px]:py-2.5">
-                <span className="inline-flex items-baseline gap-1.5">
-                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Available pool</span>
-                    <span className="font-mono tabular-nums text-sm text-[var(--color-ink)]">{fmtMoney(poolAvailable)}</span>
-                </span>
-                <span className="font-mono text-[var(--color-ink-muted)]">−</span>
-                <span className="inline-flex items-baseline gap-1.5">
-                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">House / door</span>
-                    <span className="font-mono tabular-nums text-sm text-[var(--color-ink)]">{fmtMoney(houseDoor)}</span>
-                </span>
-                <span className="font-mono text-[var(--color-ink-muted)]">=</span>
-                <span className="inline-flex items-baseline gap-1.5">
-                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Staff take-home</span>
-                    <span className="font-mono tabular-nums text-sm font-semibold text-[var(--color-accent)]">{fmtMoney(staffTotal)}</span>
-                </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-[var(--color-accent)]/15 max-[560px]:gap-x-5 max-[560px]:gap-y-2 max-[560px]:px-4 max-[560px]:py-2.5">
-                {/* Cash is money too, but it is distributed separately and must never fold
-                    into the pool total (CTP + GRT). Show the pool and cash as two clearly
-                    separated figures so "Available" never means two different numbers. */}
-                <SummaryMetric label="Employees" value={payoutRows.length.toLocaleString()} />
-                <SummaryMetric label="Available pool" value={fmtMoney(poolAvailable)} />
-                <SummaryMetric label="Available cash" value={fmtMoney(availableCash)} />
-                <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
-            </div>
-
-            <div className="hidden max-[560px]:block px-4 py-2.5 border-b border-[var(--color-accent)]/15">
-                {verificationPayout ? (
-                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-accent)]/20 bg-[var(--color-surface)] px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                    {verificationPayout.role === "captain" ? "Captain check" : "Payout check"}
-                                </div>
-                                <div className="mt-1 text-sm font-semibold text-[var(--color-ink)] truncate">
-                                    {verificationPayout.name}
-                                </div>
+            {/* Every number typed at Settle up, all groups on one screen. Settle up is a
+                one-group-at-a-time switcher, so scanning for a typo there means tapping
+                through groups; here it is a single read. */}
+            <ReviewDisclosure
+                title="Money you entered"
+                meta={`${moneyGroups.length} ${moneyGroups.length === 1 ? "group" : "groups"}`}
+                open={openRow === "money"}
+                onToggle={() => toggle("money")}
+            >
+                <div className="space-y-2.5">
+                    {moneyGroups.map(group => (
+                        <div key={group.id} className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5">
+                            <div className="flex items-baseline justify-between gap-3">
+                                <strong className="text-[13px] text-[var(--color-ink)]">{group.name}</strong>
+                                <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">
+                                    {group.poolLabel}{" "}
+                                    <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(group.pool)}</span>
+                                </span>
                             </div>
-                            <strong className="shrink-0 font-mono tabular-nums text-base text-[var(--color-ink)]">
-                                {fmtMoney(getPayoutNonCashTotal(verificationPayout))}
-                            </strong>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono tabular-nums text-[11.5px] text-[var(--color-ink-soft)]">
+                                {group.entries.map(entry => (
+                                    <span key={entry.label} className={entry.empty ? "text-[var(--color-ink-muted)]" : ""}>
+                                        {entry.label} {entry.value}
+                                    </span>
+                                ))}
+                            </div>
                         </div>
-                        <div className="mt-1.5 flex items-center justify-between gap-3 border-t border-[var(--color-line)] pt-1.5 text-xs">
-                            <span className="font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                Cash
-                            </span>
-                            <strong className="font-mono tabular-nums text-[var(--color-ink)]">
-                                {fmtMoney(verificationPayout.cash)}
-                            </strong>
-                        </div>
-                    </div>
-                ) : null}
+                    ))}
+                    {/* NOTE for future edits: dining money is pooled house-wide across every
+                        dining team and split by one point value (engine.js), so a wrong figure
+                        moves everyone. Do not add copy here that attributes a person's payout
+                        to one team's money - it cannot, and it would send the hunt the wrong way. */}
+                    <FixJump label="Fix in Settle up" onClick={onFixMoney} />
+                </div>
+            </ReviewDisclosure>
 
-                <button
-                    type="button"
-                    onClick={() => setShowAllMobilePayouts(open => !open)}
-                    className="mt-2 w-full rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-accent)]"
-                >
-                    {showAllMobilePayouts ? "Hide all payouts" : "Show all payouts"}
-                </button>
-            </div>
+            {/* The floor roster, for spotting someone who should not be on. */}
+            <ReviewDisclosure
+                title="Who's on the floor"
+                meta={`${floorHeadcount} ${floorHeadcount === 1 ? "person" : "people"} · ${floorPoints} ${floorPoints === 1 ? "pt" : "pts"}`}
+                open={openRow === "floor"}
+                onToggle={() => toggle("floor")}
+            >
+                <div className="space-y-2.5">
+                    {floorGroups.map(group => (
+                        <div key={group.id} className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5">
+                            <div className="flex items-baseline justify-between gap-3">
+                                <strong className="text-[13px] text-[var(--color-ink)]">{group.name}</strong>
+                                <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">
+                                    {group.members.length} {group.members.length === 1 ? "person" : "people"}
+                                    {group.kind === "runners" ? null : <> · {group.points} {group.points === 1 ? "pt" : "pts"}</>}
+                                </span>
+                            </div>
+                            <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-ink-soft)]">
+                                {group.members.length > 0 ? group.members.join(" · ") : "Nobody assigned"}
+                            </p>
+                        </div>
+                    ))}
+                    <FixJump label="Fix on the Floor plan" onClick={onFixFloor} />
+                </div>
+            </ReviewDisclosure>
 
-            <div className={(showAllMobilePayouts ? "block " : "hidden ") + "sm:block divide-y divide-[var(--color-accent)]/10 max-h-96 overflow-y-auto"}>
-                {payoutRows.map((payout) => (
-                    <div key={payout.uid} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-5 py-3">
-                        <div className="flex flex-col">
-                            <strong className="text-sm text-[var(--color-ink)]">{payout.name}</strong>
-                            <span className="text-[11px] text-[var(--color-ink-muted)]">
-                                {reviewRoleLabels[payout.role] || payout.role}
-                            </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
-                            <span>CTP {fmtMoney(payout.tips)}</span>
-                            <span>GRT {fmtMoney(payout.gratuity)}</span>
-                            <span>Cash {fmtMoney(payout.cash)}</span>
-                            <strong className="text-sm text-[var(--color-ink)]">
-                                Total (CTP+GRT) {fmtMoney(getPayoutNonCashTotal(payout))}
-                            </strong>
-                        </div>
+            {/* Today's headline, demoted. It is not the comparison the captain came to
+                make; it stays as one row because it costs one row and could surface a
+                bad total before committing. */}
+            <ReviewDisclosure
+                title="Shift totals"
+                meta={<>take-home <span className="font-mono tabular-nums">{fmtMoney(staffTotal)}</span></>}
+                open={openRow === "totals"}
+                onToggle={() => toggle("totals")}
+            >
+                <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--color-ink-muted)]">
+                        <span className="uppercase tracking-wide">Available pool</span>
+                        <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(poolAvailable)}</span>
+                        <span className="font-mono">−</span>
+                        <span className="uppercase tracking-wide">House / door</span>
+                        <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(houseDoor)}</span>
+                        <span className="font-mono">=</span>
+                        <span className="uppercase tracking-wide">Staff take-home</span>
+                        <span className="font-mono tabular-nums font-semibold text-[var(--color-accent)]">{fmtMoney(staffTotal)}</span>
                     </div>
-                ))}
-            </div>
+                    {/* Cash is money too, but it is distributed separately and must never fold
+                        into the pool total (CTP + GRT). Show the pool and cash as two clearly
+                        separated figures so "Available" never means two different numbers. */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-2.5">
+                        <SummaryMetric label="Employees" value={payoutRows.length.toLocaleString()} />
+                        <SummaryMetric label="Available pool" value={fmtMoney(poolAvailable)} />
+                        <SummaryMetric label="Available cash" value={fmtMoney(availableCash)} />
+                        <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
+                        <SummaryMetric label="Balance" value={fmtMoney(result.balances?.overallBalance)} />
+                    </div>
+                </div>
+            </ReviewDisclosure>
         </div>
     );
 }
@@ -707,6 +874,87 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
 
     const activeGroup = closeoutGroups.find(group => group.id === activeGroupId) || closeoutGroups[0];
     const groupStatusSummary = summarizeGroupStatuses(closeoutGroups);
+
+    // Review's rung 2: every group's money exactly as it was typed at Settle up, all on
+    // one screen. Settle up itself shows one group at a time, so this is the only place
+    // the whole entry can be scanned for a typo in a single read.
+    const reviewMoneyGroups = useMemo(() => {
+        const moneyEntry = (label, value) => ({
+            label,
+            value: fmtAmount(value),
+            empty: toMoney(value) === 0,
+        });
+        const teamGroups = teams.map((team, index) => {
+            const pools = team.pools || {};
+            const contracts = (team.contracts || []).filter(contract => toMoney(contract.gratuity) > 0);
+            return {
+                id: team.teamId,
+                name: `Team ${index + 1}`,
+                poolLabel: "pool",
+                pool: poolSummary.teams[index]?.payoutPool ?? 0,
+                entries: [
+                    moneyEntry("CTP", pools.tips),
+                    moneyEntry("GRT", pools.gratuity),
+                    moneyEntry("Cash", pools.cash),
+                    moneyEntry("Sales", pools.sales),
+                    ...contracts.map((contract, contractIndex) => (
+                        moneyEntry(`Contract ${contract.name || contractIndex + 1}`, contract.gratuity)
+                    )),
+                ],
+            };
+        });
+        return [
+            ...teamGroups,
+            {
+                id: "bar",
+                name: "Bar Team",
+                poolLabel: "pool",
+                pool: poolSummary.bar.payoutPool,
+                entries: [
+                    moneyEntry("CTP", barTeam.pools?.tips),
+                    moneyEntry("GRT", barTeam.pools?.gratuity),
+                    moneyEntry("Sales", barTeam.pools?.sales),
+                ],
+            },
+            {
+                id: "runners",
+                name: "Runners",
+                poolLabel: "pay",
+                pool: poolSummary.totalRunnerPay,
+                entries: runners.length > 0
+                    ? runners.map(runner => moneyEntry(runner.name || "Runner", runner.payoutAmount ?? RUNNER_FLAT_RATE))
+                    : [{ label: "No runners", value: "", empty: true }],
+            },
+        ];
+    }, [teams, barTeam, runners, poolSummary]);
+
+    // Review's rung 3: the floor as it stands, for spotting someone who should not be on.
+    const reviewFloorGroups = useMemo(() => {
+        const memberNames = (members) => members.map(member => member.name || "Unknown");
+        return [
+            ...teams.map((team, index) => ({
+                id: team.teamId,
+                kind: "dining",
+                name: `Team ${index + 1}`,
+                members: memberNames(team.members),
+                points: team.members.reduce((sum, member) => sum + toMoney(member.points), 0),
+            })),
+            {
+                id: "bar",
+                kind: "bar",
+                name: "Bar Team",
+                members: memberNames(barTeam.members),
+                points: poolSummary.barPoints,
+            },
+            {
+                id: "runners",
+                kind: "runners",
+                name: "Runners",
+                members: memberNames(runners),
+                points: 0,
+            },
+        ];
+    }, [teams, barTeam, runners, poolSummary.barPoints]);
 
     const hasAssignedStaff = useMemo(() => (
         teams.some(team => team.members.length > 0) || barTeam.members.length > 0 || runners.length > 0
@@ -1075,7 +1323,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     // "Pay out" pill that exited to the landing was removed - the side nav / save
     // flows already return there.)
     const goToStep = (key) => {
-        if (key === "review" && !calculatedReview) return;
+        if (key === "review" && !calculatedReview) {
+            // A saved shift already has payouts, so tapping Review goes straight there
+            // rather than dead-ending until you detour through Settle up. The payouts
+            // are recomputed from the shift's own saved inputs by the same pure
+            // `calculateShift` the Calculate button runs - it writes nothing, and
+            // Confirm & Save is still the only thing that persists anything.
+            if (shiftStatus === "closed") handleCalculateForReview();
+            return;
+        }
         setStep(key);
     };
 
@@ -1170,8 +1426,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         hasCalculatedReview: Boolean(calculatedReview),
     });
 
+    // Floor and Review both fill the phone screen rather than shrink-wrapping their
+    // content. On Review that is what puts the floating save button INSIDE the card
+    // instead of leaving it hovering over the page below a short panel. Content still
+    // packs snug at the top - the panel grows, the rows do not spread out.
+    const isFullHeightStep = effectiveStep === "floor" || effectiveStep === "review";
+
     return (
-        <div className={"space-y-3 sm:space-y-4" + (effectiveStep === "floor" ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]" : "")}>
+        <div className={"space-y-3 sm:space-y-4" + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]" : "")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
                 shown; earlier/reachable steps are one tap away (order never forced). */}
             <DayRail steps={railSteps} onStepClick={goToStep} />
@@ -1185,7 +1447,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
             <Card className={"!p-0 " + (showEditFrame
                 ? "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]"
                 : "")
-                + (effectiveStep === "floor" ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
+                + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
                         <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
@@ -1250,11 +1512,18 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                         Loading shift data…
                     </div>
                 ) : (
-                    <div className={"p-3 sm:p-6" + (effectiveStep === "floor" ? " max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
+                    <div className={"p-3 sm:p-6" + (isFullHeightStep ? " max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
                         {/* The Day Rail above names the active step, so no duplicate
                             step heading is rendered here. */}
 
-                        {validationMessages.length > 0 ? (
+                        {/* Not on Review. There the messages are the engine's own validations,
+                            which the captain already passed through on the way here, and the
+                            block is tall enough to push the spot-check card - the one thing
+                            Review exists for - off the top of a phone screen. Floor and Settle
+                            up still show it, because there it carries the errors that block a
+                            save and it sits above the fields those errors name. Review's own
+                            save progress/failure surfaces inline next to its save button. */}
+                        {validationMessages.length > 0 && effectiveStep !== "review" ? (
                             <div role="alert" className="mb-4 px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
                                 <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
                                     Review before saving
@@ -1437,39 +1706,52 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                 )}
                             </section>
                         ) : (
-                            /* STEP 3 - Review -> Confirm & Save */
-                            <section className="space-y-4">
-                                <CalculatedPayoutReview review={calculatedReview} poolAvailable={poolSummary.payoutPool} availableCash={poolSummary.totalCash} />
-                                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-                                    <Button
-                                        variant="secondary"
-                                        onClick={() => setStep("settle")}
-                                        disabled={isSaving}
-                                        className="max-[560px]:h-11 max-[560px]:w-full"
-                                    >
-                                        ← Back to Settle up
-                                    </Button>
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-                                        {shiftStatus === "closed" ? (
-                                            <p className="sm:hidden flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
-                                                <span aria-hidden="true">⚠</span>
-                                                <span>Re-saving overwrites the saved payouts for {date}.</span>
-                                            </p>
-                                        ) : null}
-                                        {saveStatus ? (
-                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
-                                        ) : draftStatus ? (
-                                            <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
-                                        ) : null}
-                                        <Button
-                                            onClick={handleConfirmSave}
-                                            disabled={isSaving}
-                                            className="max-[560px]:h-11 max-[560px]:w-full"
-                                        >
-                                            {isSaving ? "Saving…" : "Confirm & Save Shift"}
-                                        </Button>
-                                    </div>
-                                </div>
+                            /* STEP 3 - Review -> Confirm & Save. The payout list used to live
+                               in a `max-h-96 overflow-y-auto` box nested inside the page
+                               scroll, so its last rows were silently clipped with no cue that
+                               the container scrolled; everything now flows in the page. There
+                               is no "Back to Settle up" button - the "Fix in Settle up" and
+                               "Fix on the Floor plan" jumps inside the rows below already do
+                               that, from the place that explains why you would go. The bottom
+                               padding is the floating save button's clearance, exactly as
+                               Settle up does it. */
+                            <section className="space-y-4 pb-24 sm:mx-auto sm:max-w-lg max-[560px]:flex-1">
+                                <CalculatedPayoutReview
+                                    review={calculatedReview}
+                                    poolAvailable={poolSummary.payoutPool}
+                                    availableCash={poolSummary.totalCash}
+                                    moneyGroups={reviewMoneyGroups}
+                                    floorGroups={reviewFloorGroups}
+                                    floorPoints={poolSummary.restaurantPoints + poolSummary.barPoints}
+                                    onFixMoney={() => setStep("settle")}
+                                    onFixFloor={() => setStep("floor")}
+                                />
+
+                                {shiftStatus === "closed" ? (
+                                    <p className="flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
+                                        <span aria-hidden="true">⚠</span>
+                                        <span>Re-saving overwrites the saved payouts for {date}.</span>
+                                    </p>
+                                ) : null}
+
+                                {/* The step's warnings block is suppressed above, so this inline
+                                    line is the only channel left for save progress and failure. */}
+                                {(saveStatus || draftStatus) ? (
+                                    <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
+                                        {saveStatus || draftStatus}
+                                    </p>
+                                ) : null}
+
+                                {/* Same floating primary as the Floor plan and Settle up: one
+                                    accent pill, bottom-right, always in reach without scrolling. */}
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmSave}
+                                    disabled={isSaving}
+                                    className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                                >
+                                    {isSaving ? "Saving…" : "✓ Confirm & Save Shift"}
+                                </button>
                             </section>
                         )}
                     </div>
