@@ -911,10 +911,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         onClose();
     };
 
-    // Day rail step navigation. Earlier steps are always reachable; Review is only
-    // reachable once payouts have been calculated. "payout" exits to the landing.
+    // Day rail step navigation (Floor -> Settle -> Review). Earlier steps are always
+    // reachable; Review is only reachable once payouts have been calculated. (The old
+    // "Pay out" pill that exited to the landing was removed - the side nav / save
+    // flows already return there.)
     const goToStep = (key) => {
-        if (key === "payout") { onClose(); return; }
         if (key === "review" && !calculatedReview) return;
         setStep(key);
     };

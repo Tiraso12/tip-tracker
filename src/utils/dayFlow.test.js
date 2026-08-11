@@ -52,14 +52,12 @@ test("landing rail on a fresh day highlights Floor and locks later steps", () =>
         floor: "active",
         settle: "pending",
         review: "pending",
-        payout: "end",
     });
     // Nothing past the floor is reachable yet.
     assert.deepEqual(clickableByKey(steps), {
         floor: true,
         settle: false,
         review: false,
-        payout: false,
     });
 });
 
@@ -69,7 +67,6 @@ test("landing rail on a setup day marks Floor done and opens Settle", () => {
         floor: "done",
         settle: "active",
         review: "pending",
-        payout: "end",
     });
     assert.equal(steps.find((s) => s.key === "settle").clickable, true);
 });
@@ -80,16 +77,14 @@ test("landing rail on a closed day shows every step done", () => {
         floor: "done",
         settle: "done",
         review: "done",
-        payout: "done",
     });
     // The day is finished and the review lives in the payout panel below, so all
-    // four identical "done" checks must read as inert rather than have two of them
-    // silently navigate (mismatched affordance fix).
+    // three identical "done" checks must read as inert rather than silently navigate
+    // (mismatched affordance fix).
     assert.deepEqual(clickableByKey(steps), {
         floor: false,
         settle: false,
         review: false,
-        payout: false,
     });
 });
 
@@ -98,8 +93,9 @@ test("in-editor rail at Floor: later steps pending until floor is saved", () => 
     assert.equal(steps.find((s) => s.key === "floor").state, "active");
     assert.equal(steps.find((s) => s.key === "settle").state, "pending");
     assert.equal(steps.find((s) => s.key === "settle").clickable, false);
-    // Pay out is always tappable from inside the editor (exits to the landing).
-    assert.equal(steps.find((s) => s.key === "payout").clickable, true);
+    // The rail ends at Review now; there is no "Pay out" pill.
+    assert.equal(steps.find((s) => s.key === "payout"), undefined);
+    assert.equal(steps.length, 3);
 });
 
 test("in-editor rail at Settle marks Floor done and Settle reachable back", () => {

@@ -64,16 +64,19 @@ export function getRailSteps({ activeStep = null, shiftStatus = null, hasCalcula
 
     // On the closed-day landing every pill is "done"; the day is finished and the
     // review lives in the payout panel below (with its own "Edit shift" action),
-    // so the four identical checks must all read as inert rather than have two of
-    // them silently navigate. In the editor the steps stay reachable as before.
+    // so the identical checks must all read as inert rather than have one silently
+    // navigate. In the editor the steps stay reachable as before.
     const closedLanding = closed && !inEditor;
 
     const stateFor = (key, done) => (focus === key ? "active" : done ? "done" : "pending");
 
+    // The rail is Floor -> Settle -> Review; Review is the final step where Confirm
+    // & Save happens. (The old "Pay out" pill was vestigial - it only exited the
+    // editor to the landing, which the side nav / save flows already do; the saved
+    // payout summary is reached after Confirm & Save, not through a rail step.)
     return [
         { key: "floor", index: 1, label: RAIL_LABELS.floor, state: stateFor("floor", floorDone), clickable: !closedLanding },
         { key: "settle", index: 2, label: RAIL_LABELS.settle, state: stateFor("settle", settleDone), clickable: !closedLanding && (floorDone || activeStep === "settle") },
         { key: "review", index: 3, label: RAIL_LABELS.review, state: stateFor("review", reviewDone), clickable: hasCalculatedReview },
-        { key: "payout", index: 4, label: RAIL_LABELS.payout, state: reviewDone ? "done" : "end", clickable: inEditor },
     ];
 }
