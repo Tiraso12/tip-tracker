@@ -127,7 +127,7 @@ function FloorLineup({ lineup, onContinueSettle, onEditFloor }) {
                 </p>
             </header>
 
-            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:content-between">
+            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:content-start">
                 {teams.map((team, index) => (
                     <FloorTeamCard
                         key={team.teamId || index}
@@ -181,8 +181,10 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
 
     return (
         // On phones the landing fills the viewport (100dvh minus the app bar + main
-        // padding); only the settle card opts into flex-1 so its team grid can spread
-        // to use the whole screen. Desktop keeps its natural top-aligned height.
+        // padding) so the settle card reaches the bottom of the screen. Its team grid
+        // packs snug at the top (content-start) - any leftover height is one clean band
+        // above the pinned actions, never gaps between the rows. Desktop keeps its
+        // natural top-aligned height.
         <div className="space-y-3 sm:space-y-4 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]">
             <DayRail steps={railSteps} onStepClick={onStepClick} />
 
