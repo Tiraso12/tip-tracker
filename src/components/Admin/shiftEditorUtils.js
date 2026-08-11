@@ -1,3 +1,7 @@
+// Explicit .js extension: this module is unit-tested under `node --test`, which does
+// not resolve extensionless specifiers the way Vite does (engine.js does the same).
+import { ROLE_POINTS } from "../../utils/constants.js";
+
 export const toMoney = (value) => Number(value) || 0;
 export const hasNegative = (value) => Number(value) < 0;
 
@@ -8,8 +12,46 @@ const moneyFormatter = new Intl.NumberFormat("en-US", {
 
 export const fmtMoney = (value) => moneyFormatter.format(toMoney(value));
 
+// Digits only, always exactly two decimals, no currency glyph. The Review spot-check
+// renders the "$" as its own small muted element so it can float beside the digits
+// instead of occupying a column - a pinned "$" misaligns a 3-digit figure against a
+// 2-digit one, and the whole card depends on the decimal points lining up.
+const amountFormatter = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+});
+
+export const fmtAmount = (value) => amountFormatter.format(Math.abs(toMoney(value)));
+export const isNegativeMoney = (value) => toMoney(value) < 0;
+
 export const getPayoutNonCashTotal = (payout = {}) =>
     toMoney(payout.tips ?? payout.ctp ?? payout.payoutAmount) + toMoney(payout.gratuity ?? payout.grt);
+
+// Who the Review spot-check compares against the restaurant's spreadsheet.
+//
+// Captains sit at the top of the restaurant's own sheet, so the captain reads one from
+// there - but a captain who left early carries fewer points and therefore takes home
+// less, which would read as a mismatch against a sheet whose captain worked the full
+// night. So the subject is the first captain at FULL point weighting, not merely the
+// first row. When no captain is at full points we still fall back rather than showing
+// nothing, and the caller surfaces `atFullPoints` so a partial subject is visible
+// rather than silent. The card always displays the point weighting, which is what
+// makes that fallback safe.
+export function selectSpotCheckSubject(payoutRows = []) {
+    const captains = payoutRows.filter(payout => payout.role === "captain");
+    const fullPointCaptain = captains.find(payout => toMoney(payout.points) >= ROLE_POINTS.captain);
+
+    if (fullPointCaptain) {
+        return { payout: fullPointCaptain, atFullPoints: true, isCaptain: true };
+    }
+    if (captains.length > 0) {
+        return { payout: captains[0], atFullPoints: false, isCaptain: true };
+    }
+    if (payoutRows.length > 0) {
+        return { payout: payoutRows[0], atFullPoints: false, isCaptain: false };
+    }
+    return null;
+}
 
 export const roleLabels = {
     captain: "Captain",
