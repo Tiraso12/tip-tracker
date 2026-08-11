@@ -88,8 +88,9 @@ test("hero amounts always carry two decimals and no currency glyph", () => {
     assert.equal(isNegativeMoney(0), false);
 });
 
-// Total on the card is CTP + GRT and never includes cash. The stored per-person
-// `total` folds cash in for dining staff, so the card must compute rather than read it.
+// Total on the card is CTP + GRT and never includes cash. Newly stored totals now
+// agree, but ledger docs written before that rule fold cash in for dining staff -
+// the fixture below is one - so the card must compute rather than read the field.
 test("spot check total is CTP + GRT and ignores both cash and the stored total", () => {
     const diningPayout = { tips: 274.67, gratuity: 86.67, cash: 40, total: 401.33 };
 

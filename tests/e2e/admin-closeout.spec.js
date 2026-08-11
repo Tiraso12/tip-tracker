@@ -271,6 +271,26 @@ test("admin can close out a simple dining room shift and create ledger payout re
         expect(captainPayout.exists()).toBe(true);
         expect(serverPayout.exists()).toBe(true);
         expect(backPayout.exists()).toBe(true);
+
+        // What actually landed in the ledger for a dining employee, after a real
+        // settle in a real browser. `total` is CTP + GRT; the $50 of cash entered
+        // at Settle up is stored on its own and is NOT inside the total. This is
+        // the end-user-visible contract - the stored record has to agree with the
+        // Total (CTP + GRT) the captain just eyeballed on Review.
+        [captainPayout, serverPayout, backPayout].forEach((payoutDoc) => {
+            const payout = payoutDoc.data();
+            expect(payout.total).toBeCloseTo(payout.tips + payout.gratuity, 2);
+        });
+        const captain = captainPayout.data();
+        // Teeth: a dining payout really does carry cash here, so the assertion
+        // above cannot pass just because every figure happened to be zero.
+        expect(captain.cash).toBeGreaterThan(0);
+        expect(captain.total).toBeGreaterThan(0);
+        expect(captain.total).toBeLessThan(captain.tips + captain.gratuity + captain.cash);
+        // The cash entered at Settle up is fully distributed, just not via `total`.
+        const ledgerCash = [captainPayout, serverPayout, backPayout]
+            .reduce((sum, payoutDoc) => sum + payoutDoc.data().cash, 0);
+        expect(ledgerCash).toBeCloseTo(50, 2);
         expect(captainTip.exists()).toBe(false);
         expect(auditEvents.size).toBe(1);
     });

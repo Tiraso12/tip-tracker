@@ -518,8 +518,11 @@ function SpotCheckCard({ subject }) {
                         closed by the accent bar - it is the bottom line, so it is what the
                         card emphasises. Cash needs no fencing of its own: the "CTP + GRT"
                         line under the figure already says what is in it, and staff know cash
-                        is paid out separately. Computed from tips + gratuity - the stored
-                        per-person `total` folds cash in for dining staff and is never read. */}
+                        is paid out separately. Computed from tips + gratuity rather than read
+                        from the stored per-person `total`: the stored field now agrees (it is
+                        CTP + GRT for every role), but ledger docs written before that rule
+                        still fold cash in for dining staff, so the card computes and stays
+                        right on old shifts too. */}
                     <div className="border-t-[3px] border-[var(--color-accent)] bg-[var(--color-surface-muted)]">
                         <SpotCheckRow
                             label="Total"
