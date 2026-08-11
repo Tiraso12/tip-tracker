@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
@@ -28,7 +28,9 @@ import {
 } from "./shiftEditorUtils";
 
 const NUMERIC_INPUT =
-    "block w-full h-9 px-2.5 text-sm font-mono tabular-nums bg-[var(--color-surface)] max-[560px]:h-10 " +
+    // Money/number entry. On phones the field is a full 44px tap target and 16px
+    // text (the iOS focus-zoom threshold), so entering money never zooms the page.
+    "block w-full h-9 px-2.5 text-sm font-mono tabular-nums bg-[var(--color-surface)] max-[560px]:h-11 max-[560px]:text-base " +
     "text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] " +
     "border border-[var(--color-line)] rounded-[var(--radius-xs)] " +
     "transition-colors duration-150 hover:border-[var(--color-line-strong)] " +
@@ -88,7 +90,7 @@ const RailPill = memo(function RailPill({ group, selected, onSelect }) {
             aria-selected={selected}
             onClick={onSelect}
             className={
-                "flex-none inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[var(--radius-md)] border " +
+                "flex-none inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[var(--radius-md)] border max-[560px]:min-h-[44px] " +
                 "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
                 (selected
                     ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[inset_0_-2px_0_var(--color-accent)]"
@@ -235,7 +237,7 @@ function TeamPoolFields({
                                         onClick={() => onRemoveContract(team.teamId, contractIndex)}
                                         title="Remove contract"
                                         aria-label="Remove contract"
-                                        className="h-9 w-9 inline-flex items-center justify-center rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors"
+                                        className="h-9 w-9 inline-flex items-center justify-center rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors max-[560px]:h-11 max-[560px]:w-11"
                                     >
                                         ×
                                     </button>
@@ -308,7 +310,7 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
                                         type="button"
                                         onClick={() => onPointAdjust(member.uid, -0.5)}
                                         aria-label={`Decrease ${member.name} points`}
-                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-8 max-[560px]:w-8"
+                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-11 max-[560px]:w-11"
                                     >
                                         −
                                     </button>
@@ -316,7 +318,7 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
                                         type="number"
                                         min="0"
                                         step="any"
-                                        className={NUMERIC_INPUT + " !w-16 !h-7 text-center max-[560px]:!h-8 max-[560px]:!w-16 max-[560px]:text-[0.82rem]"}
+                                        className={NUMERIC_INPUT + " !w-16 !h-7 text-center max-[560px]:!h-11 max-[560px]:!w-16"}
                                         value={value}
                                         onChange={(e) => onPointChange(member.uid, e.target.value)}
                                         aria-label={`${member.name} points`}
@@ -325,7 +327,7 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
                                         type="button"
                                         onClick={() => onPointAdjust(member.uid, 0.5)}
                                         aria-label={`Increase ${member.name} points`}
-                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-8 max-[560px]:w-8"
+                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-11 max-[560px]:w-11"
                                     >
                                         +
                                     </button>
@@ -366,7 +368,7 @@ function RunnerGroup({ runners, totalPay, onPayoutChange }) {
                                     type="number"
                                     min="0"
                                     step="0.01"
-                                    className={NUMERIC_INPUT + " !w-20 !h-7 max-[560px]:!h-8 max-[560px]:!w-20 max-[560px]:text-[0.82rem]"}
+                                    className={NUMERIC_INPUT + " !w-20 !h-7 max-[560px]:!h-11 max-[560px]:!w-20"}
                                     value={runner.payoutAmount ?? ""}
                                     onChange={(e) => onPayoutChange(runner.uid, e.target.value)}
                                     placeholder={String(RUNNER_FLAT_RATE)}
@@ -537,6 +539,23 @@ function CalculatedPayoutReview({ review, poolAvailable, availableCash = 0 }) {
 }
 
 
+// A stable fingerprint of the editable shift (roster + money), ignoring transient
+// UI-only fields like `_showContracts`. Comparing the live fingerprint to the one
+// captured at load tells us whether the admin has actually changed anything - used
+// to decide whether leaving edit mode needs a discard confirmation.
+function fingerprintShift(teams, barTeam, runners) {
+    return JSON.stringify({
+        teams: (teams || []).map(team => ({
+            teamId: team.teamId,
+            members: team.members || [],
+            pools: team.pools || {},
+            contracts: team.contracts || [],
+        })),
+        barTeam: { members: barTeam?.members || [], pools: barTeam?.pools || {} },
+        runners: runners || [],
+    });
+}
+
 function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }) {
     const { user } = useAuth();
     const [teams, setTeams] = useState([
@@ -556,6 +575,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     const [step, setStep] = useState(initialStep === "settle" ? "settle" : "floor");
     const [activeGroupId, setActiveGroupId] = useState("team-1");
     const [draftStatus, setDraftStatus] = useState("");
+    // Fingerprint of the shift as loaded, so Cancel can tell an untouched view from
+    // one with real edits and only confirm a discard when work would actually be lost.
+    const loadedFingerprintRef = useRef("");
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -787,31 +809,37 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 setDraftStatus("");
                 setShiftStatus(null);
                 const shiftDoc = await getDoc(doc(db, "shifts", date));
+                const emptyTeams = [
+                    { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
+                ];
+                const emptyBar = { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } };
+                let nextTeams = emptyTeams;
+                let nextBar = emptyBar;
+                let nextRunners = [];
                 if (shiftDoc.exists()) {
                     const d = shiftDoc.data();
                     if (d.teams) {
-                        setTeams(d.teams.map(t => ({
+                        nextTeams = d.teams.map(t => ({
                             teamId: t.teamId,
                             members: t.members || [],
                             pools: t.pools || { sales: t.teamSales || "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" },
                             contracts: t.contracts || []
-                        })));
+                        }));
                     }
                     if (d.barTeam) {
-                        setBarTeam({
+                        nextBar = {
                             members: d.barTeam.members || [],
                             pools: d.barTeam.pools || { sales: "", tips: "", gratuity: "", covers: "" }
-                        });
+                        };
                     }
-                    if (d.runners) setRunners(d.runners);
+                    if (d.runners) nextRunners = d.runners;
                     setShiftStatus(d.status || (d.summary || d.firstClosedAt || d.payouts ? "closed" : "setup"));
-                } else {
-                    setTeams([
-                        { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
-                    ]);
-                    setBarTeam({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
-                    setRunners([]);
                 }
+                setTeams(nextTeams);
+                setBarTeam(nextBar);
+                setRunners(nextRunners);
+                // Baseline the loaded shift so Cancel knows whether anything changed.
+                loadedFingerprintRef.current = fingerprintShift(nextTeams, nextBar, nextRunners);
             } catch (e) {
                 console.error("Failed to load shift:", e);
             } finally {
@@ -908,6 +936,32 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     const handleDoneFloor = async () => {
         const ok = await handleSaveTeamSetup();
         if (!ok) return;
+        onClose();
+    };
+
+    // Has the admin actually changed anything since the shift loaded?
+    const isDirty = hasLoadedShift
+        && loadedFingerprintRef.current !== ""
+        && fingerprintShift(teams, barTeam, runners) !== loadedFingerprintRef.current;
+
+    // Cancel: leave edit mode WITHOUT committing and return to the read-only landing.
+    // onClose() re-reads the day, so nothing in-editor is written. A setup shift
+    // autosaves its draft continuously, so leaving loses nothing and needs no prompt.
+    // A closed shift disables autosave (edits only persist through Calculate Payouts ->
+    // Confirm & Save), so an in-progress edit would be dropped - guard that with a
+    // discard confirmation, matching the app's other lossy actions (Remove shift).
+    const handleCancelEdit = () => {
+        if (isSaving) return;
+        const wouldDropWork = shiftStatus === "closed" && isDirty;
+        if (wouldDropWork) {
+            const confirmed = window.confirm(
+                "Discard your changes to this closed shift?\n\n" +
+                "Edits to a paid-out shift are only saved when you Calculate Payouts and " +
+                "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
+                "current payouts unchanged."
+            );
+            if (!confirmed) return;
+        }
         onClose();
     };
 
@@ -1060,7 +1114,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                     <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-                            Editing floor plan
+                            {effectiveStep === "settle"
+                                ? "Editing · Settle up"
+                                : effectiveStep === "review"
+                                    ? "Editing · Review"
+                                    : "Editing floor plan"}
                         </span>
                     </div>
                 )}
@@ -1101,20 +1159,33 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                     runners={runners} setRunners={setRunners}
                                     readOnly={false}
                                 />
-                                {/* Floating Done FAB - same look for both. Setup: save the draft
-                                    and return to the read-only floor view. Settled/paid: route into
-                                    the EXISTING overwrite-confirmed save - handleCalculateForReview
-                                    lands on the Review step showing "Re-saving overwrites the saved
-                                    payouts for {date}" + Confirm & Save Shift. Nothing is written
-                                    until that explicit confirm; money/recalc/persistence unchanged. */}
-                                <button
-                                    type="button"
-                                    onClick={shiftStatus === "closed" ? handleCalculateForReview : handleDoneFloor}
-                                    disabled={isSaving}
-                                    className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-                                >
-                                    {isSaving ? "Saving…" : "✓ Done"}
-                                </button>
+                                {/* Floating action pair. Cancel leaves edit mode WITHOUT saving and
+                                    returns to the read-only floor view; Done commits. Cancel is a
+                                    neutral pill so it never competes with the accent Done, and each is
+                                    its own 44px+ tap target. Done keeps its behaviour for both cases -
+                                    setup: save the draft and return to the read-only floor view;
+                                    settled/paid: route into the EXISTING overwrite-confirmed save
+                                    (handleCalculateForReview -> Review step with the "Re-saving
+                                    overwrites the saved payouts for {date}" warning + Confirm & Save).
+                                    Nothing is written until that explicit confirm. */}
+                                <div className="fixed bottom-5 right-5 z-30 flex items-center gap-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={handleCancelEdit}
+                                        disabled={isSaving}
+                                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line-strong)] bg-[var(--color-surface)] px-5 py-3.5 text-sm font-semibold text-[var(--color-ink-soft)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-transform active:scale-95 disabled:opacity-60"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={shiftStatus === "closed" ? handleCalculateForReview : handleDoneFloor}
+                                        disabled={isSaving}
+                                        className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                                    >
+                                        {isSaving ? "Saving…" : "✓ Done"}
+                                    </button>
+                                </div>
                             </div>
                         ) : effectiveStep === "settle" ? (
                             /* STEP 2 - Settle up (the calm single money switcher, unchanged) */
@@ -1213,7 +1284,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                             {fmtMoney(poolSummary.payoutPool)}
                                         </strong>
                                     </div>
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+                                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
                                         {groupStatusSummary.needsMoney > 0 ? (
                                             <span className="flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
                                                 <span aria-hidden="true">⚠</span>
@@ -1224,13 +1295,25 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                         ) : draftStatus ? (
                                             <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
                                         ) : null}
-                                        <Button
-                                            onClick={handleCalculateForReview}
-                                            disabled={isSaving}
-                                            className="max-[560px]:w-full"
-                                        >
-                                            {isSaving ? "Calculating…" : "Calculate Payouts →"}
-                                        </Button>
+                                        {/* Cancel leaves Settle up without committing (same exit as the
+                                            floor Cancel); Calculate advances to Review. */}
+                                        <div className="flex items-center gap-2.5 max-[560px]:w-full">
+                                            <Button
+                                                variant="secondary"
+                                                onClick={handleCancelEdit}
+                                                disabled={isSaving}
+                                                className="flex-none max-[560px]:h-11"
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                onClick={handleCalculateForReview}
+                                                disabled={isSaving}
+                                                className="max-[560px]:h-11 max-[560px]:flex-1"
+                                            >
+                                                {isSaving ? "Calculating…" : "Calculate Payouts →"}
+                                            </Button>
+                                        </div>
                                     </div>
                                 </div>
                             </section>
@@ -1243,7 +1326,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                         variant="secondary"
                                         onClick={() => setStep("settle")}
                                         disabled={isSaving}
-                                        className="max-[560px]:w-full"
+                                        className="max-[560px]:h-11 max-[560px]:w-full"
                                     >
                                         ← Back to Settle up
                                     </Button>
@@ -1262,7 +1345,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                         <Button
                                             onClick={handleConfirmSave}
                                             disabled={isSaving}
-                                            className="max-[560px]:w-full"
+                                            className="max-[560px]:h-11 max-[560px]:w-full"
                                         >
                                             {isSaving ? "Saving…" : "Confirm & Save Shift"}
                                         </Button>

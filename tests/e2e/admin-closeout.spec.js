@@ -421,4 +421,60 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByText(/Re-saving overwrites the saved payouts/i)).toBeVisible();
         await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
     });
+
+    test("floor edit: Cancel leaves the in-place editor without saving and returns to the floor view", async ({ page }) => {
+        const date = "2026-05-25";
+        await seedSetupShift(date);
+        await login(page);
+        await setShiftDate(page, date);
+
+        await expect(page.getByText("Floor plan is set")).toBeVisible();
+
+        // Enter edit via the floating ✎ Edit, then Cancel with no changes -> straight
+        // back to the read-only floor view (edit mode left, nothing committed).
+        await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
+        await expect(page.getByText("Editing floor plan")).toBeVisible();
+
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(page.getByText("Floor plan is set")).toBeVisible();
+        await expect(page.getByText("Editing floor plan")).toHaveCount(0);
+    });
+
+    test("closed shift edit: Cancel discards the in-progress roster change and keeps the saved shift", async ({ page }) => {
+        const date = "2026-05-24";
+        await seedClosedShift(date);
+
+        // A closed shift disables draft autosave, so an in-progress roster edit only
+        // persists through Confirm & Save. Cancel guards that with a discard confirm.
+        page.on("dialog", (dialog) => dialog.accept());
+
+        await login(page);
+        await setShiftDate(page, date);
+
+        await page.getByRole("button", { name: "Edit shift" }).click();
+        await expect(page.getByText("Editing floor plan")).toBeVisible();
+
+        // Add a member so there is an uncommitted change to discard.
+        await page.getByRole("button", { name: /Team 1/i }).click();
+        const sheet = page.getByRole("dialog", { name: /Add employees to Team 1/i });
+        await expect(sheet).toBeVisible();
+        await sheet.locator('[title="Assign Back One to selected team"]').click();
+        await sheet.getByRole("button", { name: "Done" }).click();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+
+        // Cancel -> accept the discard -> back on the settled landing, nothing written.
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const db = context.firestore();
+            const shiftDoc = await getDoc(doc(db, `shifts/${date}`));
+            const memberUids = shiftDoc.data().teams[0].members.map((member) => member.uid);
+            expect(memberUids).toContain("captainUid");
+            expect(memberUids).toContain("serverUid");
+            expect(memberUids).not.toContain("backUid");
+            const backPayout = await getDoc(doc(db, "payouts", date, "entries", "backUid"));
+            expect(backPayout.exists()).toBe(false);
+        });
+    });
 });
