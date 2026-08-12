@@ -1,7 +1,8 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from "react";
 import { db } from "../../config/firebase";
-import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
+import { canApproveAccounts } from "../../utils/permissions";
 import DayRailLanding from "./DayRailLanding";
 import BarDatePill from "./BarDatePill";
 import AccountSheet from "../Account/AccountSheet";
@@ -130,6 +131,32 @@ function AdminDashboard() {
     // Set only by a completed Confirm & Save, so the confirmation lands on the day
     // it belongs to instead of on the editor the admin is leaving.
     const [shiftSaved, setShiftSaved] = useState(false);
+
+    // People waiting on a decision, shown on the app bar's account avatar.
+    // Gated on the SAME predicate that guards the Approve/Deny controls, not on a
+    // role read here - the badge must never advertise work its viewer cannot do,
+    // and when the capability moves it moves in one place.
+    const canApprove = canApproveAccounts(user);
+    const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+
+    // Live, because approving or denying someone has to take them off the count
+    // immediately - including from the Team screen sitting under the same bar.
+    // Scoped query, not the full roster: this runs for the whole session.
+    useEffect(() => {
+        if (!canApprove) {
+            setPendingApprovalCount(0);
+            return undefined;
+        }
+        return onSnapshot(
+            query(collection(db, "users"), where("status", "==", "pending")),
+            (snapshot) => setPendingApprovalCount(snapshot.size),
+            (e) => {
+                // A count nobody can read is not worth a broken bar: fail to no badge.
+                console.error("Failed to watch pending approvals:", e);
+                setPendingApprovalCount(0);
+            }
+        );
+    }, [canApprove]);
 
     // One progress cue for the whole workspace, driven by every slow action that
     // registers through the provider below.
@@ -354,6 +381,9 @@ function AdminDashboard() {
             label: item.label,
             icon: item.icon,
             active: sidebarValue === item.value,
+            // Team is where a pending sign-up is acted on, so the avatar's count
+            // repeats here - the tap from the badge lands on the number's screen.
+            count: item.value === "users" ? pendingApprovalCount : 0,
             onClick: () => handleNavItemClick(item.value),
         }));
 
@@ -457,7 +487,7 @@ function AdminDashboard() {
                         money screen. The sheet also carries the username the bar used
                         to print beside it. Team rides in the same sheet - on a phone
                         this avatar is the only door to it. */}
-                    <AccountSheet items={accountItems} />
+                    <AccountSheet items={accountItems} pendingApprovalCount={pendingApprovalCount} />
                 </div>
             </header>
 

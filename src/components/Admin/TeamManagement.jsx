@@ -3,6 +3,7 @@ import { db } from '../../config/firebase';
 import { doc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
 import { Badge, Button, Card, Select } from '../ui';
 import { useAuth } from '../../context/AuthContext';
+import { canApproveAccounts } from '../../utils/permissions';
 import {
     formatTempStaffMergeCollisionMessage,
     formatTempStaffMergeResultMessage,
@@ -49,6 +50,10 @@ function EmptyRow({ children }) {
 
 const TeamManagement = ({ allEmployees, refreshEmployees }) => {
     const { user } = useAuth();
+    // The gate on acting on a pending sign-up. The app bar's pending count reads
+    // the same predicate, so the badge can never advertise work its viewer
+    // cannot do. See src/utils/permissions.js.
+    const canApprove = canApproveAccounts(user);
     const [loadingId, setLoadingId] = useState(null);
     const [unregisteredStaff, setUnregisteredStaff] = useState([]);
     const [linkTargetUpdates, setLinkTargetUpdates] = useState({});
@@ -188,27 +193,31 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 </Select>
 
                 {isPending ? (
-                    <>
-                        <Button
-                            size="sm"
-                            onClick={() => handleUpdateUser(user.uid, { status: 'active' })}
-                            disabled={loadingId === user.uid || user.role === 'unassigned'}
-                            title={user.role === 'unassigned' ? "Assign a role first" : "Approve user"}
-                        >
-                            Approve
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => handleDeactivateUser(
-                                user.uid,
-                                "Deny this sign-up request? The account will be marked inactive, and the user will not be able to access the dashboard. Their username stays reserved so it cannot be reused by another account."
-                            )}
-                            disabled={loadingId === user.uid}
-                        >
-                            Deny
-                        </Button>
-                    </>
+                    canApprove ? (
+                        <>
+                            <Button
+                                size="sm"
+                                onClick={() => handleUpdateUser(user.uid, { status: 'active' })}
+                                disabled={loadingId === user.uid || user.role === 'unassigned'}
+                                title={user.role === 'unassigned' ? "Assign a role first" : "Approve user"}
+                            >
+                                Approve
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleDeactivateUser(
+                                    user.uid,
+                                    "Deny this sign-up request? The account will be marked inactive, and the user will not be able to access the dashboard. Their username stays reserved so it cannot be reused by another account."
+                                )}
+                                disabled={loadingId === user.uid}
+                            >
+                                Deny
+                            </Button>
+                        </>
+                    ) : (
+                        <span className="text-xs text-[var(--color-ink-muted)]">Awaiting approval</span>
+                    )
                 ) : (
                     <Button
                         size="sm"

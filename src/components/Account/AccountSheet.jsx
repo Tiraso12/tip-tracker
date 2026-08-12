@@ -17,6 +17,15 @@ import { roleLabel } from "../../utils/roleLabels";
 // approve-a-new-hire screen, visited at a desk maybe twice a week, and it was the
 // only reason a phone carried a workspace menu at all. On a phone this sheet is
 // now the ONLY way to reach it, so the slot is load-bearing, not decoration.
+//
+// `pendingApprovalCount` puts a count on the avatar so whoever can approve people
+// sees it without opening Team. It is the ONE piece of chrome the stripped phone
+// bar takes back, and only that: it is absolutely positioned over the existing
+// 44x44 trigger, so the bar's layout and touch targets are untouched, and it does
+// not render at zero - a permanent "0" would only teach the eye to skip it. The
+// caller decides who gets a count (see canApproveAccounts); this component just
+// draws what it is handed. An item may carry its own `count` so the tap-through
+// lands on the destination that explains the number.
 
 function initialsFor(name) {
     const parts = String(name || "").trim().split(/[\s._-]+/).filter(Boolean);
@@ -25,7 +34,7 @@ function initialsFor(name) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function AccountSheet({ items = [] }) {
+function AccountSheet({ items = [], pendingApprovalCount = 0 }) {
     const { user, logout } = useAuth();
     const [open, setOpen] = useState(false);
     const triggerRef = useRef(null);
@@ -58,6 +67,8 @@ function AccountSheet({ items = [] }) {
 
     const name = user?.username || "Signed in";
     const initials = initialsFor(user?.username);
+    const pendingCount = Number.isFinite(pendingApprovalCount) ? Math.max(0, Math.trunc(pendingApprovalCount)) : 0;
+    const hasPending = pendingCount > 0;
 
     const runItem = (item) => {
         close({ restoreFocus: false });
@@ -72,7 +83,11 @@ function AccountSheet({ items = [] }) {
                 onClick={() => (open ? close() : setOpen(true))}
                 aria-haspopup="menu"
                 aria-expanded={open}
-                aria-label={`Account: ${name}. Open account menu.`}
+                aria-label={
+                    hasPending
+                        ? `Account: ${name}. Open account menu. ${pendingCount} ${pendingCount === 1 ? "person" : "people"} awaiting approval.`
+                        : `Account: ${name}. Open account menu.`
+                }
                 title="Account"
                 className={
                     "h-11 w-11 inline-flex items-center justify-center rounded-full border text-xs font-semibold tracking-tight " +
@@ -84,6 +99,26 @@ function AccountSheet({ items = [] }) {
             >
                 <span aria-hidden="true">{initials}</span>
             </button>
+
+            {/* Absolutely positioned over the trigger and pointer-transparent: the
+                bar row never reflows for it and the 44x44 target stays whole. The
+                ring is the bar's own surface colour, so the count reads as a chip
+                on the avatar rather than a smudge against it. The trigger's
+                aria-label already speaks the number, so this is decorative. */}
+            {hasPending ? (
+                <span
+                    aria-hidden="true"
+                    data-testid="pending-approvals-badge"
+                    className={
+                        "pointer-events-none absolute -top-0.5 -right-0.5 h-[18px] min-w-[18px] px-1 " +
+                        "inline-flex items-center justify-center rounded-full " +
+                        "bg-[var(--color-accent)] text-[10px] font-semibold leading-none text-white " +
+                        "ring-2 ring-[var(--color-surface)]"
+                    }
+                >
+                    {pendingCount > 9 ? "9+" : pendingCount}
+                </span>
+            ) : null}
 
             {open ? (
                 <>
@@ -146,6 +181,14 @@ function AccountSheet({ items = [] }) {
                                     >
                                         {item.icon ? <span className="shrink-0 text-[var(--color-ink-muted)]">{item.icon}</span> : null}
                                         <span className="truncate">{item.label}</span>
+                                        {/* Carries the avatar's number through to the
+                                            destination that can act on it, so the tap
+                                            does not end on an unexplained screen. */}
+                                        {item.count > 0 ? (
+                                            <span className="ml-auto shrink-0 h-[18px] min-w-[18px] px-1 inline-flex items-center justify-center rounded-full bg-[var(--color-accent)] text-[10px] font-semibold leading-none text-white">
+                                                {item.count > 9 ? "9+" : item.count}
+                                            </span>
+                                        ) : null}
                                     </button>
                                 ))}
                             </div>
