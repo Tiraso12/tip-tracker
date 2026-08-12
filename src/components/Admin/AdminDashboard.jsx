@@ -13,9 +13,6 @@ import { removeShiftAtomically } from "../../utils/closeoutPersistence";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
-const AdminReportsPanel = lazy(() => import("./AdminReportsPanel"));
-
-const SHOW_ADMIN_REPORTS = false;
 
 const NAV_ITEMS = [
     {
@@ -42,18 +39,7 @@ const NAV_ITEMS = [
             </svg>
         ),
     },
-    SHOW_ADMIN_REPORTS ? {
-        value: "reports",
-        label: "Reports",
-        icon: (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="20" x2="18" y2="10" />
-                <line x1="12" y1="20" x2="12" y2="4" />
-                <line x1="6" y1="20" x2="6" y2="14" />
-            </svg>
-        ),
-    } : null,
-].filter(Boolean);
+];
 
 function HomeIcon() {
     return (
@@ -114,7 +100,7 @@ function AdminDashboard() {
     const [employeesLoading, setEmployeesLoading] = useState(false);
     const [employeesLoadError, setEmployeesLoadError] = useState("");
     const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
-    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor" | "reports"
+    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor"
     const [daySummary, setDaySummary] = useState(null);
     const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
@@ -173,12 +159,6 @@ function AdminDashboard() {
     useEffect(() => {
         fetchDayPayouts(selectedDate);
     }, [selectedDate, fetchDayPayouts]);
-
-    useEffect(() => {
-        if (!SHOW_ADMIN_REPORTS && activeTab === "reports") {
-            setActiveTab("shifts");
-        }
-    }, [activeTab]);
 
     const handleEditorClose = () => {
         setActiveTab("shifts");
@@ -319,17 +299,10 @@ function AdminDashboard() {
                 actions: null,
             };
         }
-        if (activeTab === "users") {
-            return {
-                eyebrow: "Team",
-                title: "Team Management",
-                subtitle: "Approve new users, assign roles, and manage active employees.",
-            };
-        }
         return {
-            eyebrow: "Reports",
-            title: "Admin Reports",
-            subtitle: "Generate and export weekly, monthly, or pay-period shift summaries.",
+            eyebrow: "Team",
+            title: "Team Management",
+            subtitle: "Approve new users, assign roles, and manage active employees.",
         };
     };
 
@@ -503,22 +476,16 @@ function AdminDashboard() {
                                     />
                                 </Suspense>
                             )
-                        ) : activeTab === "users" ? (
-                            !employeesLoaded && employeesLoading ? (
-                                <PanelLoading label="Loading team..." />
-                            ) : !employeesLoaded && employeesLoadError ? (
-                                <PanelLoading label={employeesLoadError} />
-                            ) : (
-                                <Suspense fallback={<PanelLoading label="Loading team management..." />}>
-                                    <TeamManagement
-                                        allEmployees={allEmployees}
-                                        refreshEmployees={() => loadEmployeesIfNeeded({ force: true })}
-                                    />
-                                </Suspense>
-                            )
+                        ) : !employeesLoaded && employeesLoading ? (
+                            <PanelLoading label="Loading team..." />
+                        ) : !employeesLoaded && employeesLoadError ? (
+                            <PanelLoading label={employeesLoadError} />
                         ) : (
-                            <Suspense fallback={<PanelLoading label="Loading reports..." />}>
-                                <AdminReportsPanel />
+                            <Suspense fallback={<PanelLoading label="Loading team management..." />}>
+                                <TeamManagement
+                                    allEmployees={allEmployees}
+                                    refreshEmployees={() => loadEmployeesIfNeeded({ force: true })}
+                                />
                             </Suspense>
                         )}
                     </div>
