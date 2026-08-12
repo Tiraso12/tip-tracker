@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { generateShiftReport } from "../../utils/pdfExport";
 import { Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
+import { rolePluralLabel, roleShortLabel } from "../../utils/roleLabels";
 
 const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 // singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
@@ -53,14 +54,17 @@ function BalanceValue({ value }) {
     );
 }
 
+// `key` is the engine's roleGrouped bucket (engine.js); the heading is the role's
+// group name from the shared label source, so a payout heading and a floor-plan
+// filter chip can never drift apart.
 const ROLE_GROUPS = [
-    { key: "captains", label: "Captains" },
-    { key: "servers", label: "Servers" },
-    { key: "backs", label: "Backs" },
-    { key: "assistants", label: "Assistants" },
-    { key: "bar", label: "Bar Team" },
-    { key: "runners", label: "Runners", isRunner: true },
-];
+    { key: "captains", role: "captain" },
+    { key: "servers", role: "server" },
+    { key: "backs", role: "back" },
+    { key: "assistants", role: "assistant" },
+    { key: "bar", role: "bartender" },
+    { key: "runners", role: "runner", isRunner: true },
+].map(group => ({ ...group, label: rolePluralLabel(group.role) }));
 
 function AuditSummary({ summary }) {
     const [isOpen, setIsOpen] = useState(false);
@@ -171,7 +175,7 @@ function PayoutMobileCards({ summary }) {
                         <div className="divide-y divide-[var(--color-line)]">
                             {arr.map((p) => {
                                 const total = fmt(isRunner ? p.payoutAmount : getNonCashPayoutTotal(p));
-                                const team = isRunner ? "Runner" : p.teamId ? p.teamId.replace("team-", "Team ") : "Bar";
+                                const team = isRunner ? roleShortLabel("runner") : p.teamId ? p.teamId.replace("team-", "Team ") : roleShortLabel("bartender");
                                 const detail = isRunner
                                     ? Object.entries(p.breakdown || {}).map(([src, val]) => `${runnerSourceLabel(src)}: ${fmt(val)}`).join(" · ")
                                     : `CTP ${fmt(p.ctp)} · GRT ${fmt(p.grt)} · Cash ${fmt(p.cash)}`;
@@ -237,7 +241,7 @@ function PayoutTable({ summary }) {
                                 <TR key={p.uid}>
                                     <TD className="font-medium">{p.name}</TD>
                                     <TD className="text-[var(--color-ink-soft)]">
-                                        {isRunner ? "Runner" : p.teamId ? p.teamId.replace("team-", "Team ") : "Bar"}
+                                        {isRunner ? roleShortLabel("runner") : p.teamId ? p.teamId.replace("team-", "Team ") : roleShortLabel("bartender")}
                                     </TD>
                                     {isRunner ? (
                                         <td colSpan={4} className="px-4 py-3 text-xs text-[var(--color-ink-muted)] font-mono tabular-nums">

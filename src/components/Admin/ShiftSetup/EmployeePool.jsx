@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import ScrollRail from '../ScrollRail';
+import { ASSIGNABLE_ROLES, rolePluralLabel, roleShortLabel } from '../../../utils/roleLabels';
 
 // Captains lead the list per captain direction; the "All" chip is gone - the
 // unfiltered view is the default, and tapping the active role chip again clears it.
+// Each chip names the GROUP of people in a role, so it reads the plural label.
+// "Temp" is not a role - it filters to temporary staff profiles of any role.
 const ROLE_FILTERS = [
-    { value: 'captain', label: 'Captains' },
-    { value: 'server', label: 'Servers' },
-    { value: 'back', label: 'Backs' },
-    { value: 'assistant', label: 'Assistants' },
-    { value: 'bartender', label: 'Bar' },
-    { value: 'runner', label: 'Runners' },
+    ...ASSIGNABLE_ROLES.map(role => ({
+        value: role,
+        // The bar chip reads "Bar", not the group name "Bar Team": this screen
+        // already has a "Bar Team" drop zone, and two controls sharing one name
+        // is ambiguous to read and to tap.
+        label: role === 'bartender' ? roleShortLabel(role) : rolePluralLabel(role),
+    })),
     { value: 'temp', label: 'Temp' },
 ];
 
@@ -149,7 +153,7 @@ function EmployeePool({
                         title={clickable ? `Assign ${emp.username || emp.name} to selected team` : 'Drag to assign'}
                     >
                         <span className="font-semibold text-[0.8rem]">{emp.name || emp.username}</span>
-                        <span className="text-[0.65rem] text-[var(--color-accent)] uppercase tracking-[0.05em] font-bold">{emp.role}</span>
+                        <span className="text-[0.65rem] text-[var(--color-accent)] uppercase tracking-[0.05em] font-bold">{roleShortLabel(emp.role)}</span>
                     </div>
                 ))}
             </div>
@@ -176,12 +180,9 @@ function EmployeePool({
                         value={unregForm.role}
                         onChange={(e) => setUnregForm(prev => ({ ...prev, role: e.target.value }))}
                     >
-                        <option value="captain">Captain</option>
-                        <option value="server">Server</option>
-                        <option value="back">Back</option>
-                        <option value="assistant">Assistant</option>
-                        <option value="bartender">Bartender</option>
-                        <option value="runner">Runner</option>
+                        {ASSIGNABLE_ROLES.map(role => (
+                            <option key={role} value={role}>{roleShortLabel(role)}</option>
+                        ))}
                     </select>
                     <div className="flex gap-1.5 mt-0.5">
                         <button

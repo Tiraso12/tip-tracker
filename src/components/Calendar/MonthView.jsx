@@ -2,17 +2,9 @@ import React, { useMemo } from "react";
 import { isSameDay, toDateKey } from "../../utils/dateUtils";
 import { getNonCashDayTotal, fmtMoney } from "../../utils/employeeSummary";
 import DayCard from "./DayCard";
+import { roleShortLabel } from "../../utils/roleLabels";
 
 const HEADERS = ["S", "M", "T", "W", "T", "F", "S"];
-
-const roleLabels = {
-    captain: "Captain",
-    server: "Server",
-    back: "Back Server",
-    assistant: "Assistant",
-    bartender: "Bartender",
-    runner: "Runner",
-};
 
 function buildDayData(day, allData) {
     const dateKey = toDateKey(day);
@@ -82,7 +74,8 @@ function AgendaList({ days, currentMonth, allData, onDaySelect }) {
                 {rows.map(({ day, data }) => {
                     const isToday = isSameDay(day, new Date());
                     const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(day);
-                    const roleLabel = data.role ? roleLabels[data.role] || data.role : null;
+                    // Short label: this chip shares an agenda row with the day's money.
+                    const roleLabel = data.role ? roleShortLabel(data.role) : null;
                     const tips = getNonCashDayTotal(data);
                     const cash = Number(data.cash || 0);
 

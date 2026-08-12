@@ -53,15 +53,6 @@ export function selectSpotCheckSubject(payoutRows = []) {
     return null;
 }
 
-export const roleLabels = {
-    captain: "Captain",
-    server: "Server",
-    back: "Back",
-    assistant: "Assistant",
-    bartender: "Bartender",
-    runner: "Runner",
-};
-
 export const ignoreMissingUserDoc = (error) => {
     if (error?.code !== "not-found") {
         throw error;

@@ -6,16 +6,8 @@ import {
     getDateKeys,
     getNonCashDayTotal,
 } from "../../utils/employeeSummary";
+import { roleLabel } from "../../utils/roleLabels";
 import { Card } from "../ui";
-
-const roleLabels = {
-    captain: "Captain",
-    server: "Server",
-    back: "Back Server",
-    assistant: "Assistant",
-    bartender: "Bartender",
-    runner: "Runner",
-};
 
 function StatBlock({ label, value, hint, accent = false }) {
     return (
@@ -91,7 +83,7 @@ function EmployeePeriodSummary({ currentDate, currentWeekStart, currentWeekEnd, 
 
     const topRoles = Object.entries(summary.roleCounts)
         .sort((a, b) => b[1] - a[1])
-        .map(([role, count]) => `${roleLabels[role] || role} · ${count} ${count === 1 ? "shift" : "shifts"}`)
+        .map(([role, count]) => `${roleLabel(role)} · ${count} ${count === 1 ? "shift" : "shifts"}`)
         .join(" · ");
 
     const weekLabel =

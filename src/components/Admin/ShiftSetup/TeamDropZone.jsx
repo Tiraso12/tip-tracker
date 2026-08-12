@@ -1,16 +1,13 @@
 import React from 'react';
 import AssignedEmployeeRow from './AssignedEmployeeRow';
 import { ROLE_POINTS } from '../../../utils/constants';
-
-const ROLE_BADGES = { captain: 'C', server: 'S', back: 'B', assistant: 'A' };
+import { roleInitial } from '../../../utils/roleLabels';
 
 // Compact role tag for a mobile roster chip. One visual family: dining carries a
 // role letter + points ("C·4"); bar/runners have no points, so they read as a
 // compact role label of the same size ("BAR", "RUN") - never a faked "·0".
 const memberTag = (member) => {
-    if (member.role === 'runner') return 'Run';
-    if (member.role === 'bartender') return 'Bar';
-    const badge = ROLE_BADGES[member.role] || 'S';
+    const badge = roleInitial(member.role);
     const points = ROLE_POINTS[member.role];
     return points != null ? `${badge}·${points}` : badge;
 };

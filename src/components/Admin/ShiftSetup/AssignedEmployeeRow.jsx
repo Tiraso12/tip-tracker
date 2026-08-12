@@ -1,11 +1,5 @@
 import React from 'react';
-
-const RESTAURANT_ROLE_OPTIONS = [
-    { value: "captain", label: "Captain" },
-    { value: "server", label: "Server" },
-    { value: "back", label: "Back" },
-    { value: "assistant", label: "Assistant" },
-];
+import { FLOOR_PLAN_ROLES, roleShortLabel } from '../../../utils/roleLabels';
 
 function AssignedEmployeeRow({ member, onDragStart, onRemove, isRunner, canEditRole, onRoleChange }) {
     const pointsLabel = member.points === null || member.points === undefined || member.points === ""
@@ -26,29 +20,29 @@ function AssignedEmployeeRow({ member, onDragStart, onRemove, isRunner, canEditR
                 </div>
 
                 <div className="text-[0.66rem] font-bold uppercase tracking-[0.04em] text-[var(--color-ink-muted)] hidden max-[560px]:block">
-                    {isRunner ? "Runner" : member.role === "bartender" ? "Bar" : pointsLabel}
+                    {isRunner ? roleShortLabel("runner") : member.role === "bartender" ? roleShortLabel("bartender") : pointsLabel}
                 </div>
             </div>
 
             <div className="flex items-center gap-1.5 min-w-0 pr-6 relative max-[560px]:pr-0 max-[560px]:gap-1">
                 {isRunner ? (
-                    <span className="text-[var(--color-ink-muted)] text-[0.7rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.4rem] py-[0.16rem] max-[560px]:hidden">Runner</span>
+                    <span className="text-[var(--color-ink-muted)] text-[0.7rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.4rem] py-[0.16rem] max-[560px]:hidden">{roleShortLabel("runner")}</span>
                 ) : canEditRole ? (
                     <select
-                        value={RESTAURANT_ROLE_OPTIONS.some(option => option.value === member.role) ? member.role : "server"}
+                        value={FLOOR_PLAN_ROLES.includes(member.role) ? member.role : "server"}
                         onChange={(e) => onRoleChange(member.uid, e.target.value)}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
                         className="h-6 w-[88px] bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-1.5 text-[0.7rem] font-bold text-[var(--color-ink-soft)] cursor-pointer focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 max-[560px]:h-7 max-[560px]:w-[90px] max-[560px]:text-[0.72rem]"
                         aria-label={`${member.name} worked role`}
                     >
-                        {RESTAURANT_ROLE_OPTIONS.map(option => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
+                        {FLOOR_PLAN_ROLES.map(role => (
+                            <option key={role} value={role}>{roleShortLabel(role)}</option>
                         ))}
                     </select>
                 ) : (
                     <span className="text-[var(--color-ink-muted)] text-[0.7rem] font-bold whitespace-nowrap bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-xs)] px-[0.4rem] py-[0.16rem] max-[560px]:hidden">
-                        {member.role === "bartender" ? "Bar" : pointsLabel}
+                        {member.role === "bartender" ? roleShortLabel("bartender") : pointsLabel}
                     </span>
                 )}
 

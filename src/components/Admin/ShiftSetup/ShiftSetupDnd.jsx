@@ -2,20 +2,9 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import EmployeePool from './EmployeePool';
 import TeamAssignmentPanel from './TeamAssignmentPanel';
 import { ROLE_POINTS, RUNNER_FLAT_RATE } from '../../../utils/constants';
+import { FLOOR_PLAN_ROLES, roleShortLabel } from '../../../utils/roleLabels';
 import { db } from '../../../config/firebase';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
-
-const RESTAURANT_ROLE_OPTIONS = [
-    { value: "captain", label: "Captain", badge: "C" },
-    { value: "server", label: "Server", badge: "S" },
-    { value: "back", label: "Back", badge: "B" },
-    { value: "assistant", label: "Assistant", badge: "A" },
-];
-
-const ROLE_LABELS = RESTAURANT_ROLE_OPTIONS.reduce((acc, option) => {
-    acc[option.value] = option.label;
-    return acc;
-}, {});
 
 function ShiftSetupDnd({
     allEmployees,
@@ -364,19 +353,19 @@ function ShiftSetupDnd({
                                                 {/* Labeled role pill that reads as a control; the native
                                                     select overlays the full 40px target for a real tap area. */}
                                                 <span className="inline-flex h-10 min-w-[104px] items-center justify-between gap-1.5 rounded-full border border-[var(--color-line-strong)] bg-[var(--color-surface)] pl-3 pr-2.5 text-[0.78rem] font-semibold text-[var(--color-ink)]">
-                                                    {ROLE_LABELS[member.role] || "Server"}
+                                                    {roleShortLabel(member.role)}
                                                     <span aria-hidden="true" className="text-[0.62rem] leading-none text-[var(--color-ink-muted)]">▾</span>
                                                 </span>
                                                 <select
-                                                    value={RESTAURANT_ROLE_OPTIONS.some(option => option.value === member.role) ? member.role : "server"}
+                                                    value={FLOOR_PLAN_ROLES.includes(member.role) ? member.role : "server"}
                                                     onChange={(e) => updateMemberRole(selectedTeamId, member.uid, e.target.value)}
                                                     onClick={(e) => e.stopPropagation()}
                                                     onMouseDown={(e) => e.stopPropagation()}
                                                     className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                                                     aria-label={`${member.name} worked role`}
                                                 >
-                                                    {RESTAURANT_ROLE_OPTIONS.map(option => (
-                                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                                    {FLOOR_PLAN_ROLES.map(role => (
+                                                        <option key={role} value={role}>{roleShortLabel(role)}</option>
                                                     ))}
                                                 </select>
                                             </div>

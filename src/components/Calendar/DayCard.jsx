@@ -1,14 +1,6 @@
 import React from "react";
 import { getNonCashDayTotal } from "../../utils/employeeSummary";
-
-const roleLabels = {
-    captain: "Captain",
-    server: "Server",
-    back: "Back Server",
-    assistant: "Assistant",
-    bartender: "Bartender",
-    runner: "Runner",
-};
+import { roleShortLabel } from "../../utils/roleLabels";
 
 const fmt = (value) =>
     (Number(value) || 0).toLocaleString("en-US", {
@@ -119,7 +111,9 @@ function DayCard({ data, variant = "week" }) {
         Number(data.gratuity || 0) +
         Number(data.tip || 0) +
         Number(data.cash || 0) > 0;
-    const roleLabel = data.role ? roleLabels[data.role] || data.role : null;
+    // Short label: the chip sits beside the day title and must not steal width
+    // from it, and in month view it shrinks to a dot with this as its tooltip.
+    const roleLabel = data.role ? roleShortLabel(data.role) : null;
 
     const d = new Date(data.date);
     const title =

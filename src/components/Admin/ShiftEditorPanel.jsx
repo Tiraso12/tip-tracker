@@ -25,12 +25,12 @@ import {
     ignoreMissingUserDoc,
     isNegativeMoney,
     mapPayoutsForFirebase,
-    roleLabels,
     selectSpotCheckSubject,
     toMoney,
     validateShiftInputs,
     validateTeamSetup,
 } from "./shiftEditorUtils";
+import { roleLabel } from "../../utils/roleLabels";
 
 const NUMERIC_INPUT =
     // Money/number entry. On phones the field is a full 44px tap target and 16px
@@ -294,7 +294,7 @@ function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointCh
                                 <div className="flex flex-col min-w-0 flex-1">
                                     <strong className="text-sm text-[var(--color-ink)] truncate max-[560px]:text-[0.82rem]">{member.name}</strong>
                                     <span className="text-[11px] text-[var(--color-ink-muted)] max-[560px]:text-[0.68rem]">
-                                        {roleLabels[member.role] || member.role || "Staff"}
+                                        {roleLabel(member.role)}
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0 max-[560px]:gap-1.5">
@@ -472,7 +472,7 @@ function SpotCheckCard({ subject }) {
             <div className="px-4 pt-3 pb-2.5 border-b border-[var(--color-line)]">
                 <div className="text-lg font-semibold leading-tight text-[var(--color-ink)]">{payout.name}</div>
                 <div className="mt-0.5 text-[11px] text-[var(--color-ink-soft)]">
-                    {roleLabels[payout.role] || payout.role}
+                    {roleLabel(payout.role)}
                     {isRunner ? null : <> · {points} {points === 1 ? "pt" : "pts"}</>}
                     {payout.teamId ? <> · {payout.teamId}</> : null}
                 </div>

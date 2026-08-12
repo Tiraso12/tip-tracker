@@ -9,16 +9,7 @@ import {
     isTempStaffMergeCollisionError,
     mergeTempStaffIntoAccount,
 } from '../../utils/tempStaffMergePersistence';
-
-const ROLES = ["captain", "server", "back", "assistant", "bartender", "runner"];
-const ROLE_LABELS = {
-    captain: "Captain",
-    server: "Server",
-    back: "Back",
-    assistant: "Assistant",
-    bartender: "Bartender",
-    runner: "Runner",
-};
+import { ASSIGNABLE_ROLES, roleLabel } from '../../utils/roleLabels';
 
 function SectionCard({ title, count, description, children, tone = "neutral" }) {
     const toneClass =
@@ -104,8 +95,9 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         if (!newRole || newRole === user.role) return;
         const hadRole = user.role && user.role !== 'unassigned';
         if (hadRole) {
-            const from = ROLE_LABELS[user.role] || user.role;
-            const to = ROLE_LABELS[newRole] || newRole;
+            // The prompt has a whole dialog to itself, so it names roles in full.
+            const from = roleLabel(user.role);
+            const to = roleLabel(newRole);
             const ok = window.confirm(
                 `Change ${user.username || 'this employee'}'s role from ${from} to ${to}?\n\nThis also changes their default point weight in future shifts.`
             );
@@ -187,8 +179,11 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     className="!h-9 !text-xs min-w-[8rem]"
                 >
                     <option value="unassigned" disabled>Select role…</option>
-                    {ROLES.map(role => (
-                        <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                    {/* Full names: this is the canonical control for what someone
+                        IS, and the select takes the whole row on a phone, so there
+                        is room to be precise. */}
+                    {ASSIGNABLE_ROLES.map(role => (
+                        <option key={role} value={role}>{roleLabel(role)}</option>
                     ))}
                 </Select>
 
@@ -240,7 +235,10 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         >
             <div className="flex flex-col gap-1 min-w-0">
                 <span className="text-sm font-medium text-[var(--color-ink)] truncate">{unregUser.name}</span>
-                <Badge tone="neutral" className="self-start">{unregUser.role}</Badge>
+                {/* Badge defaults to all-caps, which is right for the count badges
+                    it was built for but shouts a role name. This row has the width
+                    for the full name, so it reads as a name, not a stored value. */}
+                <Badge tone="neutral" className="self-start !normal-case">{roleLabel(unregUser.role)}</Badge>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -253,7 +251,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 >
                     <option value="" disabled>Merge into account…</option>
                     {mergeTargetUsers.map(emp => (
-                        <option key={emp.uid} value={emp.uid}>{emp.username || emp.name} ({emp.role})</option>
+                        <option key={emp.uid} value={emp.uid}>{emp.username || emp.name} ({roleLabel(emp.role)})</option>
                     ))}
                 </Select>
                 {mergeTargetUsers.length === 0 ? (

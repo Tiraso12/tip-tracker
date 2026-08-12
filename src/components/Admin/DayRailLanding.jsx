@@ -3,6 +3,7 @@ import DayRail from "./DayRail";
 import FloatingActions from "./FloatingActions";
 import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
 import { getPayoutTotal } from "../../utils/payoutLedger";
+import { roleInitial, roleLabel } from "../../utils/roleLabels";
 import { Button, Card } from "../ui";
 
 // Approach A landing. The day rail leads with its first incomplete step:
@@ -17,7 +18,6 @@ const plural = (count, one, many) => (count === 1 ? one : many);
 
 // Compact role badge for a roster chip, mirroring the editor's TeamDropZone
 // chips so the floor "reads the same" whether you are editing or reviewing.
-const ROLE_BADGES = { captain: "C", server: "S", back: "B", assistant: "A" };
 
 // The temp seed name is literally "Temp Staff (Temp)"; the saved lineup usually
 // stores the plain username, but strip a trailing "(Temp)" defensively so chips
@@ -29,9 +29,9 @@ const cleanName = (name = "") => name.replace(/\s*\((?:temp)\)\s*$/i, "").trim()
 // so they read as a compact role label of the same size ("BAR", "RUN") - never a
 // faked "·0". Matches the editor's chips exactly.
 const memberTag = (member, kind) => {
-    if (kind === "runner") return "Run";
-    if (kind === "bar") return "Bar";
-    const badge = ROLE_BADGES[member.role] || "S";
+    if (kind === "runner") return roleInitial("runner");
+    if (kind === "bar") return roleInitial("bartender");
+    const badge = roleInitial(member.role);
     const points = member.points;
     return points === null || points === undefined || points === ""
         ? badge
@@ -267,8 +267,8 @@ function OrphanedPayouts({ entries, onBuildFloor, onRemoveShift, removingShift }
                                 <p className="m-0 truncate text-sm font-semibold text-[var(--color-ink)]">
                                     {cleanName(entry.name || "Unknown")}
                                 </p>
-                                <p className="mt-0.5 text-xs capitalize text-[var(--color-ink-soft)]">
-                                    {entry.role || "staff"}
+                                <p className="mt-0.5 text-xs text-[var(--color-ink-soft)]">
+                                    {roleLabel(entry.role)}
                                 </p>
                             </div>
                             <div className="shrink-0 text-right">

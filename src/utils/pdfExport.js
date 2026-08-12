@@ -1,14 +1,8 @@
+import { ASSIGNABLE_ROLES, rolePluralLabel, roleShortLabel } from './roleLabels';
+
 const PRIMARY_COLOR = [26, 61, 46]; // #1a3d2e — forest green accent (matches v0.7.0 UI theme)
 const PRIMARY_SOFT = [232, 239, 233]; // #e8efe9 — soft accent tint for section header backgrounds
-const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
-const ROLE_LABELS = {
-    captain: "CAPTAINS",
-    server: "SERVERS",
-    back: "BACKS",
-    assistant: "ASSISTANTS",
-    bartender: "BAR TEAM",
-    runner: "RUNNERS",
-};
+const ROLE_ORDER = ASSIGNABLE_ROLES;
 
 const n = (value) => Number(value) || 0;
 const currency = (value) => `$${n(value).toFixed(2)}`;
@@ -77,7 +71,7 @@ const buildEmployeeRows = (employeeTotals = []) => {
         if (members.length === 0) return;
 
         rows.push([{
-            content: ROLE_LABELS[role] || role.toUpperCase(),
+            content: rolePluralLabel(role).toUpperCase(),
             colSpan: 7,
             styles: { fillColor: PRIMARY_SOFT, textColor: PRIMARY_COLOR, fontStyle: 'bold' }
         }]);
@@ -194,7 +188,7 @@ export const generateShiftReport = async (date, summary) => {
                 arr.forEach(m => {
                     tableBody.push([
                         m.name,
-                        isRunner ? 'Runner' : m.teamId?.replace('team-', 'Team ') || 'Bar',
+                        isRunner ? roleShortLabel('runner') : m.teamId?.replace('team-', 'Team ') || roleShortLabel('bartender'),
                         currency(m.ctp),
                         currency(m.grt),
                         currency(m.cash || 0),
@@ -203,12 +197,13 @@ export const generateShiftReport = async (date, summary) => {
                 });
             };
 
-            addGroup('CAPTAINS', roleGrouped.captains);
-            addGroup('SERVERS', roleGrouped.servers);
-            addGroup('BACKS', roleGrouped.backs);
-            addGroup('ASSISTANTS', roleGrouped.assistants);
-            addGroup('BAR TEAM', roleGrouped.bar);
-            addGroup('RUNNERS', roleGrouped.runners, true);
+            const upper = (role) => rolePluralLabel(role).toUpperCase();
+            addGroup(upper('captain'), roleGrouped.captains);
+            addGroup(upper('server'), roleGrouped.servers);
+            addGroup(upper('back'), roleGrouped.backs);
+            addGroup(upper('assistant'), roleGrouped.assistants);
+            addGroup(upper('bartender'), roleGrouped.bar);
+            addGroup(upper('runner'), roleGrouped.runners, true);
 
         } else {
             // 1. Teams
@@ -239,7 +234,7 @@ export const generateShiftReport = async (date, summary) => {
                 if (isGrouped) {
                     summary.payouts.captainsOverride.forEach((teamGroup, idx) => {
                         tableBody.push([{
-                            content: `TEAM ${idx + 1} CAPTAINS OVERRIDE`,
+                            content: `TEAM ${idx + 1} ${rolePluralLabel('captain').toUpperCase()} OVERRIDE`,
                             colSpan: 6,
                             styles: { fillColor: [255, 240, 245], textColor: [200, 50, 100], fontStyle: 'bold' }
                         }]);
@@ -256,7 +251,7 @@ export const generateShiftReport = async (date, summary) => {
                     });
                 } else {
                     tableBody.push([{
-                        content: `CAPTAINS OVERRIDE`,
+                        content: `${rolePluralLabel('captain').toUpperCase()} OVERRIDE`,
                         colSpan: 6,
                         styles: { fillColor: [255, 240, 245], textColor: [200, 50, 100], fontStyle: 'bold' }
                     }]);
