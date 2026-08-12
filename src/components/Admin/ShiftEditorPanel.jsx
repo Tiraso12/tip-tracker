@@ -967,7 +967,16 @@ function fingerprintShift(teams, barTeam, runners) {
     });
 }
 
-function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }) {
+// The one discard prompt for leaving the editor with unsaved work. It is shared by
+// the in-screen Cancel and by navigation that leaves from outside the editor (the
+// home control, the workspace menu), so every exit warns identically.
+const DISCARD_EDIT_CONFIRMATION =
+    "Discard your changes to this closed shift?\n\n" +
+    "Edits to a paid-out shift are only saved when you go to Review and " +
+    "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
+    "current payouts unchanged.";
+
+function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", onRegisterLeaveGuard }) {
     const { user } = useAuth();
     const [teams, setTeams] = useState([
         { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
@@ -1528,24 +1537,41 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         && loadedFingerprintRef.current !== ""
         && fingerprintShift(teams, barTeam, runners) !== loadedFingerprintRef.current;
 
+    // Leaving the editor loses work only on a closed shift: a setup shift autosaves
+    // its draft continuously, while a closed shift disables autosave (edits persist
+    // only through Review -> Confirm & Save), so an in-progress edit would be dropped.
+    // Read through a ref so the guard handed to the parent below can stay stable while
+    // the fingerprint keeps changing on every keystroke.
+    const leaveGuardStateRef = useRef({ isSaving: false, wouldDropWork: false });
+    leaveGuardStateRef.current = {
+        isSaving,
+        wouldDropWork: shiftStatus === "closed" && isDirty,
+    };
+
+    // The single gate every exit from the editor passes through. Returns true when it
+    // is safe to leave: no unsaved work, or the admin confirmed the discard. Nothing
+    // in-editor is written either way - the caller re-reads the day.
+    const confirmLeaveEditor = useCallback(() => {
+        const { isSaving: saving, wouldDropWork } = leaveGuardStateRef.current;
+        if (saving) return false;
+        if (!wouldDropWork) return true;
+        return window.confirm(DISCARD_EDIT_CONFIRMATION);
+    }, []);
+
+    // Hand the guard up so navigation that lives OUTSIDE this panel (the app bar's
+    // home control, the workspace menu) warns exactly as Cancel does instead of
+    // silently discarding the edit. Withdrawn on unmount so a stale guard can never
+    // block navigation once the editor is gone.
+    useEffect(() => {
+        if (!onRegisterLeaveGuard) return undefined;
+        onRegisterLeaveGuard(confirmLeaveEditor);
+        return () => onRegisterLeaveGuard(null);
+    }, [onRegisterLeaveGuard, confirmLeaveEditor]);
+
     // Cancel: leave edit mode WITHOUT committing and return to the read-only landing.
-    // onClose() re-reads the day, so nothing in-editor is written. A setup shift
-    // autosaves its draft continuously, so leaving loses nothing and needs no prompt.
-    // A closed shift disables autosave (edits only persist through Review ->
-    // Confirm & Save), so an in-progress edit would be dropped - guard that with a
-    // discard confirmation, matching the app's other lossy actions (Remove shift).
+    // onClose() re-reads the day, so nothing in-editor is written.
     const handleCancelEdit = () => {
-        if (isSaving) return;
-        const wouldDropWork = shiftStatus === "closed" && isDirty;
-        if (wouldDropWork) {
-            const confirmed = window.confirm(
-                "Discard your changes to this closed shift?\n\n" +
-                "Edits to a paid-out shift are only saved when you go to Review and " +
-                "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
-                "current payouts unchanged."
-            );
-            if (!confirmed) return;
-        }
+        if (!confirmLeaveEditor()) return;
         onClose();
     };
 

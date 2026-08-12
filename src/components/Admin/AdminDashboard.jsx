@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect, useCallback } from "react";
+import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from "react";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
@@ -54,6 +54,16 @@ const NAV_ITEMS = [
         ),
     } : null,
 ].filter(Boolean);
+
+function HomeIcon() {
+    return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 10.5 12 3l9 7.5" />
+            <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+            <path d="M9.5 21v-6h5v6" />
+        </svg>
+    );
+}
 
 function MenuIcon() {
     return (
@@ -229,12 +239,54 @@ function AdminDashboard() {
         setActiveTabWithData("editor");
     }, [setActiveTabWithData]);
 
-    const handleNavItemClick = useCallback((tab) => {
-        setActiveTabWithData(tab);
+    // Leaving the shift editor by a control that lives outside it (the workspace menu,
+    // the home button) has to clear the SAME unsaved-work confirmation the editor's own
+    // Cancel does. The editor registers its guard here while it is mounted; without it
+    // these paths walked past the check and threw away money edits on a closed shift
+    // with no prompt at all.
+    const editorLeaveGuardRef = useRef(null);
+    const registerEditorLeaveGuard = useCallback((guard) => {
+        editorLeaveGuardRef.current = guard;
+    }, []);
+
+    // True when it is safe to navigate away right now.
+    const confirmLeaveEditor = useCallback(() => {
+        const guard = editorLeaveGuardRef.current;
+        return guard ? guard() : true;
+    }, []);
+
+    const collapseNavOnMobile = useCallback(() => {
         if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
             setNavCollapsed(true);
         }
-    }, [setActiveTabWithData]);
+    }, []);
+
+    const handleNavItemClick = useCallback((tab) => {
+        if (!confirmLeaveEditor()) return;
+        // Same re-read handleEditorClose does: a setup shift autosaves while editing,
+        // so the landing would otherwise show the day as it was before the edit.
+        const needsRefresh = activeTab === "editor" && tab === "shifts";
+        setActiveTabWithData(tab);
+        collapseNavOnMobile();
+        if (needsRefresh) fetchDayPayouts(selectedDate);
+    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, collapseNavOnMobile, fetchDayPayouts]);
+
+    // Home: back to today's Shifts landing from anywhere, in one tap. Home means TODAY,
+    // not the day that happened to be selected - the admin reaching for home mid-shift
+    // wants the shift they are working, so a day they browsed to earlier is not sticky.
+    // Routed through the same leave guard as everything else that exits the editor.
+    const handleHomeClick = useCallback(() => {
+        if (!confirmLeaveEditor()) return;
+        const today = toDateKey(new Date());
+        // A setup shift autosaves while editing, so the landing has to re-read the day.
+        // Changing the date already refetches through the selectedDate effect; only the
+        // same-day case needs an explicit refresh.
+        const needsRefresh = activeTab === "editor" && today === selectedDate;
+        setSelectedDate(today);
+        setActiveTabWithData("shifts");
+        collapseNavOnMobile();
+        if (needsRefresh) fetchDayPayouts(today);
+    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, collapseNavOnMobile, fetchDayPayouts]);
 
     // The sidebar treats "editor" as still belonging to the Shifts section.
     const sidebarValue = activeTab === "editor" ? "shifts" : activeTab;
@@ -286,8 +338,22 @@ function AdminDashboard() {
     return (
         <div className="min-h-screen bg-[var(--color-bg)]">
             {/* Top app bar */}
-            <header className="sticky top-0 z-20 h-14 px-4 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
-                <div className="flex items-center gap-3">
+            {/* px-3 below sm: at 320px the home control, the menu, the date pill and
+                Log Out only clear the viewport with the tighter inset. */}
+            <header className="sticky top-0 z-20 h-14 px-3 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
+                <div className="flex items-center gap-2 sm:gap-3">
+                    {/* Home: the app's only way back that is visible at every width.
+                        It sits at the left edge of the bar - same place on a phone and
+                        on desktop - and is a full 44x44 target. */}
+                    <button
+                        type="button"
+                        onClick={handleHomeClick}
+                        aria-label="Go to today's shifts"
+                        title="Today's shifts"
+                        className="h-11 w-11 inline-flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                    >
+                        <HomeIcon />
+                    </button>
                     <button
                         type="button"
                         onClick={() => setNavCollapsed(prev => !prev)}
@@ -433,6 +499,7 @@ function AdminDashboard() {
                                         allEmployees={allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin")}
                                         onClose={handleEditorClose}
                                         initialStep={editorStep}
+                                        onRegisterLeaveGuard={registerEditorLeaveGuard}
                                     />
                                 </Suspense>
                             )

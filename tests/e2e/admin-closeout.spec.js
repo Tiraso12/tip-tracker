@@ -641,6 +641,65 @@ test.describe("mobile floor polish", () => {
         });
     });
 
+    // The nav used to live outside the editor's state machine: Cancel confirmed a
+    // discard on a paid-out shift while the workspace menu and the app bar just
+    // switched tabs, so the same unsaved money edit was thrown away with no prompt.
+    // Every exit now passes the same guard.
+    test("closed shift edit: home and the workspace menu warn like Cancel instead of discarding silently", async ({ page }) => {
+        const date = "2026-05-22";
+        await seedClosedShift(date);
+
+        let dialogs = 0;
+        let answer = "dismiss";
+        page.on("dialog", (dialog) => {
+            dialogs += 1;
+            expect(dialog.message()).toContain("Discard your changes to this closed shift?");
+            return answer === "accept" ? dialog.accept() : dialog.dismiss();
+        });
+
+        await login(page);
+        await setShiftDate(page, date);
+        await page.getByRole("button", { name: "Edit shift" }).click();
+        await expect(page.getByText("Editing floor plan")).toBeVisible();
+
+        // Add a member so there is uncommitted work that leaving would drop.
+        await page.getByRole("button", { name: /Team 1/i }).click();
+        const sheet = page.getByRole("dialog", { name: /Add employees to Team 1/i });
+        await expect(sheet).toBeVisible();
+        await sheet.locator('[title="Assign Back One to selected team"]').click();
+        await sheet.getByRole("button", { name: "Done" }).click();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+
+        // Home, dismissed: the edit survives and the editor stays open.
+        await page.getByRole("button", { name: "Go to today's shifts" }).click();
+        await expect(page.getByText("Editing floor plan")).toBeVisible();
+        expect(dialogs).toBe(1);
+
+        // Workspace menu -> Shifts, dismissed: same guard, same outcome.
+        await page.getByRole("button", { name: /workspace navigation/i }).click();
+        await page.getByRole("button", { name: "Shifts", exact: true }).click();
+        await expect(page.getByText("Editing floor plan")).toBeVisible();
+        expect(dialogs).toBe(2);
+
+        // Home, confirmed: the edit is discarded and home lands on TODAY's shifts,
+        // not the closed day that was being edited.
+        answer = "accept";
+        await page.getByRole("button", { name: "Go to today's shifts" }).click();
+        await expect(page.getByText("Editing floor plan")).toHaveCount(0);
+        await expect(page.locator('input[type="date"]').first()).toHaveValue(
+            new Date().toLocaleDateString("en-CA")
+        );
+
+        // Nothing was written either way - the paid-out shift is untouched.
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const db = context.firestore();
+            const shiftDoc = await getDoc(doc(db, `shifts/${date}`));
+            const memberUids = shiftDoc.data().teams[0].members.map((member) => member.uid);
+            expect(memberUids).not.toContain("backUid");
+            expect((await getDoc(doc(db, "payouts", date, "entries", "backUid"))).exists()).toBe(false);
+        });
+    });
+
     test("Settle up lands locked: the money fields are disabled until Edit, and Done re-locks them in place", async ({ page }) => {
         const date = "2026-05-23";
         await seedSetupShift(date);

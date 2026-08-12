@@ -7,7 +7,10 @@ import { toDateKey } from "../../utils/dateUtils";
 // changes as soon as a date is chosen - no confirm step). A single tap only ever
 // OPENS the OS picker, a deliberate modal, so it can never move the day by
 // itself; dismissing it without choosing leaves the day unchanged. Off today the
-// pill turns warning-amber and a one-tap return-to-today appears.
+// pill turns warning-amber; getting back to today is the app bar's home control,
+// which resets the day AND the screen. A separate "Today" return pill used to sit
+// here doing the same thing in a smaller target, and the two together overflowed
+// the bar at 320px, so the pill now reads the day and nothing else.
 
 function parseKey(dateKey) {
     return new Date(dateKey + "T12:00:00");
@@ -51,57 +54,43 @@ function BarDatePill({ selectedDate, onSelectDate }) {
     };
 
     return (
-        <div className="flex items-center gap-1.5">
-            <div className="relative inline-flex">
-                {/* Native date control, overlaid behind the pill: it drives the OS
-                    picker and applies the choice immediately, but the pill stays
-                    the visible control. */}
-                <input
-                    ref={inputRef}
-                    type="date"
-                    value={selectedDate}
-                    tabIndex={-1}
-                    aria-hidden="true"
-                    onChange={(e) => {
-                        if (e.target.value) onSelectDate(e.target.value);
-                    }}
-                    className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
-                />
-                <button
-                    type="button"
-                    onClick={openPicker}
-                    aria-haspopup="dialog"
-                    aria-label={`Shift date: ${pillLabel}. Tap to change day.`}
-                    className={
-                        "relative inline-flex items-center gap-1.5 h-9 rounded-full border px-3 text-xs font-medium tabular-nums transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
-                        (isToday
-                            ? "border-[var(--color-accent-soft)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] hover:border-[var(--color-accent)]/30"
-                            : "border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] text-[var(--color-warning)] hover:border-[var(--color-warning)]/50")
-                    }
-                >
-                    <CalendarIcon />
-                    <span>{pillLabel}</span>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                </button>
-            </div>
-
-            {!isToday ? (
-                <button
-                    type="button"
-                    onClick={() => onSelectDate(todayKey)}
-                    aria-label="Return to today"
-                    title="Return to today"
-                    className="inline-flex items-center gap-1 h-9 rounded-full border border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] px-2.5 text-xs font-medium text-[var(--color-warning)] transition-colors hover:border-[var(--color-warning)]/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-warning)]/30"
-                >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <polyline points="9 14 4 9 9 4" />
-                        <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
-                    </svg>
-                    Today
-                </button>
-            ) : null}
+        <div className="relative inline-flex">
+            {/* Native date control, overlaid behind the pill: it drives the OS
+                picker and applies the choice immediately, but the pill stays
+                the visible control. */}
+            <input
+                ref={inputRef}
+                type="date"
+                value={selectedDate}
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={(e) => {
+                    if (e.target.value) onSelectDate(e.target.value);
+                }}
+                className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+            />
+            <button
+                type="button"
+                onClick={openPicker}
+                aria-haspopup="dialog"
+                aria-label={`Shift date: ${pillLabel}. Tap to change day.`}
+                className={
+                    "relative inline-flex items-center gap-1.5 h-9 rounded-full border px-3 text-xs font-medium tabular-nums transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+                    (isToday
+                        ? "border-[var(--color-accent-soft)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] hover:border-[var(--color-accent)]/30"
+                        : "border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] text-[var(--color-warning)] hover:border-[var(--color-warning)]/50")
+                }
+            >
+                <CalendarIcon />
+                {/* nowrap: at 320px the label would otherwise wrap inside the
+                    h-9 pill and spill out of it. */}
+                <span className="whitespace-nowrap">{pillLabel}</span>
+                {/* The picker chevron is the first thing to go on the narrowest
+                    phones - the day itself must never be the control that shrinks. */}
+                <svg className="max-[340px]:hidden" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9" />
+                </svg>
+            </button>
         </div>
     );
 }

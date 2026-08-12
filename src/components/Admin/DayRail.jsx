@@ -37,11 +37,15 @@ function StateDot({ state, index }) {
     );
 }
 
+// The rail is the navigation the admin actually uses mid-shift, so it stays on
+// screen: pinned directly under the h-14 app bar (sticky top-14) instead of
+// scrolling away while money is being entered. z-10 keeps it beneath the app
+// bar's z-20 and above page content.
 function DayRail({ steps, onStepClick }) {
     return (
         <nav
             aria-label="Day steps"
-            className="flex items-stretch gap-1.5 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="sticky top-14 z-10 flex items-stretch gap-1.5 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
             {steps.map((step) => {
                 const clickable = step.clickable;
