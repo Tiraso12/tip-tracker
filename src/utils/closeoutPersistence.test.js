@@ -315,6 +315,34 @@ test("removeShiftAtomically deletes the shift, ledger meta, and every entry in o
     assert.equal(audit.previousPayoutCount, 2);
 });
 
+// The orphaned-payout cleanup: entries exist for a date whose shift doc does not
+// (what the ledger migration writes, and what an unfinished write can leave). The
+// removal batch must still clear the ledger and record the audit event - deleting
+// a document that is not there is a no-op, not a failure.
+test("removeShiftAtomically clears a date whose payout entries have no shift doc", async () => {
+    const store = new FakeStore({
+        "payouts/2026-05-29": { date: "2026-05-29", ledgerVersion: 1, updatedBy: "migration" },
+        "payouts/2026-05-29/entries/backUid": {
+            uid: "backUid", date: "2026-05-29", tips: 40, gratuity: 20, cash: 16, total: 60,
+            source: "migration",
+        },
+    });
+
+    const result = await removeWithFakeStore(store);
+
+    assert.deepEqual(result.removedPayoutUids, ["backUid"]);
+    assert.equal(store.has("payouts/2026-05-29"), false);
+    assert.equal(store.has("payouts/2026-05-29/entries/backUid"), false);
+    // Deleting the absent shift doc did not create one, and did not fail the batch.
+    assert.equal(store.has("shifts/2026-05-29"), false);
+
+    const audit = store.get("auditEvents/removal-operation");
+    assert.equal(audit.type, "shift_removed");
+    assert.equal(audit.date, "2026-05-29");
+    assert.deepEqual(audit.removedPayoutUids, ["backUid"]);
+    assert.equal(audit.previousPayoutCount, 1);
+});
+
 test("removeShiftAtomically leaves all state unchanged when the batch commit fails", async () => {
     const store = new FakeStore({
         "shifts/2026-05-29": { status: "closed", firstClosedAt: "2026-05-29T04:00:00.000Z" },

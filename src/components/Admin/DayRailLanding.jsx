@@ -2,6 +2,7 @@ import DayPayoutPanel from "./DayPayoutPanel";
 import DayRail from "./DayRail";
 import FloatingActions from "./FloatingActions";
 import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
+import { getPayoutTotal } from "../../utils/payoutLedger";
 import { Button, Card } from "../ui";
 
 // Approach A landing. The day rail leads with its first incomplete step:
@@ -194,6 +195,114 @@ function TrashIcon() {
     );
 }
 
+// The most destructive action in the app: it hard-deletes a date's payroll data.
+// WHAT it does and its window.confirm are unchanged - what changed (and what this
+// component now keeps in one place) is that the affordance weighs what the action
+// weighs. It was a 12px red text link (98x16, no border, no icon) you could brush
+// past while scrolling a paid-out day; it is a bounded, clearly-labelled danger
+// zone that names the consequence before you reach the button, and the button
+// itself is a full 44px-tall danger target instead of a line of text.
+//
+// The copy is passed in because the two dates that can be removed are not the same
+// thing: a closed shift, and a date carrying nothing but leftover ledger entries.
+// Same removal path (`removeShiftAtomically`), same confirm - different sentence.
+function RemoveDangerZone({ body, label, busyLabel, onRemove, removing }) {
+    return (
+        <section
+            aria-labelledby="remove-shift-heading"
+            className="rounded-[var(--radius-md)] border border-[var(--color-danger)]/25 bg-[var(--color-danger-soft)] p-4 max-[560px]:p-3.5"
+        >
+            <h3
+                id="remove-shift-heading"
+                className="m-0 text-[0.7rem] font-bold uppercase tracking-[0.08em] text-[var(--color-danger)]"
+            >
+                Danger zone
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
+                {body}
+            </p>
+            <button
+                type="button"
+                onClick={onRemove}
+                disabled={removing}
+                className="mt-3 inline-flex h-11 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 text-sm font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[var(--color-surface)] disabled:hover:text-[var(--color-danger)]"
+            >
+                <TrashIcon />
+                {removing ? busyLabel : label}
+            </button>
+        </section>
+    );
+}
+
+const money = (value) => `$${(Number(value) || 0).toFixed(2)}`;
+
+// The date has payout records but no shift behind them - the shape the ledger
+// migration and unfinished writes leave. It is deliberately NOT dressed as a
+// paid-out day: there is no shift to review, export or edit, so the panel says
+// plainly what is on the date, names everyone it would pay, and offers the two
+// honest ways out - remove the leftovers, or build the shift for real (which is
+// what the date offered before, and still does).
+function OrphanedPayouts({ entries, onBuildFloor, onRemoveShift, removingShift }) {
+    const people = entries.length;
+
+    return (
+        <div className="space-y-3 pb-24">
+            <Card className="!p-0">
+                <header className="px-5 py-4 border-b border-[var(--color-line)]">
+                    <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
+                        Leftover payouts, no shift
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
+                        This date has payout records for {people} {plural(people, "person", "people")} but no
+                        shift behind them - usually left by a data import or a save that did not finish.
+                        There is no shift here to review or edit. Remove the leftover payouts below, or
+                        build the floor plan to record this day properly.
+                    </p>
+                </header>
+
+                <ul className="divide-y divide-[var(--color-line)]">
+                    {entries.map((entry) => (
+                        <li key={entry.uid} className="flex items-start justify-between gap-3 px-5 py-3">
+                            <div className="min-w-0">
+                                <p className="m-0 truncate text-sm font-semibold text-[var(--color-ink)]">
+                                    {cleanName(entry.name || "Unknown")}
+                                </p>
+                                <p className="mt-0.5 text-xs capitalize text-[var(--color-ink-soft)]">
+                                    {entry.role || "staff"}
+                                </p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                                <span className="block font-mono text-sm tabular-nums text-[var(--color-ink)]">
+                                    {money(getPayoutTotal(entry))}
+                                </span>
+                                <span className="block text-xs tabular-nums text-[var(--color-ink-soft)]">
+                                    {money(entry.cash)} cash
+                                </span>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+
+                <div className="px-5 py-4 border-t border-[var(--color-line)]">
+                    <Button variant="secondary" onClick={onBuildFloor} className="w-full sm:w-auto">
+                        Build floor plan →
+                    </Button>
+                </div>
+            </Card>
+
+            {onRemoveShift ? (
+                <RemoveDangerZone
+                    body={`Removing permanently deletes ${people} payout ${plural(people, "record", "records")} for this date. Each person will no longer see this date's payout. This cannot be undone.`}
+                    label="Remove leftover payouts"
+                    busyLabel="Removing…"
+                    onRemove={onRemoveShift}
+                    removing={removingShift}
+                />
+            ) : null}
+        </div>
+    );
+}
+
 function Hero({ title, body, tall = false, children }) {
     return (
         // Phone: the hero is the first screen of every new day, so it takes the
@@ -221,7 +330,7 @@ function Hero({ title, body, tall = false, children }) {
     );
 }
 
-function DayRailLanding({ date, status, summary, lineup, loading, savedNotice = false, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
+function DayRailLanding({ date, status, summary, lineup, orphanedEntries = [], loading, savedNotice = false, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
     const stage = getLandingStage(status);
     // A refetch of the day already on screen keeps that day on screen - the top
     // progress bar carries the wait. Only a load with nothing to show blanks, which
@@ -287,45 +396,26 @@ function DayRailLanding({ date, status, summary, lineup, loading, savedNotice = 
                 <div className="space-y-3 pb-24">
                     <DayPayoutPanel date={date} summary={summary} status={status} loading={false} />
                     {onRemoveShift ? (
-                        // The most destructive action in the app: it hard-deletes a
-                        // settled shift and every payout on it. WHAT it does and its
-                        // window.confirm are unchanged - what changes is that the
-                        // affordance now weighs what the action weighs. It was a 12px
-                        // red text link (98x16, no border, no icon) you could brush
-                        // past while scrolling a paid-out day; it is now a bounded,
-                        // clearly-labelled danger zone that names the consequence
-                        // before you reach the button, and the button itself is a
-                        // full 44px-tall danger target instead of a line of text.
-                        <section
-                            aria-labelledby="remove-shift-heading"
-                            className="rounded-[var(--radius-md)] border border-[var(--color-danger)]/25 bg-[var(--color-danger-soft)] p-4 max-[560px]:p-3.5"
-                        >
-                            <h3
-                                id="remove-shift-heading"
-                                className="m-0 text-[0.7rem] font-bold uppercase tracking-[0.08em] text-[var(--color-danger)]"
-                            >
-                                Danger zone
-                            </h3>
-                            <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
-                                Removing this shift permanently deletes it and every payout on it.
-                                This cannot be undone.
-                            </p>
-                            <button
-                                type="button"
-                                onClick={onRemoveShift}
-                                disabled={removingShift}
-                                className="mt-3 inline-flex h-11 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 text-sm font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[var(--color-surface)] disabled:hover:text-[var(--color-danger)]"
-                            >
-                                <TrashIcon />
-                                {removingShift ? "Removing…" : "Remove this shift"}
-                            </button>
-                        </section>
+                        <RemoveDangerZone
+                            body="Removing this shift permanently deletes it and every payout on it. This cannot be undone."
+                            label="Remove this shift"
+                            busyLabel="Removing…"
+                            onRemove={onRemoveShift}
+                            removing={removingShift}
+                        />
                     ) : null}
                 </div>
                 {/* "Edit shift" is the same floating Edit button as the floor/settle
                     views, switching the saved shift into edit mode. */}
                 <EditFab onClick={onEditFloor} label="✎ Edit shift" disabled={removingShift} />
                 </>
+            ) : stage === "orphaned-payouts" ? (
+                <OrphanedPayouts
+                    entries={orphanedEntries}
+                    onBuildFloor={onBuildFloor}
+                    onRemoveShift={onRemoveShift}
+                    removingShift={removingShift}
+                />
             ) : stage === "settle" ? (
                 <FloorLineup lineup={lineup} onEditFloor={onEditFloor} />
             ) : (

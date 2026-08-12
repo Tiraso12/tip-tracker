@@ -8,7 +8,7 @@ import AccountSheet from "../Account/AccountSheet";
 import { Badge, TopProgressBar } from "../ui";
 import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
 import { toDateKey } from "../../utils/dateUtils";
-import { getLandingStage } from "../../utils/dayFlow";
+import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 import { removeShiftAtomically } from "../../utils/closeoutPersistence";
 
@@ -115,6 +115,10 @@ function AdminDashboard() {
     const [daySummary, setDaySummary] = useState(null);
     const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
+    // Ledger entries for a date whose shift doc is gone. Only ever non-empty in
+    // the orphaned-payouts stage; it is what the landing lists as "this is the
+    // payroll data removing this would delete".
+    const [dayOrphanedEntries, setDayOrphanedEntries] = useState([]);
     const [dayDataDate, setDayDataDate] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
     const dayFetchIdRef = useRef(0);
@@ -175,12 +179,20 @@ function AdminDashboard() {
                     runners: Array.isArray(d.runners) ? d.runners : [],
                 });
                 setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
+                setDayOrphanedEntries([]);
             } else {
                 // The date has no shift (or Remove just deleted it): held-over
                 // content must not stand.
                 setDaySummary(null);
                 setDayLineup(null);
-                setDayShiftStatus(null);
+                // Payout entries with no shift doc behind them are real payroll
+                // data - the ledger migration and unfinished writes both leave
+                // this shape. Without a status the landing showed the blank
+                // "set up the floor" day, so those entries could not be reached,
+                // let alone removed. A truly empty date (no entries either) keeps
+                // the null status and the untouched blank-day landing.
+                setDayShiftStatus(payoutEntries.length > 0 ? ORPHANED_PAYOUTS_STATUS : null);
+                setDayOrphanedEntries(payoutEntries.length > 0 ? payoutEntries : []);
             }
         } catch (e) {
             console.error("Failed to fetch day payouts:", e);
@@ -188,6 +200,7 @@ function AdminDashboard() {
             setDaySummary(null);
             setDayLineup(null);
             setDayShiftStatus(null);
+            setDayOrphanedEntries([]);
         } finally {
             // A superseded fetch leaves the newer one's state alone.
             if (fetchId === dayFetchIdRef.current) {
@@ -354,6 +367,7 @@ function AdminDashboard() {
         "build-floor": "Set up the floor",
         settle: "Confirm the floor",
         closed: "Pay out",
+        "orphaned-payouts": "Leftover payouts",
     };
 
     const headerForTab = () => {
@@ -535,6 +549,7 @@ function AdminDashboard() {
                                 summary={dayDataIsCurrent ? daySummary : null}
                                 lineup={dayDataIsCurrent ? dayLineup : null}
                                 status={dayDataIsCurrent ? dayShiftStatus : null}
+                                orphanedEntries={dayDataIsCurrent ? dayOrphanedEntries : []}
                                 loading={dayLoading || !dayDataIsCurrent}
                                 savedNotice={shiftSaved}
                                 onBuildFloor={() => enterEditor("floor")}

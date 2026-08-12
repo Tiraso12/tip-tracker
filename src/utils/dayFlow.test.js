@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
     STEP_ORDER,
+    ORPHANED_PAYOUTS_STATUS,
     hasFloorPlan,
     isClosedShift,
     getNextStep,
@@ -35,6 +36,36 @@ test("getLandingStage resumes the returning admin at the right step", () => {
     assert.equal(getLandingStage(null), "build-floor");
     assert.equal(getLandingStage("setup"), "settle");
     assert.equal(getLandingStage("closed"), "closed");
+});
+
+// Payout ledger entries with no shifts/{date} doc behind them (the ledger
+// migration's shape, or a write that did not finish). They are real payroll data,
+// so the day must be reachable and removable - but on its own stage, never dressed
+// as a paid-out shift, and never at the cost of a genuinely blank day.
+test("a date holding only orphaned payout entries gets its own landing stage", () => {
+    assert.equal(getLandingStage(ORPHANED_PAYOUTS_STATUS), "orphaned-payouts");
+    // Not a shift: nothing was built and nothing was settled here.
+    assert.equal(hasFloorPlan(ORPHANED_PAYOUTS_STATUS), false);
+    assert.equal(isClosedShift(ORPHANED_PAYOUTS_STATUS), false);
+    // A day with no shift AND no entries is untouched by this - still blank.
+    assert.equal(getLandingStage(null), "build-floor");
+});
+
+// The rail is the fresh-day rail: the floor plan really can still be built here,
+// which is the other honest way to resolve the leftovers.
+test("the orphaned-payouts rail still opens the Floor plan and locks the rest", () => {
+    const steps = getRailSteps({ shiftStatus: ORPHANED_PAYOUTS_STATUS });
+
+    assert.deepEqual(stateByKey(steps), {
+        floor: "active",
+        settle: "pending",
+        review: "pending",
+    });
+    assert.deepEqual(clickableByKey(steps), {
+        floor: true,
+        settle: false,
+        review: false,
+    });
 });
 
 test("focus step is the open step in-editor, else the first incomplete step", () => {

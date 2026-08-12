@@ -119,6 +119,25 @@ async function seedClosedShift(date) {
     });
 }
 
+// Seed the shape `migrate:payout-ledger` leaves behind: ledger meta + entries for
+// a date, with NO shifts/{date} doc. Mirrors the migration's own write (a
+// `source: "migration"` entry), which is where this state comes from in practice.
+async function seedOrphanedPayouts(date) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+
+        await setDoc(doc(db, "payouts", date), {
+            date,
+            ledgerVersion: 1,
+            updatedBy: "migration",
+        });
+        await setDoc(doc(db, "payouts", date, "entries", "backUid"), {
+            date, uid: "backUid", name: "Back One", role: "back",
+            tips: 40, gratuity: 20, cash: 16, total: 60, ledgerVersion: 1, source: "migration",
+        });
+    });
+}
+
 // Seed a saved-but-not-settled shift (status "setup") so tests can exercise the
 // read-only floor view + in-place edit without building a floor from scratch.
 async function seedSetupShift(date) {
@@ -482,6 +501,71 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
         expect(backPayout.exists()).toBe(false);
         expect(auditEvents.size).toBe(2);
     });
+});
+
+// Orphaned payout ledger entries: `payouts/{date}/entries/*` with no shifts/{date}
+// doc behind them. Only `migrate:payout-ledger` (which writes ledger entries and
+// never shift docs) and unfinished writes leave this shape - the app's own settle
+// path always writes both. It is real payroll data the employee can see, and it
+// used to be unreachable in the admin UI: with no shift doc the day read as blank.
+test("a date with payout entries and no shift doc can be cleaned up from the day landing", async ({ page }) => {
+    const date = "2026-05-25";
+    await seedOrphanedPayouts(date);
+
+    let confirmMessage = "";
+    page.on("dialog", (dialog) => {
+        confirmMessage = dialog.message();
+        return dialog.accept();
+    });
+
+    await login(page);
+    await setShiftDate(page, date);
+
+    // The day names what it is holding - leftover payouts, not a settled shift -
+    // and lists everyone the removal would un-pay, before offering the button.
+    await expect(page.getByRole("heading", { name: "Leftover payouts, no shift" })).toBeVisible();
+    await expect(page.getByText("Back One")).toBeVisible();
+    await expect(page.getByText("$60.00")).toBeVisible();
+    // It must not masquerade as a paid-out day: no shift means nothing to export.
+    await expect(page.getByRole("button", { name: "Export PDF" })).toHaveCount(0);
+    // The floor plan can still be built here, which is the other way out.
+    await expect(page.getByRole("button", { name: /Build floor plan/i })).toBeVisible();
+
+    await page.getByRole("button", { name: "Remove leftover payouts" }).click();
+
+    // Same destructive confirm the closed-shift removal uses.
+    expect(confirmMessage).toContain("This cannot be undone.");
+
+    // Cleaned up, the date is an ordinary blank day again.
+    await expect(page.getByRole("heading", { name: "Let's set up the floor" })).toBeVisible();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const entries = await getDocs(collection(db, "payouts", date, "entries"));
+        const meta = await getDoc(doc(db, "payouts", date));
+        const auditEvents = await getDocs(collection(db, "auditEvents"));
+
+        expect(entries.size).toBe(0);
+        expect(meta.exists()).toBe(false);
+        expect(auditEvents.size).toBe(1);
+        const audit = auditEvents.docs[0].data();
+        expect(audit.type).toBe("shift_removed");
+        expect(audit.date).toBe(date);
+        expect(audit.removedPayoutUids).toEqual(["backUid"]);
+        expect(audit.previousPayoutCount).toBe(1);
+    });
+});
+
+// The guard on the change above: only a date carrying leftover ledger entries
+// becomes removable. Every other blank day in the calendar stays a blank day.
+test("a date with no shift and no payout entries still opens on the empty day", async ({ page }) => {
+    const date = "2026-05-26";
+    await login(page);
+    await setShiftDate(page, date);
+
+    await expect(page.getByRole("heading", { name: "Let's set up the floor" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Danger zone" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
 });
 
 // Mobile-only floor polish regressions (viewport 390x844).

@@ -9,6 +9,16 @@
 
 export const STEP_ORDER = ["floor", "settle", "review"];
 
+// Not a shift status any save path writes - the day landing synthesises it for a
+// date that has payout ledger entries but no shifts/{date} doc behind them. That
+// shape only comes from the ledger migration or a write that did not finish, and
+// it used to be invisible: with no shift doc the day read as blank, so real
+// payroll data sat on the date with no way to reach it. It is deliberately NOT
+// "closed" - the day was never settled here, there is nothing to review or edit,
+// and the only thing the landing offers is cleanup (or building the shift for
+// real). See `getLandingStage`.
+export const ORPHANED_PAYOUTS_STATUS = "orphaned-payouts";
+
 export const RAIL_LABELS = {
     floor: "Floor",
     settle: "Settle",
@@ -36,6 +46,10 @@ export function getNextStep(step) {
 // no floor plan -> build it; floor saved but not paid out -> settle up;
 // closed -> the day is done (pay out review). Drives the landing CTA.
 export function getLandingStage(shiftStatus) {
+    // Leftover ledger entries with no shift: its own stage, so it can never be
+    // mistaken for a paid-out day, and so a genuinely blank day (no shift AND no
+    // entries) still lands on "build-floor" exactly as before.
+    if (shiftStatus === ORPHANED_PAYOUTS_STATUS) return "orphaned-payouts";
     if (!hasFloorPlan(shiftStatus)) return "build-floor";
     if (!isClosedShift(shiftStatus)) return "settle";
     return "closed";
