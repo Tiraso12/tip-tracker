@@ -9,11 +9,14 @@ const ADMIN_PASSWORD = "Password123!";
 const SHIFT_DATE = "2026-05-29";
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
+// The Firebase CLI exports this for emulators:exec; fall back to the default auth port.
+const AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
+
 let testEnv;
 
 async function createAuthUser({ email, password, displayName }) {
     const response = await fetch(
-        `http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
+        `http://${AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
         {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -34,7 +37,7 @@ async function createAuthUser({ email, password, displayName }) {
 }
 
 async function clearAuthUsers() {
-    await fetch(`http://127.0.0.1:9099/emulator/v1/projects/${PROJECT_ID}/accounts`, {
+    await fetch(`http://${AUTH_EMULATOR_HOST}/emulator/v1/projects/${PROJECT_ID}/accounts`, {
         method: "DELETE",
     });
 }
