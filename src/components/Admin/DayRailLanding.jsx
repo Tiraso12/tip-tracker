@@ -1,5 +1,6 @@
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRail from "./DayRail";
+import FloatingActions from "./FloatingActions";
 import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
 import { Button, Card } from "../ui";
 
@@ -108,16 +109,20 @@ function FloorTeamCard({ title, members, kind }) {
 // The read-only screens' single floating Edit button, pinned to the bottom-right
 // corner. Shared by the Floor plan and Settle up views (and the closed-shift view)
 // so entering edit feels identical everywhere - one source of truth for the FAB.
+// `FloatingActions` owns the corner and the scroll reveal, so the button never
+// parks on a payout row while you read down the day.
 function EditFab({ onClick, label = "✎ Edit", disabled = false }) {
     return (
-        <button
-            type="button"
-            onClick={onClick}
-            disabled={disabled}
-            className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-        >
-            {label}
-        </button>
+        <FloatingActions>
+            <button
+                type="button"
+                onClick={onClick}
+                disabled={disabled}
+                className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+            >
+                {label}
+            </button>
+        </FloatingActions>
     );
 }
 
@@ -167,10 +172,45 @@ function FloorLineup({ lineup, onEditFloor }) {
     );
 }
 
+// Inline (not emoji) so the glyph is the same shape on every platform and inherits
+// `currentColor` through the danger button's hover invert, matching how the rest of
+// the app draws its icons.
+function TrashIcon() {
+    return (
+        <svg
+            aria-hidden="true"
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14" />
+            <path d="M10 11v5M14 11v5" />
+        </svg>
+    );
+}
+
 function Hero({ title, body, tall = false, children }) {
     return (
-        <Card className={"px-6 text-center " + (tall ? "py-16 sm:py-24" : "py-10 sm:py-14")}>
-            <div className="mx-auto max-w-sm space-y-3">
+        // Phone: the hero is the first screen of every new day, so it takes the
+        // landing's full-height column (flex-1) instead of shrinking to its three
+        // lines and leaving the lower half of the screen blank - measured at
+        // 390x844 the card ended at y=430 and wasted 414px, 49% of the viewport.
+        // This is the same fill treatment FloorLineup and the closed-day panel
+        // already use: the card fills, its content stays snug at the top (shrink-0,
+        // never stretched or spread apart), and the leftover height is one clean
+        // band at the bottom. Desktop keeps its natural height.
+        <Card
+            className={
+                "px-6 text-center max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0 max-[560px]:py-10 " +
+                (tall ? "py-16 sm:py-24" : "py-10 sm:py-14")
+            }
+        >
+            <div className="mx-auto max-w-sm space-y-3 max-[560px]:w-full max-[560px]:shrink-0">
                 <h2 className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
                     {title}
                 </h2>
@@ -224,19 +264,42 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
                 <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">Loading day…</Card>
             ) : stage === "closed" ? (
                 <>
-                <div className="space-y-3 max-[560px]:pb-24">
+                <div className="space-y-3 pb-24">
                     <DayPayoutPanel date={date} summary={summary} status={status} loading={false} />
                     {onRemoveShift ? (
-                        <div className="flex">
+                        // The most destructive action in the app: it hard-deletes a
+                        // settled shift and every payout on it. WHAT it does and its
+                        // window.confirm are unchanged - what changes is that the
+                        // affordance now weighs what the action weighs. It was a 12px
+                        // red text link (98x16, no border, no icon) you could brush
+                        // past while scrolling a paid-out day; it is now a bounded,
+                        // clearly-labelled danger zone that names the consequence
+                        // before you reach the button, and the button itself is a
+                        // full 44px-tall danger target instead of a line of text.
+                        <section
+                            aria-labelledby="remove-shift-heading"
+                            className="rounded-[var(--radius-md)] border border-[var(--color-danger)]/25 bg-[var(--color-danger-soft)] p-4 max-[560px]:p-3.5"
+                        >
+                            <h3
+                                id="remove-shift-heading"
+                                className="m-0 text-[0.7rem] font-bold uppercase tracking-[0.08em] text-[var(--color-danger)]"
+                            >
+                                Danger zone
+                            </h3>
+                            <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
+                                Removing this shift permanently deletes it and every payout on it.
+                                This cannot be undone.
+                            </p>
                             <button
                                 type="button"
                                 onClick={onRemoveShift}
                                 disabled={removingShift}
-                                className="text-xs font-medium text-[var(--color-danger)] hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+                                className="mt-3 inline-flex h-11 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 text-sm font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[var(--color-surface)] disabled:hover:text-[var(--color-danger)]"
                             >
+                                <TrashIcon />
                                 {removingShift ? "Removing…" : "Remove this shift"}
                             </button>
-                        </div>
+                        </section>
                     ) : null}
                 </div>
                 {/* "Edit shift" is the same floating Edit button as the floor/settle

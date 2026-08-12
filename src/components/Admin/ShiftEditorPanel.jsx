@@ -4,6 +4,7 @@ import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
 import DayRail from "./DayRail";
+import FloatingActions from "./FloatingActions";
 import ScrollRail from "./ScrollRail";
 import { getRailSteps } from "../../utils/dayFlow";
 import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleStatus";
@@ -929,7 +930,7 @@ function ReviewNotReady({ blockers = [], hasFloorStaff = false, onFixMoney, onFi
 // tap target. (Single source of truth - do not fork a parallel FAB per screen.)
 function EditorActionPair({ onCancel, onPrimary, primaryLabel, busy }) {
     return (
-        <div className="fixed bottom-5 right-5 z-30 flex items-center gap-2.5">
+        <FloatingActions>
             <button
                 type="button"
                 onClick={onCancel}
@@ -946,7 +947,7 @@ function EditorActionPair({ onCancel, onPrimary, primaryLabel, busy }) {
             >
                 {primaryLabel}
             </button>
-        </div>
+        </FloatingActions>
     );
 }
 
@@ -1834,8 +1835,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                             </div>
                         ) : effectiveStep === "settle" ? (
                             /* STEP 2 - Settle up: the calm single money switcher, edited in place and
-                               saved with the same bottom-right FAB as the floor plan. */
-                            <section className="space-y-4 max-[560px]:pb-24">
+                               saved with the same bottom-right FAB as the floor plan. The bottom
+                               padding is that FAB's clearance, so the last money row (the Contracts
+                               disclosure) can always be scrolled clear of it - and it is not
+                               phone-only, because the FAB is `fixed` at every width. */
+                            <section className="space-y-4 pb-24">
                                 {/* Team switcher: a compact horizontal strip above one fixed-height entry
                                     panel. Tapping a pill focuses that group; the strip scrolls sideways on
                                     phone so page height stays constant no matter how large the roster is.
@@ -1964,13 +1968,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                             staffTotal={liveReview.staffTotal}
                                             onClick={() => setStep("review")}
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={handleEditSettle}
-                                            className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95"
-                                        >
-                                            ✎ Edit
-                                        </button>
+                                        <FloatingActions>
+                                            <button
+                                                type="button"
+                                                onClick={handleEditSettle}
+                                                className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95"
+                                            >
+                                                ✎ Edit
+                                            </button>
+                                        </FloatingActions>
                                     </>
                                 )}
                             </section>
@@ -2033,14 +2039,16 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                     so there is never a save button over numbers that do not
                                     exist yet. */}
                                 {liveReview.ready ? (
-                                    <button
-                                        type="button"
-                                        onClick={handleConfirmSave}
-                                        disabled={isSaving}
-                                        className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-                                    >
-                                        {isSaving ? "Saving…" : "✓ Confirm & Save Shift"}
-                                    </button>
+                                    <FloatingActions>
+                                        <button
+                                            type="button"
+                                            onClick={handleConfirmSave}
+                                            disabled={isSaving}
+                                            className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                                        >
+                                            {isSaving ? "Saving…" : "✓ Confirm & Save Shift"}
+                                        </button>
+                                    </FloatingActions>
                                 ) : null}
                             </section>
                         )}
