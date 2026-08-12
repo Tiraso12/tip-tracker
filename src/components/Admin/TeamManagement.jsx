@@ -5,6 +5,7 @@ import { Badge, Button, Card, Select } from '../ui';
 import { useAuth } from '../../context/AuthContext';
 import {
     formatTempStaffMergeCollisionMessage,
+    formatTempStaffMergeResultMessage,
     isTempStaffMergeCollisionError,
     mergeTempStaffIntoAccount,
 } from '../../utils/tempStaffMergePersistence';
@@ -125,7 +126,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         const realUser = allEmployees.find(e => e.uid === targetRealUid);
         if (!realUser) return;
 
-        if (!window.confirm(`Merge temporary profile '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis updates past shifts and moves saved tip history to the real account. The temporary profile will be removed after the merge.`)) return;
+        if (!window.confirm(`Merge temporary profile '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis moves saved payout history to the real account and takes the temporary profile off every floor plan that still lists it, including nights that have not been settled up yet. The temporary profile will be removed after the merge.`)) return;
 
         setLoadingId(unregUser.uid);
         try {
@@ -143,8 +144,7 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                 delete n[unregUser.uid];
                 return n;
             });
-            const dates = result.migratedDates.length > 0 ? ` Dates moved: ${result.migratedDates.join(", ")}.` : "";
-            alert(`Temporary profile merged into the real account.${dates}`);
+            alert(formatTempStaffMergeResultMessage({ realUser, ...result }));
         } catch (error) {
             console.error("Failed to link account:", error);
             if (isTempStaffMergeCollisionError(error)) {

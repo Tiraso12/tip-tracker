@@ -71,6 +71,14 @@ async function seedBaseUsers() {
             hasTipHistory: false,
         });
 
+        await setDoc(doc(db, "users/backStaffUid"), {
+            uid: "backStaffUid",
+            username: "Back Staff",
+            email: "back@example.com",
+            role: "back",
+            status: "active",
+        });
+
         await setDoc(doc(db, "users/historyTargetUid"), {
             uid: "historyTargetUid",
             username: "History Target",
@@ -149,6 +157,70 @@ async function seedTempPayout({
     });
 }
 
+// A saved-but-not-settled floor plan (status "setup") carrying the temp profile.
+// This is the shape that used to survive a "successful" merge: no payouts and no
+// ledger entries, so nothing discovered it and nothing rewrote it.
+async function seedUnsettledShiftWithTempStaff({ tempUid, tempName, date }) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+
+        await setDoc(doc(db, `unregisteredStaff/${tempUid}`), {
+            uid: tempUid,
+            name: tempName,
+            role: "server",
+        });
+
+        await setDoc(doc(db, `shifts/${date}`), {
+            date,
+            status: "setup",
+            teams: [{
+                teamId: "team-1",
+                members: [
+                    { uid: "historyTargetUid", name: "History Target", role: "captain", points: 4 },
+                    { uid: "backStaffUid", name: "Back Staff", role: "back", points: 2.5 },
+                    { uid: tempUid, name: tempName, role: "server", points: 4 },
+                ],
+                pools: { sales: "", tips: "", gratuity: "", cash: "" },
+            }],
+            barTeam: { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } },
+            runners: [],
+            updatedAt: "2026-05-25T12:00:00.000Z",
+        });
+    });
+}
+
+// The Shifts-tab date lives in the app bar as an overlaid native date input
+// (BarDatePill), aria-hidden by design, so drive it by setting its value directly.
+async function setShiftDate(page, date) {
+    await page.locator('input[type="date"]').first().evaluate((el, value) => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(el, value);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, date);
+}
+
+// Walk the saved floor plan through Settle up -> Review -> Confirm & Save, the way
+// a manager settles the night after the merge happened.
+async function settleSavedShift(page, { sales, tips, gratuity, cash }) {
+    // A saved-but-unsettled day lands on the read-only floor view; the rail's Settle
+    // pill opens the money screen (locked), and the floating Edit unlocks it in place.
+    await expect(page.getByText("Floor plan is set")).toBeVisible();
+
+    const rail = page.getByRole("navigation", { name: "Day steps" });
+    await rail.getByRole("button", { name: "Settle" }).click();
+    await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
+    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
+    await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
+    await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
+    await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
+    await page.getByRole("button", { name: "✓ Done" }).click();
+    await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toBeVisible();
+
+    await rail.getByRole("button", { name: "Review" }).click();
+    await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
+}
+
 async function loginAndOpenTeam(page) {
     await page.goto("/");
 
@@ -208,7 +280,7 @@ test("admin merges temp payout history into an empty account", async ({ page }) 
         targetUid: "emptyTargetUid",
     });
 
-    expect(dialogMessages[1]).toContain("Temporary profile merged into the real account.");
+    expect(dialogMessages[1]).toContain("Temporary profile merged into Empty Target.");
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
@@ -270,7 +342,7 @@ test("admin merges temp payout history into a non-empty account when dates do no
         targetUid: "historyTargetUid",
     });
 
-    expect(dialogMessages[1]).toContain("Temporary profile merged into the real account.");
+    expect(dialogMessages[1]).toContain("Temporary profile merged into History Target.");
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
@@ -291,6 +363,74 @@ test("admin merges temp payout history into a non-empty account when dates do no
         });
         expect(tempPayout.exists()).toBe(false);
         expect(tempProfile.exists()).toBe(false);
+    });
+});
+
+// The money-losing case: the temp profile sits on a floor plan that has not been
+// settled yet. It carries no payouts and no ledger entries, so the merge used to
+// leave it on the roster while deleting the profile - and settling that night
+// afterwards paid a UID with no profile anywhere in the app.
+test("merging a temp profile that is on an unsettled shift never pays a deleted profile", async ({ page }) => {
+    const TEMP_UID = "tempUnsettledUid";
+    const SHIFT_DATE = "2026-06-01";
+
+    await seedUnsettledShiftWithTempStaff({
+        tempUid: TEMP_UID,
+        tempName: "Temp Unsettled",
+        date: SHIFT_DATE,
+    });
+
+    await loginAndOpenTeam(page);
+    const dialogMessages = await mergeTempProfile(page, {
+        tempUid: TEMP_UID,
+        tempName: "Temp Unsettled",
+        targetUid: "emptyTargetUid",
+    });
+
+    // The manager is told what actually moved: no saved pay, one floor plan rewritten.
+    expect(dialogMessages[1]).toContain("Temporary profile merged into Empty Target.");
+    expect(dialogMessages[1]).toContain("No saved payout history to move.");
+    expect(dialogMessages[1]).toContain(`Floor plan updated, with no payout saved yet: ${SHIFT_DATE}.`);
+
+    // The floor plan no longer lists the temporary profile.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const shift = await getDoc(doc(db, `shifts/${SHIFT_DATE}`));
+        const members = shift.data().teams[0].members;
+
+        expect(members.map(member => member.uid)).not.toContain(TEMP_UID);
+        expect(members).toContainEqual(expect.objectContaining({
+            uid: "emptyTargetUid",
+            name: "Empty Target",
+        }));
+        expect((await getDoc(doc(db, `unregisteredStaff/${TEMP_UID}`))).exists()).toBe(false);
+    });
+
+    // Settle that night the normal way and check where the money landed.
+    await page.getByRole("button", { name: "Shifts", exact: true }).click();
+    await setShiftDate(page, SHIFT_DATE);
+    await settleSavedShift(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
+
+    await expect.poll(async () => {
+        let uids = [];
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const db = context.firestore();
+            const entries = await getDocs(collection(db, "payouts", SHIFT_DATE, "entries"));
+            uids = entries.docs.map(entry => entry.id).sort();
+        });
+        return uids;
+    }).toEqual(["backStaffUid", "emptyTargetUid", "historyTargetUid"]);
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const entries = await getDocs(collection(db, "payouts", SHIFT_DATE, "entries"));
+
+        // Every paid UID resolves to a real account - nobody is paid into a void.
+        for (const entry of entries.docs) {
+            const owner = await getDoc(doc(db, "users", entry.id));
+            expect(owner.exists()).toBe(true);
+        }
+        expect((await getDoc(doc(db, `unregisteredStaff/${TEMP_UID}`))).exists()).toBe(false);
     });
 });
 

@@ -3,7 +3,9 @@ import {
     doc,
     getDoc,
     getDocs,
+    query,
     runTransaction,
+    where,
 } from "firebase/firestore";
 
 import {
@@ -72,6 +74,20 @@ function tempStaffRef(db, uid) {
 
 function auditEventRef(db, operationId) {
     return doc(db, "auditEvents", operationId);
+}
+
+// Every place a shift document can name a person: the dining teams, the bar team,
+// the runner list, and the legacy per-shift payout map. A roster reference with no
+// money on it is exactly the one this file used to miss.
+export function shiftReferencesUid(shiftData, uid) {
+    if (!shiftData || !uid) return false;
+
+    const inMembers = (members = []) => members.some(member => member?.uid === uid);
+
+    return (shiftData.teams || []).some(team => inMembers(team?.members))
+        || inMembers(shiftData.barTeam?.members)
+        || inMembers(shiftData.runners)
+        || Boolean(shiftData.payouts?.[uid]);
 }
 
 function updateMember(member, tempUid, realUser, originalTempStaff) {
@@ -218,6 +234,10 @@ export function buildTempStaffMergePlan({
     const tempTipByDate = byDate(tempLegacyTips);
     const targetTipByDate = byDate(targetLegacyTips);
     const shiftByDate = byDate(shiftDocs);
+    // `dates` is the MONEY date set: the dates the temp profile holds saved pay on.
+    // It drives the per-date collision block and every ledger/tip write, and it is
+    // deliberately unchanged - a roster-only shift adds no money date. Shift
+    // rewrites are planned separately below, over every shift handed in.
     const dates = sortDates([
         ...tempLedgerByDate.keys(),
         ...tempTipByDate.keys(),
@@ -244,6 +264,7 @@ export function buildTempStaffMergePlan({
             canMerge: false,
             collisions,
             migratedDates: [],
+            rosterOnlyShiftDates: [],
             ledgerWrites: [],
             ledgerDeletes: [],
             legacyTipWrites: [],
@@ -256,7 +277,6 @@ export function buildTempStaffMergePlan({
     const ledgerDeletes = [];
     const legacyTipWrites = [];
     const legacyTipDeletes = [];
-    const shiftUpdates = [];
 
     dates.forEach((date) => {
         const tempLedger = tempLedgerByDate.get(date);
@@ -292,26 +312,36 @@ export function buildTempStaffMergePlan({
             });
             legacyTipDeletes.push({ date });
         }
-
-        const shiftDoc = shiftByDate.get(date);
-        const shiftUpdate = rewriteShiftForTempStaffMerge(shiftDoc?.data, {
-            tempUser,
-            realUser,
-            operationId,
-            updatedAt,
-        });
-        if (shiftDoc && shiftUpdate.modified) {
-            shiftUpdates.push({
-                date,
-                data: shiftUpdate.data,
-            });
-        }
     });
+
+    // Rewrite EVERY shift that still names the temp profile, whether or not that
+    // date carries money. A shift still in `setup` has no payouts and no ledger
+    // entry, so it never joins `dates` - and leaving it behind is what used to pay
+    // a deleted profile once the night was finally settled.
+    const shiftUpdates = shiftDocs
+        .map(({ date, data }) => {
+            const update = rewriteShiftForTempStaffMerge(data, {
+                tempUser,
+                realUser,
+                operationId,
+                updatedAt,
+            });
+            return update.modified ? { date, data: update.data } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Dates whose only change is the roster: the manager is told about these
+    // separately, because no saved pay moved on them.
+    const rosterOnlyShiftDates = shiftUpdates
+        .map(update => update.date)
+        .filter(date => !dates.includes(date));
 
     return {
         canMerge: true,
         collisions: [],
         migratedDates: dates,
+        rosterOnlyShiftDates,
         ledgerWrites,
         ledgerDeletes,
         legacyTipWrites,
@@ -384,6 +414,21 @@ async function discoverTempLegacyTips(db, tempUid) {
     }));
 }
 
+// Unsettled nights the temp profile is still rostered on. Settled dates already
+// come out of the ledger scan above (a closed shift always leaves a payout entry),
+// so the only shifts that can hide a live reference are the ones still in `setup`.
+//
+// Cost: this is a `status == "setup"` equality query, served by Firestore's
+// automatic single-field index, so it reads the open nights only - a handful of
+// documents - not the shift history. A full `shifts` scan would grow with every
+// night the restaurant has ever worked and is not acceptable on a merge.
+async function discoverUnsettledShiftDates(db, tempUid) {
+    const openShifts = await getDocs(query(collection(db, "shifts"), where("status", "==", "setup")));
+    return openShifts.docs
+        .filter(shift => shiftReferencesUid(shift.data(), tempUid))
+        .map(shift => shift.id);
+}
+
 function transactionRead(tx, ref) {
     return tx.get(ref);
 }
@@ -397,17 +442,22 @@ export async function mergeTempStaffIntoAccount({
     operationId = createTempStaffMergeOperationId(tempUser.uid, realUser.uid),
 }) {
     const updatedAt = timestamp(now);
-    const [discoveredLedgerEntries, discoveredLegacyTips] = await Promise.all([
+    const [discoveredLedgerEntries, discoveredLegacyTips, unsettledShiftDates] = await Promise.all([
         discoverTempLedgerEntries(db, tempUser.uid),
         discoverTempLegacyTips(db, tempUser.uid),
+        discoverUnsettledShiftDates(db, tempUser.uid),
     ]);
+    // Both the money dates and the open nights the profile is still rostered on. The
+    // merge has to rewrite all of them before deleting the profile, or settling one
+    // of those nights afterwards pays a UID with no profile behind it.
     const discoveredDates = sortDates([
         ...discoveredLedgerEntries.map(entry => entry.date),
         ...discoveredLegacyTips.map(entry => entry.date),
+        ...unsettledShiftDates,
     ]);
     const auditRef = auditEventRef(db, operationId);
 
-    return runTransaction(db, async (transaction) => {
+    const result = await runTransaction(db, async (transaction) => {
         const tempLedgerSnapshots = await Promise.all(discoveredLedgerEntries.map(entry => transactionRead(transaction, entry.ref)));
         const tempLegacySnapshots = await Promise.all(discoveredLegacyTips.map(entry => transactionRead(transaction, entry.ref)));
         const targetLedgerSnapshots = await Promise.all(discoveredDates.map(date =>
@@ -525,9 +575,23 @@ export async function mergeTempStaffIntoAccount({
             operationId,
             updatedAt,
             migratedDates: plan.migratedDates,
+            rosterOnlyShiftDates: plan.rosterOnlyShiftDates,
             updatedShiftDates: plan.shiftUpdates.map(update => update.date),
         };
     });
+
+    // The profile is deleted now, so re-check the open nights and hand back anything
+    // that still names it - a shift saved between discovery and commit would land
+    // outside the transaction's read set. The caller must not report a plain success
+    // while this list has dates in it: those rosters point at a profile that is gone.
+    // The merge itself is already committed here, so a failed re-check is reported as
+    // an unverified merge rather than thrown as a failed one.
+    try {
+        return { ...result, unresolvedShiftDates: await discoverUnsettledShiftDates(db, tempUser.uid) };
+    } catch (error) {
+        console.error("Temp staff merge committed, but re-checking open floor plans failed:", error);
+        return { ...result, unresolvedShiftDates: [], unresolvedShiftDatesUnknown: true };
+    }
 }
 
 export function formatTempStaffMergeCollisionMessage(collisions = []) {
@@ -535,6 +599,41 @@ export function formatTempStaffMergeCollisionMessage(collisions = []) {
     return `Merge stopped. The target account already has saved payout history on ${dates}. No records were changed.
 
 That date is saved under both the temporary profile and the real account, so moving it over could overwrite a payout already made. The whole merge is stopped, including the other dates, and this history stays on the temporary profile. Next time, merge the temporary profile as soon as the employee's account is approved, before they start working under their own login.`;
+}
+
+// What the manager is told after a merge. It reports what actually moved rather
+// than an unconditional "merged", and it never claims success while a floor plan
+// still names the profile that was just deleted.
+export function formatTempStaffMergeResultMessage({
+    realUser,
+    migratedDates = [],
+    rosterOnlyShiftDates = [],
+    unresolvedShiftDates = [],
+    unresolvedShiftDatesUnknown = false,
+} = {}) {
+    const account = displayNameFor(realUser || {});
+
+    if (unresolvedShiftDates.length > 0) {
+        return `Merge incomplete. The temporary profile was removed, but ${unresolvedShiftDates.length === 1 ? "this floor plan" : "these floor plans"} still list it: ${unresolvedShiftDates.join(", ")}.
+
+Open ${unresolvedShiftDates.length === 1 ? "that date" : "those dates"} and put ${account} on the floor in its place before you settle up, or that night's payout goes to a profile that no longer exists.`;
+    }
+
+    const lines = [`Temporary profile merged into ${account}.`, ""];
+
+    lines.push(migratedDates.length > 0
+        ? `Payout history moved: ${migratedDates.join(", ")}.`
+        : "No saved payout history to move.");
+
+    if (rosterOnlyShiftDates.length > 0) {
+        lines.push(`Floor plan${rosterOnlyShiftDates.length === 1 ? "" : "s"} updated, with no payout saved yet: ${rosterOnlyShiftDates.join(", ")}.`);
+    }
+
+    if (unresolvedShiftDatesUnknown) {
+        lines.push("", "The saved floor plans could not be re-checked afterwards. Open any night this person is still on and make sure it lists the real account before you settle up.");
+    }
+
+    return lines.join("\n");
 }
 
 export function isTempStaffMergeCollisionError(error) {

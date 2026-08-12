@@ -120,6 +120,14 @@ test("Team Management delegates temp merge payout ownership to the ledger utilit
         /collection\(db,\s*PAYOUT_LEDGER_COLLECTION\)/,
         "Temp-staff merge should discover payout ownership through canonical ledger dates."
     );
+    // The merge has to find shifts that still name the temp profile but hold no
+    // money yet. That lookup must stay an indexed "setup" query - a bare scan of
+    // `shifts` grows with every night the restaurant has ever worked.
+    assert.match(
+        mergePersistenceSource,
+        /query\(collection\(db,\s*["']shifts["']\),\s*where\(["']status["'],\s*["']==["'],\s*["']setup["']\)\)/,
+        "Temp-staff merge should find open rosters through a status-bounded query, not a full shift scan."
+    );
     assert.match(
         shiftEditorSource,
         /markUserHistoryFlags/,
