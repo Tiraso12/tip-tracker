@@ -166,7 +166,9 @@ function EmployeePool({
                         autoFocus
                     />
                     <p className="m-0 mt-1 mb-0.5 text-[0.75rem] text-[var(--color-ink-muted)] leading-[1.35]">
-                        Use this for someone working today who has not created an account yet. Their history can be merged into a real account later.
+                        For someone working today who has no account yet. Once their real account
+                        is approved, merge this profile into it right away - if a night gets saved
+                        under both, the merge is blocked for good.
                     </p>
                     <label className="text-[0.7rem] text-[var(--color-ink-muted)] font-semibold -mb-1">Role</label>
                     <select

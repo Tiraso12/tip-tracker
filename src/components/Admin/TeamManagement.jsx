@@ -314,6 +314,12 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
                     description="Staff added during shift setup before they had an account. Merge one into a real active account to transfer saved history."
                     tone="accent"
                 >
+                    <div className="px-6 py-3 text-xs text-[var(--color-ink-soft)] bg-[var(--color-surface-muted)]/60">
+                        <strong className="text-[var(--color-ink)]">Merge early:</strong> merge a
+                        temporary profile as soon as the employee's real account is approved. If the
+                        same night ends up saved under both the temporary profile and their real
+                        account, the merge is blocked for good and this history stays behind.
+                    </div>
                     {unregisteredStaff.map(u => <UnregisteredRow key={u.uid} unregUser={u} />)}
                 </SectionCard>
             ) : null}

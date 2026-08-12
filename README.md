@@ -43,6 +43,13 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 
 ---
 
+## Manager Guides
+
+- [Managing Temporary Staff Profiles](docs/MANAGING-TEMPORARY-STAFF.md) - adding staff who
+  have no account yet, and when to merge them into a real account
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |

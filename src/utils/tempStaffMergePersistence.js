@@ -532,7 +532,9 @@ export async function mergeTempStaffIntoAccount({
 
 export function formatTempStaffMergeCollisionMessage(collisions = []) {
     const dates = collisions.map(collision => collision.date).join(", ");
-    return `Merge stopped. The target account already has saved payout history on ${dates}. No records were changed.`;
+    return `Merge stopped. The target account already has saved payout history on ${dates}. No records were changed.
+
+That date is saved under both the temporary profile and the real account, so moving it over could overwrite a payout already made. The whole merge is stopped, including the other dates, and this history stays on the temporary profile. Next time, merge the temporary profile as soon as the employee's account is approved, before they start working under their own login.`;
 }
 
 export function isTempStaffMergeCollisionError(error) {
