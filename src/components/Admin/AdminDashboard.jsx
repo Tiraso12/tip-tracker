@@ -15,6 +15,13 @@ import { removeShiftAtomically } from "../../utils/closeoutPersistence";
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
 
+// The workspace sidebar is DESKTOP-ONLY. A phone gets no top-level nav: the top
+// level has exactly one real destination (Shifts, which is the app), so a menu
+// choosing between it and Team was 90px of banded chrome - 24% of a 390x844
+// screen - to reveal two items, one of which was always the screen you were on.
+// Team now hangs off the account sheet at every width, and the Day Rail is the
+// only navigation on a phone. If a second real destination ever lands (Settings,
+// Payroll, Reports returning), that call gets re-made - do not pre-build for it.
 const NAV_ITEMS = [
     {
         value: "shifts",
@@ -70,12 +77,12 @@ function SideNavItem({ item, active, onClick, collapsed }) {
             aria-current={active ? "page" : undefined}
             title={collapsed ? item.label : undefined}
             className={
-                // min-h-11 on the phone band: these were 36px tall, under the 44px
-                // target guideline the rail already meets. Desktop keeps the denser
-                // sidebar row, where the pointer is not a thumb.
-                "group relative w-full flex items-center gap-3 px-3 py-2 min-h-11 lg:min-h-0 text-sm rounded-[var(--radius-sm)] " +
+                // Desktop-only rows: the pointer here is a mouse, not a thumb, so
+                // the denser sidebar height is fine. The 44px thumb-target rule
+                // applies to the app bar and the Day Rail, which a phone still has.
+                "group relative w-full flex items-center gap-3 px-3 py-2 text-sm rounded-[var(--radius-sm)] " +
                 "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
-                (collapsed ? "lg:justify-center lg:px-0 lg:h-10 " : "") +
+                (collapsed ? "justify-center px-0 h-10 " : "") +
                 (active
                     ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium"
                     : "text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)]")
@@ -84,7 +91,7 @@ function SideNavItem({ item, active, onClick, collapsed }) {
             <span className={active ? "text-[var(--color-accent)]" : "text-[var(--color-ink-muted)] group-hover:text-[var(--color-ink-soft)]"}>
                 {item.icon}
             </span>
-            <span className={collapsed ? "lg:sr-only" : ""}>{item.label}</span>
+            <span className={collapsed ? "sr-only" : ""}>{item.label}</span>
         </button>
     );
 }
@@ -109,6 +116,7 @@ function AdminDashboard() {
     const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
+    // Desktop sidebar only: rail-width (icons) vs full-width (icons + labels).
     const [navCollapsed, setNavCollapsed] = useState(true);
     const [removingShift, setRemovingShift] = useState(false);
     // Which day-step the shift editor opens on when entered from a landing CTA.
@@ -239,21 +247,16 @@ function AdminDashboard() {
         return guard ? guard() : true;
     }, []);
 
-    const collapseNavOnMobile = useCallback(() => {
-        if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
-            setNavCollapsed(true);
-        }
-    }, []);
-
+    // The one way into a top-level tab, shared by the desktop sidebar and the
+    // account sheet's Team item so both clear the editor's leave guard.
     const handleNavItemClick = useCallback((tab) => {
         if (!confirmLeaveEditor()) return;
         // Same re-read handleEditorClose does: a setup shift autosaves while editing,
         // so the landing would otherwise show the day as it was before the edit.
         const needsRefresh = activeTab === "editor" && tab === "shifts";
         setActiveTabWithData(tab);
-        collapseNavOnMobile();
         if (needsRefresh) fetchDayPayouts(selectedDate);
-    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, collapseNavOnMobile, fetchDayPayouts]);
+    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
 
     // Home: back to today's Shifts landing from anywhere, in one tap. Home means TODAY,
     // not the day that happened to be selected - the admin reaching for home mid-shift
@@ -268,12 +271,26 @@ function AdminDashboard() {
         const needsRefresh = activeTab === "editor" && today === selectedDate;
         setSelectedDate(today);
         setActiveTabWithData("shifts");
-        collapseNavOnMobile();
         if (needsRefresh) fetchDayPayouts(today);
-    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, collapseNavOnMobile, fetchDayPayouts]);
+    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
 
     // The sidebar treats "editor" as still belonging to the Shifts section.
     const sidebarValue = activeTab === "editor" ? "shifts" : activeTab;
+
+    // Team in the account sheet. This is the ONLY door to it on a phone, and it is
+    // present at every width so the destination lives in one predictable place
+    // rather than moving between a sidebar and a menu as the viewport changes.
+    // Shifts is deliberately not listed here - the app bar's home control is the
+    // way back, at every width, and a second door to it would just be noise.
+    const accountItems = NAV_ITEMS
+        .filter((item) => item.value === "users")
+        .map((item) => ({
+            key: item.value,
+            label: item.label,
+            icon: item.icon,
+            active: sidebarValue === item.value,
+            onClick: () => handleNavItemClick(item.value),
+        }));
 
     // The desktop <h1> mirrors where the day actually is, instead of always
     // reading "Pay out" (which contradicted a fresh/setup day). The date now
@@ -315,8 +332,11 @@ function AdminDashboard() {
     return (
         <div className="min-h-screen bg-[var(--color-bg)]">
             {/* Top app bar */}
-            {/* px-3 below sm: at 320px the home control, the menu, the date pill and
-                the account avatar only clear the viewport with the tighter inset. */}
+            {/* px-3 below sm: at 320px the home control, the date pill and the
+                account avatar only clear the viewport with the tighter inset.
+                Dropping the phone hamburger gave the row back 52px: measured at
+                320px on today, slack went from 15px to 67px, so the day pill is
+                no longer the control that gets squeezed to make room. */}
             {/* z-40, above the z-30 floating Edit / Cancel / Done controls: the bar
                 is app chrome, and the account sheet opens out of it as a bottom sheet
                 that lands exactly where those buttons float. At z-20 they painted
@@ -334,17 +354,6 @@ function AdminDashboard() {
                         className="h-11 w-11 inline-flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
                     >
                         <HomeIcon />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setNavCollapsed(prev => !prev)}
-                        aria-expanded={!navCollapsed}
-                        aria-controls="admin-workspace-nav"
-                        aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
-                        title={navCollapsed ? "Open workspace" : "Collapse workspace"}
-                        className="h-11 w-11 inline-flex lg:hidden items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                    >
-                        <MenuIcon />
                     </button>
                     {/* Brand is kept for desktop coherence but dropped on the
                         mobile admin bar - there the day and the account avatar
@@ -372,22 +381,26 @@ function AdminDashboard() {
                         word-labelled button in this row - 17.7% of a 390px bar for a
                         once-a-shift action, and the only worded control on the phone
                         money screen. The sheet also carries the username the bar used
-                        to print beside it. */}
-                    <AccountSheet />
+                        to print beside it. Team rides in the same sheet - on a phone
+                        this avatar is the only door to it. */}
+                    <AccountSheet items={accountItems} />
                 </div>
             </header>
 
             <div className="flex flex-col lg:flex-row min-h-[calc(100vh-3.5rem)]">
-                {/* Sidebar */}
+                {/* Workspace sidebar - desktop only, and unchanged from what it has
+                    always been there. It used to double as the phone's top-level
+                    menu, folded down into a horizontal band behind a hamburger; that
+                    band is gone and this markup no longer carries any phone case. */}
                 <aside
                     id="admin-workspace-nav"
                     className={
-                        "lg:block lg:shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--color-line)] bg-[var(--color-bg)] transition-[width] duration-200 " +
-                        (navCollapsed ? "hidden lg:w-16" : "block lg:w-60")
+                        "hidden lg:block lg:shrink-0 lg:border-r border-[var(--color-line)] bg-[var(--color-bg)] transition-[width] duration-200 " +
+                        (navCollapsed ? "lg:w-16" : "lg:w-60")
                     }
                 >
                     <nav className="lg:sticky lg:top-14 p-3 lg:py-4">
-                        <div className={"hidden lg:flex mb-3 " + (navCollapsed ? "justify-center" : "px-1 justify-between items-center")}>
+                        <div className={"flex mb-3 " + (navCollapsed ? "justify-center" : "px-1 justify-between items-center")}>
                             {!navCollapsed ? (
                                 <p className="px-2 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
                                     Workspace
@@ -397,17 +410,15 @@ function AdminDashboard() {
                                 type="button"
                                 onClick={() => setNavCollapsed(prev => !prev)}
                                 aria-expanded={!navCollapsed}
-                                aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
-                                title={navCollapsed ? "Open workspace" : "Collapse workspace"}
+                                aria-controls="admin-workspace-nav"
+                                aria-label={navCollapsed ? "Expand workspace navigation" : "Collapse workspace navigation"}
+                                title={navCollapsed ? "Expand workspace" : "Collapse workspace"}
                                 className="h-8 w-8 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
                             >
                                 <MenuIcon />
                             </button>
                         </div>
-                        <p className="lg:hidden px-3 mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                            Workspace
-                        </p>
-                        <div className="flex lg:flex-col gap-1">
+                        <div className="flex flex-col gap-1">
                             {NAV_ITEMS.map((item) => (
                                 <SideNavItem
                                     key={item.value}

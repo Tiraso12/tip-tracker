@@ -12,9 +12,11 @@ import { roleLabel } from "../../utils/roleLabels";
 // panel is a bottom sheet (thumb-reachable, the platform convention for an account
 // menu); from `sm` up it is a dropdown anchored under the avatar.
 //
-// `items` is a nav slot rendered above the identity/sign-out block. It is empty
-// today and is where destinations that do not deserve a permanent phone control
-// land - the workspace menu's Team is the next one in.
+// `items` is a nav slot rendered above the sign-out block, for destinations that
+// do not deserve a permanent phone control. Team lives here: it is the admin's
+// approve-a-new-hire screen, visited at a desk maybe twice a week, and it was the
+// only reason a phone carried a workspace menu at all. On a phone this sheet is
+// now the ONLY way to reach it, so the slot is load-bearing, not decoration.
 
 function initialsFor(name) {
     const parts = String(name || "").trim().split(/[\s._-]+/).filter(Boolean);

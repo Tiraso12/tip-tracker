@@ -644,11 +644,37 @@ test.describe("mobile floor polish", () => {
         });
     });
 
+    // A phone has no top-level nav at all. The top level had one real destination
+    // (Shifts, which IS the app) and one occasional one (Team), and saying so cost a
+    // 90px banded menu behind a hamburger - 24% of a 390x844 screen to reveal two
+    // items, one of which was always the screen you were already on. Team moved into
+    // the account sheet; the Day Rail is the only navigation left on a phone.
+    test("no workspace menu on a phone: Team lives in the account sheet, the Day Rail is the nav", async ({ page }) => {
+        const date = "2026-05-31";
+        await seedSetupShift(date);
+        await login(page);
+        await setShiftDate(page, date);
+
+        // No hamburger, and the workspace sidebar does not render at this width.
+        await expect(page.getByRole("button", { name: /workspace navigation/i })).toHaveCount(0);
+        await expect(page.locator("#admin-workspace-nav")).toBeHidden();
+        await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+
+        // Team is still two taps away - through the account sheet, not a menu band.
+        await page.getByRole("button", { name: /Open account menu/ }).click();
+        await page.getByRole("menuitem", { name: "Team" }).click();
+        await expect(page.getByRole("heading", { name: "Team Management" })).toBeVisible();
+
+        // ...and the app bar's home control is the way back out of it.
+        await page.getByRole("button", { name: "Go to today's shifts" }).click();
+        await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    });
+
     // The nav used to live outside the editor's state machine: Cancel confirmed a
     // discard on a paid-out shift while the workspace menu and the app bar just
     // switched tabs, so the same unsaved money edit was thrown away with no prompt.
     // Every exit now passes the same guard.
-    test("closed shift edit: home and the workspace menu warn like Cancel instead of discarding silently", async ({ page }) => {
+    test("closed shift edit: home and the account sheet warn like Cancel instead of discarding silently", async ({ page }) => {
         const date = "2026-05-22";
         await seedClosedShift(date);
 
@@ -678,9 +704,11 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByText("Editing floor plan")).toBeVisible();
         expect(dialogs).toBe(1);
 
-        // Workspace menu -> Shifts, dismissed: same guard, same outcome.
-        await page.getByRole("button", { name: /workspace navigation/i }).click();
-        await page.getByRole("button", { name: "Shifts", exact: true }).click();
+        // Account sheet -> Team, dismissed: same guard, same outcome. This is the
+        // only nav that exits the editor on a phone now that the workspace menu is
+        // gone, so it is the path that has to keep clearing the guard.
+        await page.getByRole("button", { name: /Open account menu/ }).click();
+        await page.getByRole("menuitem", { name: "Team" }).click();
         await expect(page.getByText("Editing floor plan")).toBeVisible();
         expect(dialogs).toBe(2);
 
