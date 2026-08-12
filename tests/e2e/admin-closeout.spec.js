@@ -239,11 +239,17 @@ test("Review is reachable from the rail after a floor-plan edit, without revisit
 
     const rail = page.getByRole("navigation", { name: "Day steps" });
     const totals = page.getByRole("button", { name: /Shift totals/ });
+    // The spot-check card's CTP is the FIRST money-shaped string on this screen, so
+    // assert on the tagged figures instead of "the first thing that looks like money".
+    const everyonePaid = page.getByTestId("totals-everyone-paid");
+    const captainTotal = page.getByTestId("spot-check-total");
 
-    // The floor as it stands before the edit.
+    // The floor, and the captain's own total, as they stand before the edit.
     await expect(page.getByRole("button", { name: /Who's on the floor/ })).toContainText("2 people");
     await totals.click();
-    const takeHomeBefore = await page.getByText(/^\$[\d,]+\.\d\d$/).first().textContent();
+    const paidBefore = await everyonePaid.textContent();
+    const captainBefore = await captainTotal.textContent();
+    await totals.click();
 
     // Review -> Floor plan, add the missing person.
     await rail.getByRole("button", { name: "Floor" }).click();
@@ -254,13 +260,18 @@ test("Review is reachable from the rail after a floor-plan edit, without revisit
     await rail.getByRole("button", { name: "Review" }).click();
     await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
 
-    // The new person is on the floor and the split has moved to account for them.
+    // The new person is on the floor...
     await expect(page.getByRole("button", { name: /Who's on the floor/ })).toContainText("3 people");
-    await totals.click();
-    const takeHomeAfter = await page.getByText(/^\$[\d,]+\.\d\d$/).first().textContent();
-    expect(takeHomeAfter).toBe(takeHomeBefore); // same pool...
     await page.getByRole("button", { name: /Who's on the floor/ }).click();
-    await expect(page.getByText("Captain One · Server One · Back One")).toBeVisible(); // ...split three ways
+    await expect(page.getByText("Captain One · Server One · Back One")).toBeVisible();
+    await page.getByRole("button", { name: /Who's on the floor/ }).click();
+
+    // ...the same pool is still being handed out (nobody's money appeared or vanished)...
+    await totals.click();
+    await expect(everyonePaid).toHaveText(paidBefore);
+    // ...but it is now split more ways, which is the proof Review recalculated from the
+    // edit rather than replaying the figures it was opened with.
+    await expect(captainTotal).not.toHaveText(captainBefore);
 });
 
 // Review must never dress up an incomplete shift as a finished one. Reaching it is
@@ -292,8 +303,16 @@ test("Review lists no runners as entered money and shows their pay as a deductio
 
     await page.getByRole("button", { name: /Team 1/i }).click();
     await assignFromPool(page, "Captain One");
-    await page.getByRole("button", { name: /Runners/i }).first().click();
-    await assignFromPool(page, "Runner One");
+    await assignFromPool(page, "Server One");
+    // Back One as the runner: this spec seeds only Admin / Captain One / Server One /
+    // Back One, so there is no dedicated runner account to reach for here.
+    //
+    // Match "+ Add" too. The floor plan also has a role-FILTER tab bar (Captains /
+    // Servers / ... / Runners / Temp) whose "Runners" tab is a button with the same
+    // bare name; hitting that filters the pool to role=runner - empty in this seed -
+    // instead of selecting the group to assign into.
+    await page.getByRole("button", { name: /Runners \+ Add/i }).click();
+    await assignFromPool(page, "Back One");
     await page.getByRole("button", { name: "✓ Done" }).click();
     await expect(page.getByText("Floor plan is set")).toBeVisible();
 
@@ -312,9 +331,16 @@ test("Review lists no runners as entered money and shows their pay as a deductio
     await expect(page.getByText("off the pool")).toBeVisible();
     await floor.click();
 
+    // Shift totals shows runner pay as a deduction from the dining pool, and keeps the
+    // dining and bar pools as separate destinations - no figure labelled as the floor
+    // may carry bar money, and the all-in total is never presented undecomposed.
     await page.getByRole("button", { name: /Shift totals/ }).click();
-    await expect(page.getByText("paid off the top of the pool")).toBeVisible();
-    await expect(page.getByText("Split among the floor")).toBeVisible();
+    await expect(page.getByText("paid off the top")).toBeVisible();
+    await expect(page.getByTestId("totals-dining")).toBeVisible();
+    await expect(page.getByTestId("totals-bar")).toBeVisible();
+    await expect(page.getByTestId("totals-runners")).not.toHaveText("$0.00");
+    await expect(page.getByText("= Everyone paid")).toBeVisible();
+    await expect(page.getByText("Split among the floor")).toHaveCount(0);
 });
 
 test("admin can close out a simple dining room shift and create ledger payout records", async ({ page }) => {

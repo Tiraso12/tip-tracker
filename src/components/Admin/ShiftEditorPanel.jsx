@@ -426,14 +426,14 @@ function HeroMoney({ value, className = "" }) {
 // A row of the spot-check card: label hard left, figure hard right, nothing in
 // between, hairline underneath. The hairline is what re-anchors the eye each time it
 // comes back from the spreadsheet, so a row is never silently skipped.
-function SpotCheckRow({ label, sub, value, rule = "hairline", emphasis = false }) {
+function SpotCheckRow({ label, sub, value, rule = "hairline", emphasis = false, testId }) {
     const ruleClass = rule === "total"
         ? "border-b-2 border-[var(--color-ink)]/70"
         : rule === "none"
             ? ""
             : "border-b border-[var(--color-line)]";
     return (
-        <div className={"flex items-baseline justify-between gap-4 px-4 py-3 min-h-[44px] " + ruleClass}>
+        <div data-testid={testId} className={"flex items-baseline justify-between gap-4 px-4 py-3 min-h-[44px] " + ruleClass}>
             <span className="flex flex-col">
                 <span className={"text-[13px] font-semibold uppercase tracking-[0.1em] "
                     + (emphasis ? "text-[var(--color-ink)]" : "text-[var(--color-ink-soft)]")}>
@@ -517,6 +517,7 @@ function SpotCheckCard({ subject }) {
                             value={getPayoutNonCashTotal(payout)}
                             rule="none"
                             emphasis
+                            testId="spot-check-total"
                         />
                     </div>
                 </>
@@ -574,7 +575,7 @@ function FixJump({ label, onClick }) {
 
 // One row of the Shift totals ledger. Label left, figure right, both on the same
 // baseline so the column of money reads straight down at a glance.
-function LedgerRow({ label, sub, value, tone = "plain" }) {
+function LedgerRow({ label, sub, value, tone = "plain", testId }) {
     return (
         <div className={"flex items-baseline justify-between gap-3 " + (tone === "total" ? "pt-2" : "")}>
             <span className="min-w-0">
@@ -587,10 +588,12 @@ function LedgerRow({ label, sub, value, tone = "plain" }) {
                     <span className="block text-[10.5px] leading-tight text-[var(--color-ink-muted)]">{sub}</span>
                 ) : null}
             </span>
-            <strong className={"shrink-0 font-mono tabular-nums "
-                + (tone === "total"
-                    ? "text-[15px] font-semibold text-[var(--color-ink)]"
-                    : "text-[12.5px] font-normal text-[var(--color-ink-soft)]")}>
+            <strong
+                data-testid={testId}
+                className={"shrink-0 font-mono tabular-nums "
+                    + (tone === "total"
+                        ? "text-[15px] font-semibold text-[var(--color-ink)]"
+                        : "text-[12.5px] font-normal text-[var(--color-ink-soft)]")}>
                 {value}
             </strong>
         </div>
@@ -784,7 +787,7 @@ function CalculatedPayoutReview({
                         <LedgerRow label="− To the bar" sub="bar allocation" value={fmtMoney(barAllocation)} />
                         <LedgerRow label="+ Runners fee" sub="from the bar" value={fmtMoney(feeTransfer)} />
                         <div className="border-t border-[var(--color-line)]" />
-                        <LedgerRow label="= Dining take-home" value={fmtMoney(diningTake)} tone="total" />
+                        <LedgerRow label="= Dining take-home" value={fmtMoney(diningTake)} tone="total" testId="totals-dining-ledger" />
                     </div>
 
                     {/* Intent option 1: an all-in total that is ALWAYS decomposed and is
@@ -795,11 +798,11 @@ function CalculatedPayoutReview({
                         `totalAvailable − totalDistributed` across all three, so dropping
                         the combined number would leave "✓ Balanced" anchored to nothing. */}
                     <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface-muted)] px-3 py-2.5 space-y-1.5">
-                        <LedgerRow label="Dining take-home" sub="split by dining points" value={fmtMoney(diningTake)} />
-                        <LedgerRow label="Bar take-home" sub="its own pool, split by bar points" value={fmtMoney(barTake)} />
-                        <LedgerRow label="Runners" sub="flat, off the dining pool" value={fmtMoney(runnerTake)} />
+                        <LedgerRow label="Dining take-home" sub="split by dining points" value={fmtMoney(diningTake)} testId="totals-dining" />
+                        <LedgerRow label="Bar take-home" sub="its own pool, split by bar points" value={fmtMoney(barTake)} testId="totals-bar" />
+                        <LedgerRow label="Runners" sub="flat, off the dining pool" value={fmtMoney(runnerTake)} testId="totals-runners" />
                         <div className="border-t border-[var(--color-line)]" />
-                        <LedgerRow label="= Everyone paid" sub="all three pools, CTP + GRT" value={fmtMoney(staffTotal)} tone="total" />
+                        <LedgerRow label="= Everyone paid" sub="all three pools, CTP + GRT" value={fmtMoney(staffTotal)} tone="total" testId="totals-everyone-paid" />
                     </div>
 
                     {/* Tier 3 - the cross-checks. Cash is money too, but it is distributed
