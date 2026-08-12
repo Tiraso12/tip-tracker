@@ -7,3 +7,5 @@ export { default as Table, THead, TBody, TR, TH, TD } from "./Table";
 export { default as Badge } from "./Badge";
 export { default as PageHeader } from "./PageHeader";
 export { default as Tabs } from "./Tabs";
+export { default as Spinner } from "./Spinner";
+export { default as TopProgressBar } from "./TopProgressBar";

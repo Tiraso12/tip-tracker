@@ -8,12 +8,13 @@ import FloatingActions from "./FloatingActions";
 import ScrollRail from "./ScrollRail";
 import { getRailSteps } from "../../utils/dayFlow";
 import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleStatus";
-import { Card } from "../ui";
+import { Card, Spinner } from "../ui";
 import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
 import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
 import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/constants";
 import { getHistoryFlagUpdate, getShiftParticipantUids } from "../../utils/userHistoryFlags";
 import { useAuth } from "../../context/AuthContext";
+import { usePendingActions } from "../../context/PendingActionsContext";
 import {
     buildPayoutReview,
     fmtAmount,
@@ -945,6 +946,7 @@ function EditorActionPair({ onCancel, onPrimary, primaryLabel, busy }) {
                 disabled={busy}
                 className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
             >
+                {busy ? <Spinner /> : null}
                 {primaryLabel}
             </button>
         </FloatingActions>
@@ -979,6 +981,7 @@ const DISCARD_EDIT_CONFIRMATION =
 
 function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", onRegisterLeaveGuard }) {
     const { user } = useAuth();
+    const { beginPendingAction } = usePendingActions();
     const [teams, setTeams] = useState([
         { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
     ]);
@@ -1479,6 +1482,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         setIsSaving(true);
         setValidationMessages([]);
         setSaveStatus("Saving floor plan...");
+        const endPendingAction = beginPendingAction();
 
         try {
             await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({ date, teams, barTeam, runners }));
@@ -1494,6 +1498,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
             return false;
         } finally {
             setIsSaving(false);
+            endPendingAction();
         }
     };
 
@@ -1514,6 +1519,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         if (isSaving) return;
         setIsSaving(true);
         setSaveStatus("Saving money…");
+        const endPendingAction = beginPendingAction();
         try {
             await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
                 date,
@@ -1530,6 +1536,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
             setSaveStatus("Failed to save money.");
         } finally {
             setIsSaving(false);
+            endPendingAction();
         }
     };
 
@@ -1638,6 +1645,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
 
         setIsSaving(true);
         setSaveStatus("Saving…");
+        // Spans the write and the day refetch that onClose kicks off, so the
+        // workspace progress bar reads as one wait rather than two.
+        const endPendingAction = beginPendingAction();
         try {
             await saveClosedShiftAtomically({
                 db,
@@ -1650,17 +1660,22 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 realEmployeeUids,
                 updatedBy: user?.uid || null,
             });
-            setSaveStatus("Saved.");
             setShiftStatus("closed");
-
-            setTimeout(() => {
-                onClose();
-            }, 1500);
+            // Reset before leaving: the leave guard refuses to let go while this is
+            // set, and it used to stay true for the whole hand-over.
+            setIsSaving(false);
+            // Hand straight over to the saved day. This used to sit on a 1500ms
+            // timer, which parked the admin on Review after the work was done and
+            // put the "Saved." line on the screen they were about to leave; the
+            // day landing is where the confirmation belongs.
+            onClose({ saved: true });
         } catch (e) {
             console.error(e);
             setSaveStatus("Failed to save.");
             setValidationMessages(["The shift could not be saved. Please try again."]);
             setIsSaving(false);
+        } finally {
+            endPendingAction();
         }
     };
 
@@ -2046,7 +2061,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                             disabled={isSaving}
                                             className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
                                         >
-                                            {isSaving ? "Saving…" : "✓ Confirm & Save Shift"}
+                                            {isSaving ? (
+                                                <>
+                                                    <Spinner />
+                                                    <span>Saving shift…</span>
+                                                </>
+                                            ) : (
+                                                "✓ Confirm & Save Shift"
+                                            )}
                                         </button>
                                     </FloatingActions>
                                 ) : null}

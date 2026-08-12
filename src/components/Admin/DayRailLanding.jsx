@@ -221,8 +221,12 @@ function Hero({ title, body, tall = false, children }) {
     );
 }
 
-function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
+function DayRailLanding({ date, status, summary, lineup, loading, savedNotice = false, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
     const stage = getLandingStage(status);
+    // A refetch of the day already on screen keeps that day on screen - the top
+    // progress bar carries the wait. Only a load with nothing to show blanks, which
+    // is a first load or a date change (AdminDashboard withholds another date's data).
+    const showLoadingCard = loading && !summary && !lineup && !status;
     // On the read-only floor view (settle stage) the rail's active step is Floor -
     // you are looking at the floor. Settle is the reachable "next" pill you tap to
     // advance into the (directly-editable) money screen.
@@ -260,7 +264,23 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
                 process is complete, so the step rail is hidden - no steps left to show. */}
             {stage === "closed" ? null : <DayRail steps={railSteps} onStepClick={onStepClick} />}
 
-            {loading ? (
+            {/* The Confirm & Save confirmation lands here, on the day it is about,
+                rather than on the editor screen the admin has just left. Inside the
+                landing column so it eats into the phone's fill height instead of
+                pushing the day off the bottom of it. */}
+            {savedNotice ? (
+                <div
+                    role="status"
+                    className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-success)]/25 bg-[var(--color-success-soft)] px-3 py-2 text-sm text-[var(--color-success)]"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span>Saved. Payouts for this date are recorded.</span>
+                </div>
+            ) : null}
+
+            {showLoadingCard ? (
                 <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">Loading day…</Card>
             ) : stage === "closed" ? (
                 <>

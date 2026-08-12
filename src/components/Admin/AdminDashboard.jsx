@@ -2,11 +2,11 @@ import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from 
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
-import DayPayoutPanel from "./DayPayoutPanel";
 import DayRailLanding from "./DayRailLanding";
 import BarDatePill from "./BarDatePill";
 import AccountSheet from "../Account/AccountSheet";
-import { Badge } from "../ui";
+import { Badge, TopProgressBar } from "../ui";
+import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
 import { toDateKey } from "../../utils/dateUtils";
 import { getLandingStage } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
@@ -115,12 +115,22 @@ function AdminDashboard() {
     const [daySummary, setDaySummary] = useState(null);
     const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
+    const [dayDataDate, setDayDataDate] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
+    const dayFetchIdRef = useRef(0);
     // Desktop sidebar only: rail-width (icons) vs full-width (icons + labels).
     const [navCollapsed, setNavCollapsed] = useState(true);
     const [removingShift, setRemovingShift] = useState(false);
     // Which day-step the shift editor opens on when entered from a landing CTA.
     const [editorStep, setEditorStep] = useState("floor");
+    // Set only by a completed Confirm & Save, so the confirmation lands on the day
+    // it belongs to instead of on the editor the admin is leaving.
+    const [shiftSaved, setShiftSaved] = useState(false);
+
+    // One progress cue for the whole workspace, driven by every slow action that
+    // registers through the provider below.
+    const pendingActions = usePendingActionsState();
+    const { beginPendingAction, isPending } = pendingActions;
 
     const loadEmployeesIfNeeded = useCallback(async ({ force = false } = {}) => {
         if (employeesLoaded && !force) return;
@@ -139,16 +149,21 @@ function AdminDashboard() {
         }
     }, [employeesLoaded]);
 
+    // The day is no longer blanked before a refetch: a refetch of the date already
+    // on screen (after a save, after backing out of the editor) holds its content
+    // while the progress bar carries the wait. `dayDataDate` is what keeps that
+    // honest - the landing is only handed data for the date it was loaded for, so
+    // a date change shows a load and never the previous day's money.
     const fetchDayPayouts = useCallback(async (date) => {
+        const fetchId = ++dayFetchIdRef.current;
+        const endPendingAction = beginPendingAction();
         setDayLoading(true);
-        setDaySummary(null);
-        setDayLineup(null);
-        setDayShiftStatus(null);
         try {
             const [shiftDoc, payoutEntries] = await Promise.all([
                 getDoc(doc(db, "shifts", date)),
                 fetchPayoutEntriesForDate(db, date),
             ]);
+            if (fetchId !== dayFetchIdRef.current) return;
             if (shiftDoc.exists()) {
                 const d = shiftDoc.data();
                 setDaySummary(attachLedgerPayoutsToSummary(d.summary || null, payoutEntries));
@@ -160,20 +175,53 @@ function AdminDashboard() {
                     runners: Array.isArray(d.runners) ? d.runners : [],
                 });
                 setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
+            } else {
+                // The date has no shift (or Remove just deleted it): held-over
+                // content must not stand.
+                setDaySummary(null);
+                setDayLineup(null);
+                setDayShiftStatus(null);
             }
         } catch (e) {
             console.error("Failed to fetch day payouts:", e);
+            if (fetchId !== dayFetchIdRef.current) return;
+            setDaySummary(null);
+            setDayLineup(null);
+            setDayShiftStatus(null);
         } finally {
-            setDayLoading(false);
+            // A superseded fetch leaves the newer one's state alone.
+            if (fetchId === dayFetchIdRef.current) {
+                setDayDataDate(date);
+                setDayLoading(false);
+            }
+            endPendingAction();
         }
-    }, []);
+    }, [beginPendingAction]);
 
     useEffect(() => {
+        setShiftSaved(false);
         fetchDayPayouts(selectedDate);
     }, [selectedDate, fetchDayPayouts]);
 
-    const handleEditorClose = () => {
+    useEffect(() => {
+        if (!shiftSaved) return undefined;
+        const timeoutId = window.setTimeout(() => setShiftSaved(false), 6000);
+        return () => window.clearTimeout(timeoutId);
+    }, [shiftSaved]);
+
+    // Every screen change starts at the top. The editor is a long scrolling form,
+    // so without this the landing arrives scrolled past its own rail and the saved
+    // confirmation. A programmatic scroll only ever reveals the floating actions
+    // (see FloatingActions), never hides them.
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: "auto" });
+    }, [activeTab]);
+
+    // Called by the editor on every exit - Cancel, floor Done, and a completed
+    // Confirm & Save - so only an explicit `saved` flag may claim a save happened.
+    const handleEditorClose = (options) => {
         setActiveTab("shifts");
+        setShiftSaved(options?.saved === true);
         fetchDayPayouts(selectedDate);
     };
 
@@ -202,6 +250,9 @@ function AdminDashboard() {
         if (!confirmed) return;
 
         setRemovingShift(true);
+        // Covers the delete itself; the refetch it hands over to registers its own,
+        // so the bar stays up across both.
+        const endPendingAction = beginPendingAction();
         try {
             await removeShiftAtomically({
                 db,
@@ -214,8 +265,9 @@ function AdminDashboard() {
             alert("Could not remove the shift. Please try again.");
         } finally {
             setRemovingShift(false);
+            endPendingAction();
         }
-    }, [removingShift, selectedDate, user, fetchDayPayouts]);
+    }, [removingShift, selectedDate, user, fetchDayPayouts, beginPendingAction]);
 
     const setActiveTabWithData = useCallback((tab) => {
         setActiveTab(tab);
@@ -292,6 +344,9 @@ function AdminDashboard() {
             onClick: () => handleNavItemClick(item.value),
         }));
 
+    // Day data is only shown for the date it was loaded for.
+    const dayDataIsCurrent = dayDataDate === selectedDate;
+
     // The desktop <h1> mirrors where the day actually is, instead of always
     // reading "Pay out" (which contradicted a fresh/setup day). The date now
     // lives once in the app-bar Bar Date pill, so there is no date band here.
@@ -330,7 +385,12 @@ function AdminDashboard() {
     const header = headerForTab();
 
     return (
+        <PendingActionsContext.Provider value={pendingActions}>
         <div className="min-h-screen bg-[var(--color-bg)]">
+            {/* Above the z-40 app bar: the one cue that must stay visible while a
+                write is in flight, including while the floating actions are away. */}
+            <TopProgressBar active={isPending} label="Saving and loading shift data" />
+
             {/* Top app bar */}
             {/* px-3 below sm: at 320px the home control, the date pill and the
                 account avatar only clear the viewport with the tighter inset.
@@ -472,10 +532,11 @@ function AdminDashboard() {
                         {activeTab === "shifts" ? (
                             <DayRailLanding
                                 date={selectedDate}
-                                summary={daySummary}
-                                lineup={dayLineup}
-                                status={dayShiftStatus}
-                                loading={dayLoading}
+                                summary={dayDataIsCurrent ? daySummary : null}
+                                lineup={dayDataIsCurrent ? dayLineup : null}
+                                status={dayDataIsCurrent ? dayShiftStatus : null}
+                                loading={dayLoading || !dayDataIsCurrent}
+                                savedNotice={shiftSaved}
                                 onBuildFloor={() => enterEditor("floor")}
                                 onContinueSettle={() => enterEditor("settle")}
                                 onOpenReview={() => enterEditor("review")}
@@ -515,6 +576,7 @@ function AdminDashboard() {
                 </main>
             </div>
         </div>
+        </PendingActionsContext.Provider>
     );
 }
 

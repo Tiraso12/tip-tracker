@@ -59,3 +59,25 @@ html, body {
 .font-mono, code, kbd, samp, pre {
   font-variant-numeric: tabular-nums;
 }
+
+/* Screen-level indeterminate progress line (see ui/TopProgressBar.jsx) */
+@keyframes top-progress-slide {
+  0%   { transform: translateX(-100%) scaleX(0.35); }
+  50%  { transform: translateX(15%)   scaleX(0.6); }
+  100% { transform: translateX(100%)  scaleX(0.35); }
+}
+
+.top-progress-indicator {
+  animation: top-progress-slide 1.15s cubic-bezier(0.45, 0, 0.35, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes top-progress-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.45; }
+  }
+
+  .top-progress-indicator {
+    animation: top-progress-pulse 1.4s ease-in-out infinite;
+  }
+}
