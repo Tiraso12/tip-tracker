@@ -4,20 +4,14 @@ import assert from "node:assert/strict";
 
 const readSource = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("App loads admin and chart surfaces through lazy boundaries", () => {
+test("App loads the admin workspace through a lazy boundary", () => {
     const source = readSource("src/App.jsx");
 
-    assert.doesNotMatch(
-        source,
-        /import\s+Charts\s+from\s+["']\.\/components\/Charts\/Charts["']/,
-        "Charts should not be eagerly imported into the main app chunk."
-    );
     assert.doesNotMatch(
         source,
         /import\s+AdminDashboard\s+from\s+["']\.\/components\/Admin\/AdminDashboard["']/,
         "AdminDashboard should not be eagerly imported into the main app chunk."
     );
-    assert.match(source, /lazy\(\(\)\s*=>\s*import\(["']\.\/components\/Charts\/Charts["']\)\)/);
     assert.match(source, /lazy\(\(\)\s*=>\s*import\(["']\.\/components\/Admin\/AdminDashboard["']\)\)/);
 });
 

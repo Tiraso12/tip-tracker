@@ -12,7 +12,7 @@ The app currently builds, lints, passes its unit test suite, passes Firestore ru
 
 The application supports two primary roles:
 
-- Employees log in, view weekly/monthly payout history, period summaries, calendars, and charts from their own `users/{uid}/tips` records.
+- Employees log in, view weekly/monthly payout history, period summaries, and calendars from their own `users/{uid}/tips` records.
 - Admins manage staff, build shift teams, enter closeout money, calculate payouts, save closed shifts, and generate PDF reports.
 
 The live app and roadmap identify the project as released and deployed to Firebase Hosting, with `v1.1.0` security hardening marked complete.
@@ -23,7 +23,6 @@ The live app and roadmap identify the project as released and deployed to Fireba
 - Firebase Authentication and Firestore
 - Tailwind CSS v4 with local design tokens
 - jsPDF and jsPDF-AutoTable for exports
-- Recharts for charts
 - Node's built-in test runner for utility tests
 - ESLint 9 flat config
 
@@ -49,7 +48,7 @@ For employees:
 1. Firebase auth resolves a user profile from `users/{uid}`.
 2. `DataService.setUserId()` points reads at the current employee.
 3. The app subscribes to only the date-key tip documents needed for the current employee view.
-4. Calendar, charts, and period summaries derive their data from the in-memory range cache.
+4. Calendar and period summaries derive their data from the in-memory range cache.
 
 For admins:
 
@@ -72,7 +71,7 @@ For admins:
 - Admin and employee access paths are clearly separated at the React level.
 - Firestore rules prevent basic self-elevation during signup and keep employee tip writes admin-only.
 - Firestore rules and admin closeout behavior are covered by local Firebase emulator tests.
-- Admin, chart, report, team management, and shift editor surfaces are lazy-loaded to reduce initial startup cost.
+- Admin, report, team management, and shift editor surfaces are lazy-loaded to reduce initial startup cost.
 - Admin employee collection reads are deferred until an employee-dependent admin panel is opened.
 - Employee tip subscriptions are scoped to the active pay period or visible month grid instead of full history.
 - Team Management uses `hasTipHistory` and `hasShiftHistory` flags before falling back to legacy scans.
@@ -87,7 +86,7 @@ For admins:
 - Admin operations are client-side SDK operations. There are no backend functions for stronger server-side enforcement, user deletion, bulk exports, or audited privileged operations.
 - Registration can create a Firebase Auth user before the Firestore batch succeeds; the code attempts cleanup, but failed client-side deletion remains an operational edge case.
 - The app imports Google Fonts directly from CSS, so visual rendering depends on network font availability.
-- Production build still emits a main chunk above Vite's default warning threshold, though heavy admin/chart/report/editor surfaces are split into lazy chunks.
+- Production build still emits a main chunk above Vite's default warning threshold, though heavy admin/report/editor surfaces are split into lazy chunks.
 
 ## Verification Run
 
@@ -115,7 +114,7 @@ Results:
 1. Add engine coverage for the no-captain captain-override limitation before fixing it.
 2. Add more Playwright coverage for Team Management, employee dashboard ranges, and auth state transitions.
 3. Consider backend functions for sensitive admin operations and account cleanup.
-4. Continue bundle work by manually chunking vendor-heavy PDF/chart dependencies if startup remains slow.
+4. Continue bundle work by manually chunking the vendor-heavy PDF dependencies if startup remains slow.
 5. Add CSV export or reporting improvements after the current save/security paths stay covered by integration tests.
 
 ## Overall Assessment

@@ -38,7 +38,6 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 - Role-based access with admin approval flow for new users
 - Team management — add/edit employees and their roles
 - Calendar view — navigate and open any past shift
-- Charts — visual earnings trends by employee and period
 - Real-time Firestore sync — data updates instantly across sessions
 
 ---
@@ -60,7 +59,6 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 | Auth | Firebase Authentication |
 | Hosting | Firebase Hosting |
 | PDF Generation | jsPDF + jsPDF-AutoTable |
-| Charts | Recharts |
 
 ---
 
@@ -76,7 +74,6 @@ src/
 │   │   ├── AdminReportsPanel.jsx    # Report generation UI
 │   │   └── TeamManagement.jsx       # Employee roster management
 │   ├── Calendar/                    # Month/week navigation
-│   ├── Charts/                      # Earnings visualizations
 │   └── Auth/                        # Login and approval flow
 ├── utils/
 │   ├── engine.js                    # Core calculation engine (pure JS)
