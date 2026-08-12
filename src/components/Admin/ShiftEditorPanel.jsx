@@ -7,7 +7,7 @@ import DayRail from "./DayRail";
 import ScrollRail from "./ScrollRail";
 import { getRailSteps } from "../../utils/dayFlow";
 import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleStatus";
-import { Button, Card } from "../ui";
+import { Card } from "../ui";
 import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
 import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
 import { ROLE_POINTS, RUNNER_FLAT_RATE } from "../../utils/constants";
@@ -65,19 +65,6 @@ function PoolField({ label, value, onChange, money = true }) {
                     aria-label={label}
                 />
             </div>
-        </div>
-    );
-}
-
-function SummaryMetric({ label, value }) {
-    return (
-        <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
-                {label}
-            </span>
-            <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)] truncate">
-                {value}
-            </strong>
         </div>
     );
 }
@@ -266,7 +253,7 @@ function BarPoolFields({ barTeam, onBarPoolChange }) {
             <PoolField label="Tips (CTP)" value={barTeam.pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
             <PoolField label="Gratuity" value={barTeam.pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
             <PoolField label="Covers" money={false} value={barTeam.pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />
-            <PoolField label="Runners Transfer" value={barTeam.pools.runners} onChange={(value) => onBarPoolChange("runners", value)} />
+            <PoolField label="Runners Fee" value={barTeam.pools.runners} onChange={(value) => onBarPoolChange("runners", value)} />
         </div>
     );
 }
@@ -542,10 +529,11 @@ function SpotCheckCard({ subject }) {
 // (money, floor, totals) share this shell so none of them reads as more urgent than
 // the others - the card is the screen, these are where you look if it disagrees.
 //
-// Everything inside is READ-ONLY, and that is structural rather than a preference: any
-// edit to money or roster nulls the calculation (ShiftEditorPanel `setCalculatedReview(null)`
-// on [teams, barTeam, runners, date]) and Review immediately falls back to Settle up.
-// So diagnosis happens here and each row offers one jump out to where writes belong.
+// Everything inside is READ-ONLY. Review derives from the live floor plan and money
+// (ShiftEditorPanel `liveReview`), so an edit made here would recompute the very card
+// above it under the captain's eyes. Diagnosis happens in these rows; each offers one
+// jump out to the screen where writes belong, and the numbers are already current when
+// you come back.
 function ReviewDisclosure({ title, meta, open, onToggle, children }) {
     return (
         <div className={"rounded-[var(--radius-md)] border "
@@ -584,10 +572,38 @@ function FixJump({ label, onClick }) {
     );
 }
 
+// One row of the Shift totals ledger. Label left, figure right, both on the same
+// baseline so the column of money reads straight down at a glance.
+function LedgerRow({ label, sub, value, tone = "plain" }) {
+    return (
+        <div className={"flex items-baseline justify-between gap-3 " + (tone === "total" ? "pt-2" : "")}>
+            <span className="min-w-0">
+                <span className={tone === "total"
+                    ? "text-[12px] font-semibold text-[var(--color-ink)]"
+                    : "text-[12px] text-[var(--color-ink-soft)]"}>
+                    {label}
+                </span>
+                {sub ? (
+                    <span className="block text-[10.5px] leading-tight text-[var(--color-ink-muted)]">{sub}</span>
+                ) : null}
+            </span>
+            <strong className={"shrink-0 font-mono tabular-nums "
+                + (tone === "total"
+                    ? "text-[15px] font-semibold text-[var(--color-ink)]"
+                    : "text-[12.5px] font-normal text-[var(--color-ink-soft)]")}>
+                {value}
+            </strong>
+        </div>
+    );
+}
+
 function CalculatedPayoutReview({
     review,
     poolAvailable,
+    barPoolEntered = 0,
+    runnersFeeTransfer = 0,
     availableCash = 0,
+    warnings = [],
     moneyGroups = [],
     floorGroups = [],
     floorPoints = 0,
@@ -595,10 +611,57 @@ function CalculatedPayoutReview({
     onFixFloor,
 }) {
     const { result, payoutRows, staffTotal } = review;
+
+    // ---- The three genuinely separate destinations the engine pays into. ----
+    // Split straight off `payoutRows` (the same rows the spot-check card reads), so
+    // these can never drift from the per-person figures shown above them.
+    //
+    // The engine keeps dining and bar as SEPARATE pools with separate point values:
+    // dining splits `adjustedTeamCTPPool`/`adjustedTeamGRTPool` over `totalAllTeamPoints`
+    // (bartenders excluded), bar splits `adjustedBarCTPPool`/`adjustedBarGRTPool` over
+    // `totalBarPoints` (engine.js §8/§10). Verified: adding $1,000 to bar tips moves bar
+    // take-home by $1,000 and dining by exactly $0.00. Any figure here that merges them
+    // is a presentation choice, never the engine's model - so nothing labelled "floor"
+    // may contain bar money.
+    const barTake = payoutRows
+        .filter(payout => payout.role === "bartender")
+        .reduce((sum, payout) => sum + getPayoutNonCashTotal(payout), 0);
+    const runnerTake = payoutRows
+        .filter(payout => payout.role === "runner")
+        .reduce((sum, payout) => sum + getPayoutNonCashTotal(payout), 0);
+    const diningTake = staffTotal - barTake - runnerTake;
+
     // The pool and the staff take-home read as two competing "totals"; the gap is the
-    // house/door cut the engine holds back from the pool. Show it as one small equation
-    // so the two numbers read as related, not contradictory.
-    const houseDoor = Math.max(0, (Number(poolAvailable) || 0) - staffTotal);
+    // house/door cut the engine holds back from the pool.
+    //
+    // Deliberately NOT clamped at zero. This is a residual, so clamping a negative to
+    // $0.00 would print an equation that does not add up (pool − 0 ≠ take-home) - the
+    // exact "confident wrong number" this footer exists to catch. An over-distributed
+    // shift shows a negative house/door, which is the truth and is worth seeing.
+    //
+    // House/door is entirely DINING-side: every component (door CTP off regular sales,
+    // door GRT / PE coordinator / house off contract sales) is computed from team sales
+    // and subtracted from the dining pools only - `rawBarCTPPool` never sees it
+    // (engine.js §2 PRE-DISTRIBUTIONS / §4 TEAM POOLS). So it belongs on the dining
+    // side of any split ledger, never against the combined pool.
+    const houseDoor = (Number(poolAvailable) || 0) - staffTotal;
+    // The bar's cut of the dining room's money: 1% of regular sales off the dining CTP
+    // pool and 1% of contract sales off the dining GRT pool, both added straight onto
+    // the bar pools. A real transfer BETWEEN the two sides, so it is a subtraction on
+    // the dining ledger and an addition on the bar ledger - never a deduction from the
+    // combined total, which it does not change.
+    const barAllocation = (Number(result.allocations?.barCTPAllocation) || 0)
+        + (Number(result.allocations?.barGRTAllocation) || 0);
+
+    // Each side's own entered pool. Both ledgers below close exactly against the
+    // engine's payouts (verified on the seeded shift and on the captain's 2026-08-12):
+    //   dining: entered − house/door − runners − barAllocation + runnersFee = diningTake
+    //   bar:    entered + barAllocation − runnersFee                        = barTake
+    const diningPoolEntered = (Number(poolAvailable) || 0) - (Number(barPoolEntered) || 0);
+    const feeTransfer = Number(runnersFeeTransfer) || 0;
+
+    const overallBalance = Number(result.balances?.overallBalance) || 0;
+    const balanced = Math.abs(overallBalance) <= 0.05;
     // One row open at a time: the spot-check card is the point of the screen and must
     // not be pushed off the top by two expanded blocks at once.
     const [openRow, setOpenRow] = useState(null);
@@ -660,7 +723,11 @@ function CalculatedPayoutReview({
                                 <strong className="text-[13px] text-[var(--color-ink)]">{group.name}</strong>
                                 <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">
                                     {group.members.length} {group.members.length === 1 ? "person" : "people"}
-                                    {group.kind === "runners" ? null : <> · {group.points} {group.points === 1 ? "pt" : "pts"}</>}
+                                    {group.kind === "runners"
+                                        ? (group.members.length > 0
+                                            ? <> · <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(group.pay)}</span> off the pool</>
+                                            : null)
+                                        : <> · {group.points} {group.points === 1 ? "pt" : "pts"}</>}
                                 </span>
                             </div>
                             <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-ink-soft)]">
@@ -672,42 +739,186 @@ function CalculatedPayoutReview({
                 </div>
             </ReviewDisclosure>
 
-            {/* Today's headline, demoted. It is not the comparison the captain came to
-                make; it stays as one row because it costs one row and could surface a
-                bad total before committing. */}
+            {/* Today's headline, demoted but deliberately ordered. This footer is the only
+                pre-commit sight of a bad total, so it earns its row - but the old flat grid
+                (Employees / Available pool / Available cash / Runner pay / Balance) dumped
+                five equal-weight figures with no answer to "which one am I checking?".
+
+                THE RULE THIS SECTION EXISTS TO HOLD: dining and bar are SEPARATE POOLS in
+                the engine - dining splits its pool over `totalAllTeamPoints` (bartenders
+                excluded), the bar splits its own over `totalBarPoints` (engine.js S8/S10).
+                Verified: +$1,000 of bar tips moves bar take-home by $1,000 and dining by
+                exactly $0.00. So no figure here may put bar money inside a floor-labelled
+                number, and no total may merge the two silently. A previous version of this
+                block called `staffTotal - runners` "Split among the floor" - on a real
+                shift that read $626.38 when the bar was $352.23 of it. Do not reintroduce
+                a floor-sounding label over any combined figure. */}
             <ReviewDisclosure
                 title="Shift totals"
-                meta={<>take-home <span className="font-mono tabular-nums">{fmtMoney(staffTotal)}</span></>}
+                meta={warnings.length > 0
+                    ? (
+                        <span className="inline-flex items-center gap-1.5 text-[var(--color-warning)]">
+                            <span aria-hidden="true">⚠</span>
+                            {warnings.length} {warnings.length === 1 ? "warning" : "warnings"}
+                        </span>
+                    )
+                    : <>paid out <span className="font-mono tabular-nums">{fmtMoney(staffTotal)}</span></>}
                 open={openRow === "totals"}
                 onToggle={() => toggle("totals")}
             >
                 <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--color-ink-muted)]">
-                        <span className="uppercase tracking-wide">Available pool</span>
-                        <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(poolAvailable)}</span>
-                        <span className="font-mono">−</span>
-                        <span className="uppercase tracking-wide">House / door</span>
-                        <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(houseDoor)}</span>
-                        <span className="font-mono">=</span>
-                        <span className="uppercase tracking-wide">Staff take-home</span>
-                        <span className="font-mono tabular-nums font-semibold text-[var(--color-accent)]">{fmtMoney(staffTotal)}</span>
+                    {/* The dining ledger, then the three destinations it resolves into.
+                        There is deliberately NO parallel bar ledger: the captain's call,
+                        and a correct one - the footer below already names dining take-home,
+                        bar take-home and runners, so a second column deriving the bar would
+                        state the same figure twice. What the bar needs from this ledger is
+                        the transfer pair, and both legs are visible here as dining-side
+                        movements ("− To the bar", "+ Runners fee"). */}
+                    <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5 space-y-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-muted)]">
+                            Dining room
+                        </span>
+                        <LedgerRow label="Pool entered" value={fmtMoney(diningPoolEntered)} />
+                        <LedgerRow label="− House / door" sub="leaves staff" value={fmtMoney(houseDoor)} />
+                        <LedgerRow label="− Runners" sub="paid off the top" value={fmtMoney(runnerTake)} />
+                        <LedgerRow label="− To the bar" sub="bar allocation" value={fmtMoney(barAllocation)} />
+                        <LedgerRow label="+ Runners fee" sub="from the bar" value={fmtMoney(feeTransfer)} />
+                        <div className="border-t border-[var(--color-line)]" />
+                        <LedgerRow label="= Dining take-home" value={fmtMoney(diningTake)} tone="total" />
                     </div>
-                    {/* Cash is money too, but it is distributed separately and must never fold
-                        into the pool total (CTP + GRT). Show the pool and cash as two clearly
-                        separated figures so "Available" never means two different numbers. */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-2.5">
-                        <SummaryMetric label="Employees" value={payoutRows.length.toLocaleString()} />
-                        <SummaryMetric label="Available pool" value={fmtMoney(poolAvailable)} />
-                        <SummaryMetric label="Available cash" value={fmtMoney(availableCash)} />
-                        <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
-                        <SummaryMetric label="Balance" value={fmtMoney(result.balances?.overallBalance)} />
+
+                    {/* Intent option 1: an all-in total that is ALWAYS decomposed and is
+                        never called the floor. The three rows are the engine's three real
+                        destinations - dining pool, bar pool, runners - so the combined
+                        figure can never read as one pooled split. Keeping it is what lets
+                        the balance check below mean anything: the engine reconciles
+                        `totalAvailable − totalDistributed` across all three, so dropping
+                        the combined number would leave "✓ Balanced" anchored to nothing. */}
+                    <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface-muted)] px-3 py-2.5 space-y-1.5">
+                        <LedgerRow label="Dining take-home" sub="split by dining points" value={fmtMoney(diningTake)} />
+                        <LedgerRow label="Bar take-home" sub="its own pool, split by bar points" value={fmtMoney(barTake)} />
+                        <LedgerRow label="Runners" sub="flat, off the dining pool" value={fmtMoney(runnerTake)} />
+                        <div className="border-t border-[var(--color-line)]" />
+                        <LedgerRow label="= Everyone paid" sub="all three pools, CTP + GRT" value={fmtMoney(staffTotal)} tone="total" />
                     </div>
+
+                    {/* Tier 3 - the cross-checks. Cash is money too, but it is distributed
+                        separately and must never fold into the pool total (CTP + GRT); it
+                        sits here because unlike every derived figure above it is a number
+                        the captain typed, so it is the one worth checking against reality. */}
+                    <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5 space-y-2">
+                        <LedgerRow
+                            label="Available cash"
+                            sub="you entered this - check it against the drawer"
+                            value={fmtMoney(availableCash)}
+                        />
+                        <div className="flex items-baseline justify-between gap-3 border-t border-[var(--color-line)] pt-2">
+                            <span className="text-[12px] text-[var(--color-ink-soft)]">Balance check</span>
+                            {balanced ? (
+                                <span className="shrink-0 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[var(--color-accent)]">
+                                    <span aria-hidden="true">✓</span> Balanced
+                                </span>
+                            ) : (
+                                <span className="shrink-0 inline-flex items-center gap-1.5 text-[12px] font-semibold text-[var(--color-warning)]">
+                                    <span aria-hidden="true">⚠</span> Off by{" "}
+                                    <span className="font-mono tabular-nums">{fmtMoney(Math.abs(overallBalance))}</span>
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* The engine's own warnings. The numbers are complete (or this screen
+                        would be showing ReviewNotReady instead), but these are the things
+                        that should stop a captain from committing. */}
+                    {warnings.length > 0 ? (
+                        <ul className="rounded-[var(--radius-sm)] border border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)] px-3 py-2.5 space-y-1 text-[11.5px] leading-snug text-[var(--color-ink)]">
+                            {warnings.map((warning, index) => (
+                                <li key={`${warning}-${index}`} className="flex gap-1.5">
+                                    <span aria-hidden="true" className="text-[var(--color-warning)]">⚠</span>
+                                    <span>{warning}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : null}
                 </div>
             </ReviewDisclosure>
         </div>
     );
 }
 
+
+// The quiet successor to the full-width "Calculate Payouts →" primary on a locked
+// Settle up. Nothing here calculates - payouts follow the data now - so it is a
+// secondary row that carries the running take-home and doubles as a jump to Review.
+// When the money is not complete enough to compute, it says that plainly instead of
+// showing a placeholder figure that would read as a real total.
+// The label here was the captain's second report: it read "Take-home", which sounded
+// like one pooled figure when it is in fact dining + bar + runners, three separate
+// pools. It says "Paid out" now - a true description of an all-in figure - and the
+// per-pool breakdown lives on Review where there is room to show the separation.
+function SettleReviewLink({ ready, staffTotal, onClick }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--color-line-strong)] bg-[var(--color-surface)] px-4 py-3 min-h-[44px] text-left transition-colors hover:border-[var(--color-accent)]"
+        >
+            <span className="text-[13px] font-semibold text-[var(--color-accent)]">
+                Review payouts <span aria-hidden="true">→</span>
+            </span>
+            {ready ? (
+                <span className="inline-flex items-baseline gap-1.5 shrink-0">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
+                        Paid out
+                    </span>
+                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
+                        {fmtMoney(staffTotal)}
+                    </strong>
+                </span>
+            ) : (
+                <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">Not ready yet</span>
+            )}
+        </button>
+    );
+}
+
+// Review when the inputs cannot produce a complete calculation. Showing the reasons is
+// the whole job: the alternative - a confident total built from half the money - is the
+// one failure this screen exists to prevent. Each reason is the validator's own wording,
+// and the two jumps go to where the missing thing is actually entered.
+function ReviewNotReady({ blockers = [], hasFloorStaff = false, onFixMoney, onFixFloor }) {
+    return (
+        <div className="space-y-3">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] px-4 py-4">
+                <div className="flex items-baseline gap-2">
+                    <span aria-hidden="true" className="text-[var(--color-warning)]">⚠</span>
+                    <div className="space-y-1.5">
+                        <strong className="block text-sm text-[var(--color-ink)]">
+                            No payouts to review yet
+                        </strong>
+                        <p className="text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
+                            Payouts follow the floor plan and the money you enter. These are still
+                            missing, so there is no total to check:
+                        </p>
+                        <ul className="list-disc pl-4 text-[12.5px] leading-relaxed text-[var(--color-ink)] space-y-0.5">
+                            {blockers.map((blocker, index) => (
+                                <li key={`${blocker}-${index}`}>{blocker}</li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            {/* The jumps follow the same order the day does, and the money jump is
+                withheld until somebody is on the floor - the rail disables Settle until
+                then, so offering it here would contradict the pill two inches above. */}
+            <FixJump
+                label={hasFloorStaff ? "Fix on the Floor plan" : "Build the floor plan"}
+                onClick={onFixFloor}
+            />
+            {hasFloorStaff ? <FixJump label="Enter money in Settle up" onClick={onFixMoney} /> : null}
+        </div>
+    );
+}
 
 // The floating action pair pinned to the bottom-right corner, shared by the Floor
 // plan and Settle up editors so both screens enter/exit edit identically. Cancel is
@@ -765,11 +976,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [hasLoadedShift, setHasLoadedShift] = useState(false);
-    const [calculatedReview, setCalculatedReview] = useState(null);
     const [shiftStatus, setShiftStatus] = useState(null);
     // Day-step spine (shared by both flow shells): "floor" -> "settle" -> "review".
     // The old two-accordion editor is retired; each step is its own focused screen.
-    const [step, setStep] = useState(initialStep === "settle" ? "settle" : "floor");
+    const [step, setStep] = useState(["settle", "review"].includes(initialStep) ? initialStep : "floor");
     const [activeGroupId, setActiveGroupId] = useState("team-1");
     // Settle up lands LOCKED: the money form is visible but its fields are disabled
     // until the admin taps the floating Edit. Done/Cancel re-lock in place (they do
@@ -881,6 +1091,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     // Review's rung 2: every group's money exactly as it was typed at Settle up, all on
     // one screen. Settle up itself shows one group at a time, so this is the only place
     // the whole entry can be scanned for a typo in a single read.
+    //
+    // Runners are deliberately NOT here. Money you entered means money that FUNDS the
+    // pool; runner pay is drawn OUT of that pool (engine.js subtracts `totalRunnerPay`
+    // from the raw team CTP pool before the point split). Listing it alongside CTP and
+    // GRT read as if runner pay added to the pool, overstating what there is to split.
+    // Runner pay now appears in Shift totals as the deduction it is, and the runners
+    // themselves stay in "Who's on the floor".
     const reviewMoneyGroups = useMemo(() => {
         const moneyEntry = (label, value) => ({
             label,
@@ -917,19 +1134,19 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                     moneyEntry("CTP", barTeam.pools?.tips),
                     moneyEntry("GRT", barTeam.pools?.gratuity),
                     moneyEntry("Sales", barTeam.pools?.sales),
+                    // The bar's "Runners Fee" field (`pools.runners`). Despite the name
+                    // this is NOT runner pay - that is the flat per-runner amount, which
+                    // leaves the pool entirely and lives in Shift totals. This is a MOVE
+                    // between the two sides: engine.js adds it to the dining CTP pool and
+                    // takes the same amount off the bar CTP pool, so it changes who splits
+                    // the money without changing how much there is. Keep this label in
+                    // step with the PoolField on the Bar entry screen - the captain scans
+                    // this row against the field they typed, so the two must read alike.
+                    moneyEntry("Runners fee", barTeam.pools?.runners),
                 ],
             },
-            {
-                id: "runners",
-                name: "Runners",
-                poolLabel: "pay",
-                pool: poolSummary.totalRunnerPay,
-                entries: runners.length > 0
-                    ? runners.map(runner => moneyEntry(runner.name || "Runner", runner.payoutAmount ?? RUNNER_FLAT_RATE))
-                    : [{ label: "No runners", value: "", empty: true }],
-            },
         ];
-    }, [teams, barTeam, runners, poolSummary]);
+    }, [teams, barTeam, poolSummary]);
 
     // Review's rung 3: the floor as it stands, for spotting someone who should not be on.
     const reviewFloorGroups = useMemo(() => {
@@ -955,9 +1172,55 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                 name: "Runners",
                 members: memberNames(runners),
                 points: 0,
+                // Runners split no points - they are paid a flat amount off the pool - so
+                // their meta carries that pay instead. It is the only place on Review the
+                // per-group runner figure appears now that it is out of "Money you entered",
+                // and here it reads as what it is: money leaving the pool, not funding it.
+                pay: poolSummary.totalRunnerPay,
             },
         ];
-    }, [teams, barTeam, runners, poolSummary.barPoints]);
+    }, [teams, barTeam, runners, poolSummary.barPoints, poolSummary.totalRunnerPay]);
+
+    // THE payout calculation, derived from the CURRENT floor plan and money on every
+    // render rather than captured by a button press. That is the whole point: the old
+    // model stored a snapshot in state and nulled it on any edit, so adding one person
+    // on the Floor plan made Review unreachable until you walked back to Settle up and
+    // pressed Calculate Payouts again. Recalculation now follows the data.
+    //
+    // `calculateShift` is pure - it reads the inputs and returns a result, writing
+    // nothing - so deriving it costs nothing but the arithmetic and cannot persist a
+    // half-finished shift. Confirm & Save is still the only thing that writes.
+    //
+    // The guard that matters: when the inputs cannot produce a complete calculation
+    // this returns `ready: false` with the reasons, and Review renders those reasons
+    // instead of a confident wrong total. Review NEVER shows a partially-derived
+    // number as if it were final.
+    const liveReview = useMemo(() => {
+        if (!hasLoadedShift) return { ready: false, blockers: [], warnings: [] };
+
+        const blockers = validateShiftInputs({ teams, barTeam, runners });
+        if (blockers.length > 0) return { ready: false, blockers, warnings: [] };
+
+        const result = calculateShift({ teams, barTeam, runners });
+        const mappedPayouts = mapPayoutsForFirebase(result);
+        if (Object.keys(mappedPayouts).length === 0) {
+            return {
+                ready: false,
+                blockers: ["Assign at least one employee before payouts can be calculated."],
+                warnings: [],
+            };
+        }
+
+        return {
+            ready: true,
+            blockers: [],
+            // Engine warnings (a shift that does not balance, a negative runner payout).
+            // Not blockers - the numbers are complete - but the captain must see them
+            // before committing, so Review surfaces them in Shift totals.
+            warnings: result.validations || [],
+            ...buildPayoutReview(result, mappedPayouts),
+        };
+    }, [hasLoadedShift, teams, barTeam, runners]);
 
     const hasAssignedStaff = useMemo(() => (
         teams.some(team => team.members.length > 0) || barTeam.members.length > 0 || runners.length > 0
@@ -1082,10 +1345,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         }));
     };
 
-    useEffect(() => {
-        setCalculatedReview(null);
-    }, [teams, barTeam, runners, date]);
-
     // Settle up always (re-)enters locked: switching day-steps or loading a new day
     // returns the money form to its read-only view.
     useEffect(() => {
@@ -1193,7 +1452,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         if (isSaving) return;
 
         if (shiftStatus === "closed") {
-            setSaveStatus("This shift is already closed and paid out. Use Calculate Payouts → Confirm & Save Shift to update the roster and payouts together.");
+            setSaveStatus("This shift is already closed and paid out. Go to Review and Confirm & Save Shift to update the roster and payouts together.");
             return false;
         }
 
@@ -1236,8 +1495,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     // Settle up "Done": persist the entered money (as the shift's setup draft, the
     // same shape autosave writes) and RE-LOCK in place - stays on the Settle screen,
     // returning to the locked view. A closed shift instead takes the paid-out path
-    // (Done -> Calculate -> Review -> Confirm & Save), so this only runs for a setup
-    // shift; the closed case is wired to handleCalculateForReview on the button.
+    // (Done -> Review -> Confirm & Save), so this only runs for a setup shift; the
+    // closed case is wired to goToReview on the button.
     const handleDoneSettle = async () => {
         if (isSaving) return;
         setIsSaving(true);
@@ -1269,7 +1528,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     // Cancel: leave edit mode WITHOUT committing and return to the read-only landing.
     // onClose() re-reads the day, so nothing in-editor is written. A setup shift
     // autosaves its draft continuously, so leaving loses nothing and needs no prompt.
-    // A closed shift disables autosave (edits only persist through Calculate Payouts ->
+    // A closed shift disables autosave (edits only persist through Review ->
     // Confirm & Save), so an in-progress edit would be dropped - guard that with a
     // discard confirmation, matching the app's other lossy actions (Remove shift).
     const handleCancelEdit = () => {
@@ -1278,7 +1537,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         if (wouldDropWork) {
             const confirmed = window.confirm(
                 "Discard your changes to this closed shift?\n\n" +
-                "Edits to a paid-out shift are only saved when you Calculate Payouts and " +
+                "Edits to a paid-out shift are only saved when you go to Review and " +
                 "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
                 "current payouts unchanged."
             );
@@ -1307,7 +1566,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         if (shiftStatus === "closed" && changed) {
             const confirmed = window.confirm(
                 "Discard your changes to this closed shift's money?\n\n" +
-                "Edits to a paid-out shift are only saved when you Calculate Payouts and " +
+                "Edits to a paid-out shift are only saved when you go to Review and " +
                 "Confirm & Save Shift. Discarding keeps the saved payouts unchanged."
             );
             if (!confirmed) return;
@@ -1321,65 +1580,31 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         setSettleEditable(false);
     };
 
-    // Day rail step navigation (Floor -> Settle -> Review). Earlier steps are always
-    // reachable; Review is only reachable once payouts have been calculated. (The old
-    // "Pay out" pill that exited to the landing was removed - the side nav / save
-    // flows already return there.)
+    // Day rail step navigation (Floor -> Settle -> Review). Every step is one tap away
+    // in the editor, including Review: it derives from the live inputs, so there is
+    // nothing to unlock. (The old "Pay out" pill that exited to the landing was removed
+    // - the side nav / save flows already return there.)
     const goToStep = (key) => {
-        if (key === "review" && !calculatedReview) {
-            // A saved shift already has payouts, so tapping Review goes straight there
-            // rather than dead-ending until you detour through Settle up. The payouts
-            // are recomputed from the shift's own saved inputs by the same pure
-            // `calculateShift` the Calculate button runs - it writes nothing, and
-            // Confirm & Save is still the only thing that persists anything.
-            if (shiftStatus === "closed") handleCalculateForReview();
-            return;
-        }
+        // Leaving Settle by the rail abandons an in-progress money edit's UNLOCKED state
+        // but keeps the typed values, which is what the rail's other jumps already do.
         setStep(key);
     };
 
-    const handleCalculateForReview = () => {
+    // Review as a destination: used by the closed-shift Done buttons, which route the
+    // paid-out edit through Review -> Confirm & Save rather than saving in place.
+    const goToReview = () => {
         if (isSaving) return;
-
-        const inputErrors = validateShiftInputs({ teams, barTeam, runners });
-        if (inputErrors.length > 0) {
-            setValidationMessages(inputErrors);
-            setSaveStatus("Fix the highlighted items before saving.");
-            return;
-        }
-
         setValidationMessages([]);
-        setSaveStatus("Calculating payouts…");
-
-        const result = calculateShift({ teams, barTeam, runners });
-
-        if (result.validations?.length > 0) {
-            setValidationMessages(result.validations);
-            setSaveStatus("Review warnings and calculated payouts before saving.");
-        } else {
-            setValidationMessages([]);
-            setSaveStatus("Review calculated payouts before saving.");
-        }
-
-        const mappedPayoutsForFirebase = mapPayoutsForFirebase(result);
-        const payoutCount = Object.keys(mappedPayoutsForFirebase).length;
-
-        if (payoutCount === 0) {
-            setValidationMessages(["Assign at least one employee before saving the shift."]);
-            setSaveStatus("Cannot save shift: no employees are assigned.");
-            setTimeout(() => setSaveStatus(""), 4000);
-            return;
-        }
-
-        setCalculatedReview(buildPayoutReview(result, mappedPayoutsForFirebase));
+        setSaveStatus("");
+        setSettleEditable(false);
         setStep("review");
     };
 
     const handleConfirmSave = async () => {
-        if (isSaving || !calculatedReview) return;
+        if (isSaving || !liveReview.ready) return;
 
-        const mappedPayoutsForFirebase = calculatedReview.mappedPayouts;
-        const result = calculatedReview.result;
+        const mappedPayoutsForFirebase = liveReview.mappedPayouts;
+        const result = liveReview.result;
 
         setIsSaving(true);
         setSaveStatus("Saving…");
@@ -1397,7 +1622,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
             });
             setSaveStatus("Saved.");
             setShiftStatus("closed");
-            setCalculatedReview(null);
 
             setTimeout(() => {
                 onClose();
@@ -1410,8 +1634,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
         }
     };
 
-    // Effective step guards a stray "review" with no calculation behind it.
-    const effectiveStep = step === "review" && !calculatedReview ? "settle" : step;
+    // Review no longer bounces back to Settle up when the numbers are not ready. Being
+    // silently redirected was the confusing half of the old model - the captain tapped
+    // Review and landed somewhere else with no explanation. Review is now always its
+    // own screen; when the inputs are incomplete it says what is missing (see
+    // `ReviewNotReady`) instead of pretending to be Settle up.
+    const effectiveStep = step;
 
     // The editing "layer" (accent frame + "Editing" strip) is active on the floor and
     // review steps, and on Settle up only once it is unlocked. A locked Settle up reads
@@ -1426,7 +1654,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
     const railSteps = getRailSteps({
         activeStep: effectiveStep,
         shiftStatus,
-        hasCalculatedReview: Boolean(calculatedReview),
+        reviewReady: liveReview.ready,
+        hasFloorStaff: hasAssignedStaff,
     });
 
     // Floor and Review both fill the phone screen rather than shrink-wrapping their
@@ -1557,12 +1786,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                     mode WITHOUT saving and returns to the read-only floor view; Done
                                     commits. For a setup shift Done saves the draft and returns; for a
                                     settled/paid shift it routes into the EXISTING overwrite-confirmed
-                                    save (handleCalculateForReview -> Review with the "Re-saving
-                                    overwrites the saved payouts for {date}" warning + Confirm & Save).
+                                    save (Review, with the "Re-saving overwrites the saved payouts
+                                    for {date}" warning + Confirm & Save).
                                     Nothing is written until that explicit confirm. */}
                                 <EditorActionPair
                                     onCancel={handleCancelEdit}
-                                    onPrimary={shiftStatus === "closed" ? handleCalculateForReview : handleDoneFloor}
+                                    onPrimary={shiftStatus === "closed" ? goToReview : handleDoneFloor}
                                     primaryLabel={isSaving ? "Saving…" : "✓ Done"}
                                     busy={isSaving}
                                 />
@@ -1669,7 +1898,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                 {/* A closed shift disables draft autosave, so surface the live save/
                                     draft status inline; a setup shift's money autosaves silently. */}
                                 {(saveStatus || draftStatus) ? (
-                                    <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
+                                    <p aria-live="polite" aria-atomic="true" className="sm:hidden text-xs text-[var(--color-ink-soft)]">
                                         {saveStatus || draftStatus}
                                     </p>
                                 ) : null}
@@ -1677,27 +1906,28 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                 {settleEditable ? (
                                     /* Editing: the floor plan's floating pair. Cancel re-locks without
                                        saving; Done saves the money and re-locks in place (a closed shift
-                                       instead takes the paid-out path: Done -> Calculate -> Review). */
+                                       instead takes the paid-out path: Done -> Review -> Confirm & Save). */
                                     <EditorActionPair
                                         onCancel={handleCancelSettle}
-                                        onPrimary={shiftStatus === "closed" ? handleCalculateForReview : handleDoneSettle}
+                                        onPrimary={shiftStatus === "closed" ? goToReview : handleDoneSettle}
                                         primaryLabel={isSaving ? "Saving…" : "✓ Done"}
                                         busy={isSaving}
                                     />
                                 ) : (
                                     <>
-                                        {/* Locked view: Calculate Payouts stays available so the shift
-                                            can always advance to Review -> Confirm & Save without
-                                            unlocking, and the single floating Edit button unlocks the
-                                            very same fields for changes. */}
-                                        <Button
-                                            onClick={handleCalculateForReview}
-                                            disabled={isSaving}
-                                            size="lg"
-                                            className="w-full"
-                                        >
-                                            Calculate Payouts →
-                                        </Button>
+                                        {/* The old full-width accent "Calculate Payouts →" primary lived
+                                            here. It no longer earns that weight: payouts recalculate from
+                                            the live inputs, so this button only NAVIGATES - and the rail
+                                            directly above already navigates to Review from any step. What
+                                            it keeps is worth one quiet row: the running take-home, so the
+                                            headline number is visible from the money screen without a
+                                            trip to Review. Secondary (outline) so the floating ✎ Edit
+                                            stays the only accent action on a locked Settle up. */}
+                                        <SettleReviewLink
+                                            ready={liveReview.ready}
+                                            staffTotal={liveReview.staffTotal}
+                                            onClick={() => setStep("review")}
+                                        />
                                         <button
                                             type="button"
                                             onClick={handleEditSettle}
@@ -1719,42 +1949,63 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor" }
                                padding is the floating save button's clearance, exactly as
                                Settle up does it. */
                             <section className="space-y-4 pb-24 sm:mx-auto sm:max-w-lg max-[560px]:flex-1">
-                                <CalculatedPayoutReview
-                                    review={calculatedReview}
-                                    poolAvailable={poolSummary.payoutPool}
-                                    availableCash={poolSummary.totalCash}
-                                    moneyGroups={reviewMoneyGroups}
-                                    floorGroups={reviewFloorGroups}
-                                    floorPoints={poolSummary.restaurantPoints + poolSummary.barPoints}
-                                    onFixMoney={() => setStep("settle")}
-                                    onFixFloor={() => setStep("floor")}
-                                />
+                                {liveReview.ready ? (
+                                    <CalculatedPayoutReview
+                                        review={liveReview}
+                                        poolAvailable={poolSummary.payoutPool}
+                                        barPoolEntered={poolSummary.bar.payoutPool}
+                                        runnersFeeTransfer={poolSummary.runnerTransfer}
+                                        availableCash={poolSummary.totalCash}
+                                        warnings={liveReview.warnings}
+                                        moneyGroups={reviewMoneyGroups}
+                                        floorGroups={reviewFloorGroups}
+                                        floorPoints={poolSummary.restaurantPoints + poolSummary.barPoints}
+                                        onFixMoney={() => setStep("settle")}
+                                        onFixFloor={() => setStep("floor")}
+                                    />
+                                ) : (
+                                    <ReviewNotReady
+                                        blockers={liveReview.blockers}
+                                        hasFloorStaff={hasAssignedStaff}
+                                        onFixMoney={() => setStep("settle")}
+                                        onFixFloor={() => setStep("floor")}
+                                    />
+                                )}
 
-                                {shiftStatus === "closed" ? (
+                                {liveReview.ready && shiftStatus === "closed" ? (
                                     <p className="flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
                                         <span aria-hidden="true">⚠</span>
                                         <span>Re-saving overwrites the saved payouts for {date}.</span>
                                     </p>
                                 ) : null}
 
-                                {/* The step's warnings block is suppressed above, so this inline
-                                    line is the only channel left for save progress and failure. */}
+                                {/* Phone only. The step's warnings block is suppressed above, so
+                                    this is the only channel left for save progress and failure on a
+                                    narrow screen - but the desktop workspace header already carries
+                                    the very same string, and rendering both printed "Draft saved."
+                                    twice on one screen. */}
                                 {(saveStatus || draftStatus) ? (
-                                    <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
+                                    <p aria-live="polite" aria-atomic="true" className="sm:hidden text-xs text-[var(--color-ink-soft)]">
                                         {saveStatus || draftStatus}
                                     </p>
                                 ) : null}
 
                                 {/* Same floating primary as the Floor plan and Settle up: one
-                                    accent pill, bottom-right, always in reach without scrolling. */}
-                                <button
-                                    type="button"
-                                    onClick={handleConfirmSave}
-                                    disabled={isSaving}
-                                    className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-                                >
-                                    {isSaving ? "Saving…" : "✓ Confirm & Save Shift"}
-                                </button>
+                                    accent pill, bottom-right, always in reach without scrolling.
+                                    It is only rendered when there is a complete calculation to
+                                    commit - an incomplete Review offers the fix jumps instead,
+                                    so there is never a save button over numbers that do not
+                                    exist yet. */}
+                                {liveReview.ready ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleConfirmSave}
+                                        disabled={isSaving}
+                                        className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                                    >
+                                        {isSaving ? "Saving…" : "✓ Confirm & Save Shift"}
+                                    </button>
+                                ) : null}
                             </section>
                         )}
                     </div>

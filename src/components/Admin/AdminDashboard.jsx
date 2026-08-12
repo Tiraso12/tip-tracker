@@ -225,7 +225,7 @@ function AdminDashboard() {
     // Enter the day flow (the shift editor) focused on a specific step. The Day
     // Rail landing CTAs route through here.
     const enterEditor = useCallback((initialStep = "floor") => {
-        setEditorStep(initialStep === "settle" ? "settle" : "floor");
+        setEditorStep(["settle", "review"].includes(initialStep) ? initialStep : "floor");
         setActiveTabWithData("editor");
     }, [setActiveTabWithData]);
 
@@ -416,6 +416,7 @@ function AdminDashboard() {
                                 loading={dayLoading}
                                 onBuildFloor={() => enterEditor("floor")}
                                 onContinueSettle={() => enterEditor("settle")}
+                                onOpenReview={() => enterEditor("review")}
                                 onEditFloor={() => enterEditor("floor")}
                                 onRemoveShift={handleRemoveShift}
                                 removingShift={removingShift}

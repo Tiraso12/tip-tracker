@@ -52,14 +52,26 @@ export function getFocusStep({ activeStep = null, shiftStatus = null }) {
 
 // Build the four rail pills with per-step status + reachability. Used by both
 // the landing rail (activeStep omitted) and the in-editor rail (activeStep set).
-export function getRailSteps({ activeStep = null, shiftStatus = null, hasCalculatedReview = false } = {}) {
+export function getRailSteps({
+    activeStep = null,
+    shiftStatus = null,
+    reviewReady = false,
+    hasFloorStaff = false,
+} = {}) {
     const hasFloor = hasFloorPlan(shiftStatus);
     const closed = isClosedShift(shiftStatus);
     const inEditor = Boolean(activeStep);
     const focus = getFocusStep({ activeStep, shiftStatus });
 
-    const floorDone = hasFloor || (inEditor && activeStep !== "floor");
-    const settleDone = hasCalculatedReview || closed || activeStep === "review";
+    // Each check reports a FACT, never an inference from where you happen to be
+    // standing. Both of these used to be inferred from the open step - floor was "done"
+    // whenever you were past it, settle was "done" whenever Review was open - which was
+    // safe only while Review was unreachable without pressing Calculate. Now that the
+    // rail walks to Review freely, that inference would tick both boxes on a shift with
+    // nobody assigned and no money in, which is exactly the false all-clear this rail
+    // must not give.
+    const floorDone = hasFloor || hasFloorStaff;
+    const settleDone = reviewReady || closed;
     const reviewDone = closed;
 
     // On the closed-day landing every pill is "done"; the day is finished and the
@@ -74,11 +86,15 @@ export function getRailSteps({ activeStep = null, shiftStatus = null, hasCalcula
     // & Save happens. (The old "Pay out" pill was vestigial - it only exited the
     // editor to the landing, which the side nav / save flows already do; the saved
     // payout summary is reached after Confirm & Save, not through a rail step.)
-    // A saved shift already HAS its payouts, so Review is reachable in the editor
-    // without a detour through Settle up to press Calculate Payouts again - the
-    // editor recomputes them from the saved inputs on the way in. On a setup shift
-    // there is genuinely nothing to review until that calculation exists.
-    const reviewReachable = hasCalculatedReview || (closed && inEditor);
+    //
+    // Inside the editor Review is a DESTINATION, not a reward: it is always one tap
+    // away, exactly like Floor and Settle. Review derives its numbers from the live
+    // floor plan and money on every render, so there is nothing to "unlock" and no
+    // detour back through Settle up to press a Calculate button. When the inputs are
+    // too incomplete to compute, Review says so on its own screen rather than being
+    // silently unreachable from here. The landing rail has no Review destination
+    // (it opens the editor at Floor or Settle), so the pill stays inert there.
+    const reviewReachable = inEditor;
 
     return [
         { key: "floor", index: 1, label: RAIL_LABELS.floor, state: stateFor("floor", floorDone), clickable: !closedLanding },

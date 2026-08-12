@@ -181,7 +181,7 @@ function Hero({ title, body, tall = false, children }) {
     );
 }
 
-function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, onContinueSettle, onEditFloor, onRemoveShift, removingShift = false }) {
+function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
     const stage = getLandingStage(status);
     // On the read-only floor view (settle stage) the rail's active step is Floor -
     // you are looking at the floor. Settle is the reachable "next" pill you tap to
@@ -193,12 +193,20 @@ function DayRailLanding({ date, status, summary, lineup, loading, onBuildFloor, 
                 : s.key === "settle" ? { ...s, state: "pending" }
                     : s
         );
+        // Once a floor plan exists the landing can open Review directly, same as
+        // Settle. Review derives its numbers from the day's saved floor plan and
+        // money, so there is nothing to calculate first - and if those inputs are
+        // still too thin, Review says so on its own screen. `getRailSteps` leaves
+        // Review unclickable on the landing by default because the landing is the
+        // only rail with no Review destination of its own; here we give it one.
+        railSteps = railSteps.map((s) => (s.key === "review" ? { ...s, clickable: true } : s));
     }
 
     const onStepClick = (key) => {
         // Floor = the read-only view you are already on; Edit is entered via the
-        // floating ✎ Edit button. Settle advances into the money screen.
+        // floating ✎ Edit button. Settle and Review open the editor at that step.
         if (key === "settle") onContinueSettle?.();
+        if (key === "review") onOpenReview?.();
     };
 
     return (

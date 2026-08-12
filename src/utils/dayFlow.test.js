@@ -103,12 +103,12 @@ test("in-editor rail at Settle marks Floor done and Settle reachable back", () =
     assert.equal(steps.find((s) => s.key === "floor").state, "done");
     assert.equal(steps.find((s) => s.key === "floor").clickable, true);
     assert.equal(steps.find((s) => s.key === "settle").state, "active");
-    // Review is not reachable until payouts are calculated.
-    assert.equal(steps.find((s) => s.key === "review").clickable, false);
+    // Review is a destination like any other step, not a reward for pressing a button.
+    assert.equal(steps.find((s) => s.key === "review").clickable, true);
 });
 
-test("Review becomes reachable and Settle reads done once payouts are calculated", () => {
-    const steps = getRailSteps({ activeStep: "review", shiftStatus: "setup", hasCalculatedReview: true });
+test("Settle reads done once the live inputs produce a payout calculation", () => {
+    const steps = getRailSteps({ activeStep: "review", shiftStatus: "setup", reviewReady: true });
     assert.equal(steps.find((s) => s.key === "settle").state, "done");
     assert.equal(steps.find((s) => s.key === "review").state, "active");
     assert.equal(steps.find((s) => s.key === "review").clickable, true);
@@ -123,9 +123,9 @@ test("editing a closed shift shows floor/settle/review done but still navigable"
 });
 
 // A saved shift already has payouts, so Review must not dead-end behind a detour
-// through Settle up just to press Calculate Payouts again.
-test("editing a closed shift can open Review directly, without a calculation in hand", () => {
-    const steps = getRailSteps({ activeStep: "floor", shiftStatus: "closed", hasCalculatedReview: false });
+// through Settle up.
+test("editing a closed shift can open Review directly", () => {
+    const steps = getRailSteps({ activeStep: "floor", shiftStatus: "closed", reviewReady: false });
 
     assert.equal(steps.find((s) => s.key === "review").clickable, true);
 });
@@ -138,9 +138,48 @@ test("the closed-day landing rail keeps Review unclickable", () => {
     assert.equal(steps.find((s) => s.key === "review").clickable, false);
 });
 
-// A setup shift genuinely has nothing to review until payouts are calculated.
-test("a setup shift still cannot open Review before payouts are calculated", () => {
-    const steps = getRailSteps({ activeStep: "floor", shiftStatus: "setup", hasCalculatedReview: false });
+// THE round trip the captain hit: Review -> Floor plan -> add a member -> Review, with
+// no calculation in hand and no walk back through Settle up. Adding someone on the floor
+// used to make Review unreachable; the rail must keep it one tap away.
+test("Review stays reachable from the Floor plan on a setup shift with no calculation", () => {
+    const steps = getRailSteps({ activeStep: "floor", shiftStatus: "setup", reviewReady: false });
+
+    assert.equal(steps.find((s) => s.key === "review").clickable, true);
+});
+
+// The landing rail has no Review destination - tapping a step there opens the editor at
+// Floor or Settle - so the pill must not look tappable before the editor is open.
+test("the setup-day landing rail keeps Review unclickable", () => {
+    const steps = getRailSteps({ shiftStatus: "setup" });
 
     assert.equal(steps.find((s) => s.key === "review").clickable, false);
+});
+
+// Opening Review is navigation, not progress. The rail must not tick Floor and Settle
+// as done just because Review is the open step - on an empty shift that would be a
+// false all-clear on the two things that are actually still missing.
+test("standing on Review does not mark Floor or Settle done on an empty shift", () => {
+    const steps = getRailSteps({
+        activeStep: "review",
+        shiftStatus: null,
+        reviewReady: false,
+        hasFloorStaff: false,
+    });
+
+    assert.notEqual(steps.find((s) => s.key === "floor").state, "done");
+    assert.notEqual(steps.find((s) => s.key === "settle").state, "done");
+});
+
+// Staff assigned in the editor but not yet saved still counts as a floor plan for the
+// rail - the check reports what is on screen, not what has reached Firestore.
+test("unsaved staff assigned in the editor marks Floor done", () => {
+    const steps = getRailSteps({
+        activeStep: "review",
+        shiftStatus: null,
+        reviewReady: false,
+        hasFloorStaff: true,
+    });
+
+    assert.equal(steps.find((s) => s.key === "floor").state, "done");
+    assert.notEqual(steps.find((s) => s.key === "settle").state, "done");
 });

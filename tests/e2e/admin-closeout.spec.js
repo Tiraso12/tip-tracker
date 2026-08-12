@@ -180,9 +180,9 @@ async function assignFromPool(page, name) {
 }
 
 // Setup-shift Settle up flow. Settle up lands LOCKED (the money form is visible but
-// its fields are disabled); the floating Edit unlocks the same fields in place, Done
-// saves and re-locks, and Calculate Payouts (available in the locked view) advances
-// to Review.
+// its fields are disabled); the floating Edit unlocks the same fields in place and Done
+// saves and re-locks. Review is then reached from the day rail like any other step -
+// there is no Calculate button, because Review derives from the live inputs.
 async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
@@ -196,8 +196,8 @@ async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     await page.getByRole("button", { name: "✓ Done" }).click();
     await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toBeVisible();
 
-    // Calculate Payouts advances to Review.
-    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
+    // The rail walks to Review; the numbers are already derived from what was typed.
+    await rail.getByRole("button", { name: "Review" }).click();
     await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
 }
 
@@ -218,6 +218,105 @@ test.beforeEach(async () => {
     await seedCloseoutData();
 });
 
+// THE friction the captain reported: you reach Review, notice somebody missing from
+// the floor plan, go add them - and then cannot get back to Review from the rail. The
+// old model snapshotted the calculation into state and nulled it on any edit, so adding
+// the person made Review unreachable until you walked back through Settle up and pressed
+// Calculate Payouts again. Review now derives from the live inputs, so the rail walks
+// straight back and the numbers have already moved.
+test("Review is reachable from the rail after a floor-plan edit, without revisiting Settle up", async ({ page }) => {
+    await login(page);
+    await setShiftDate(page, SHIFT_DATE);
+    await openEditor(page);
+
+    await page.getByRole("button", { name: /Team 1/i }).click();
+    await assignFromPool(page, "Captain One");
+    await assignFromPool(page, "Server One");
+    await page.getByRole("button", { name: "✓ Done" }).click();
+    await expect(page.getByText("Floor plan is set")).toBeVisible();
+
+    await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
+
+    const rail = page.getByRole("navigation", { name: "Day steps" });
+    const totals = page.getByRole("button", { name: /Shift totals/ });
+
+    // The floor as it stands before the edit.
+    await expect(page.getByRole("button", { name: /Who's on the floor/ })).toContainText("2 people");
+    await totals.click();
+    const takeHomeBefore = await page.getByText(/^\$[\d,]+\.\d\d$/).first().textContent();
+
+    // Review -> Floor plan, add the missing person.
+    await rail.getByRole("button", { name: "Floor" }).click();
+    await page.getByRole("button", { name: /Team 1/i }).click();
+    await assignFromPool(page, "Back One");
+
+    // ...and straight back to Review from the rail. No Settle up detour, no Calculate.
+    await rail.getByRole("button", { name: "Review" }).click();
+    await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
+
+    // The new person is on the floor and the split has moved to account for them.
+    await expect(page.getByRole("button", { name: /Who's on the floor/ })).toContainText("3 people");
+    await totals.click();
+    const takeHomeAfter = await page.getByText(/^\$[\d,]+\.\d\d$/).first().textContent();
+    expect(takeHomeAfter).toBe(takeHomeBefore); // same pool...
+    await page.getByRole("button", { name: /Who's on the floor/ }).click();
+    await expect(page.getByText("Captain One · Server One · Back One")).toBeVisible(); // ...split three ways
+});
+
+// Review must never dress up an incomplete shift as a finished one. Reaching it is
+// free (that is the whole fix); what it SHOWS when the inputs are thin is the guard.
+test("Review names what is missing instead of showing a total, and offers no save", async ({ page }) => {
+    await login(page);
+    await setShiftDate(page, SHIFT_DATE);
+    await openEditor(page);
+
+    await page.getByRole("button", { name: /Team 1/i }).click();
+    await assignFromPool(page, "Captain One");
+
+    // Staff on the floor, no money entered: the rail still walks to Review.
+    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
+
+    await expect(page.getByText("No payouts to review yet")).toBeVisible();
+    await expect(page.getByText(/Enter at least one sales, tip, gratuity/)).toBeVisible();
+    // No total, and nothing to commit.
+    await expect(page.getByRole("button", { name: /Shift totals/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toHaveCount(0);
+});
+
+// Runner pay is drawn OUT of the tip pool, so listing it as money the captain entered
+// overstated the pool. It belongs with the subtractions.
+test("Review lists no runners as entered money and shows their pay as a deduction", async ({ page }) => {
+    await login(page);
+    await setShiftDate(page, SHIFT_DATE);
+    await openEditor(page);
+
+    await page.getByRole("button", { name: /Team 1/i }).click();
+    await assignFromPool(page, "Captain One");
+    await page.getByRole("button", { name: /Runners/i }).first().click();
+    await assignFromPool(page, "Runner One");
+    await page.getByRole("button", { name: "✓ Done" }).click();
+    await expect(page.getByText("Floor plan is set")).toBeVisible();
+
+    await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
+
+    // "Money you entered" covers the funding groups only - Team 1 and Bar Team.
+    const money = page.getByRole("button", { name: /Money you entered/ });
+    await expect(money).toContainText("2 groups");
+    await money.click();
+    await expect(page.getByText("Runners", { exact: true })).toHaveCount(0);
+    await money.click();
+
+    // The runners appear where a subtraction belongs.
+    const floor = page.getByRole("button", { name: /Who's on the floor/ });
+    await floor.click();
+    await expect(page.getByText("off the pool")).toBeVisible();
+    await floor.click();
+
+    await page.getByRole("button", { name: /Shift totals/ }).click();
+    await expect(page.getByText("paid off the top of the pool")).toBeVisible();
+    await expect(page.getByText("Split among the floor")).toBeVisible();
+});
+
 test("admin can close out a simple dining room shift and create ledger payout records", async ({ page }) => {
     await login(page);
     await setShiftDate(page, SHIFT_DATE);
@@ -234,7 +333,7 @@ test("admin can close out a simple dining room shift and create ledger payout re
     await expect(page.getByText("Floor plan is set")).toBeVisible();
 
     // Settle up mirrors the floor plan: open its read-only summary, edit the money in
-    // place, save with Done, then Calculate Payouts to reach Review.
+    // place, save with Done, then walk the rail to Review.
     await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
 
     // Review is a spot check on ONE person - the first captain at full points - not a
@@ -323,13 +422,13 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await page.getByRole("button", { name: "Remove Back One" }).click();
 
     // The bare, non-merging "Save Team Setup" overwrite is not offered on a closed
-    // shift; roster edits go through Settle up -> Calculate -> Confirm & Save.
+    // shift; roster edits go through Review -> Confirm & Save.
     await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
 
-    // Closed shift: Settle up lands locked; Calculate Payouts is available without
-    // unlocking and routes into the overwrite-confirmed Review.
+    // Closed shift: Settle up lands locked; the rail reaches the overwrite-confirmed
+    // Review without unlocking anything.
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
-    await page.getByRole("button", { name: /Calculate Payouts/i }).click();
+    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
     await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
 
