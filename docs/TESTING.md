@@ -75,6 +75,23 @@ npm run test:all
 
 `test:all` chains source tests, Firestore rules tests, Playwright e2e tests, lint, and build. It is the local run-before-you-merge gate, not CI.
 
+### Running Alongside Another Worktree
+
+The default ports (vite 5173, firestore 8081, auth 9099, emulator hub 4400) are
+global, so a second checkout running `npm run dev:local` blocks `test:e2e` here.
+To run the suite anyway, point every layer at free ports:
+
+- a `firebase.json` copy with different `firestore`, `auth`, `hub`, and `logging`
+  ports, passed via `firebase emulators:exec --config`
+- a `playwright.config.js` copy with a different `baseURL` and a `webServer`
+  command of `npm run dev:test -- --port <port> --strictPort`
+- `VITE_FIRESTORE_EMULATOR_PORT` and `VITE_AUTH_EMULATOR_PORT` exported so the
+  app connects to the alternate emulators
+
+The specs themselves need no edits: `initializeTestEnvironment` discovers
+Firestore through the `FIREBASE_EMULATOR_HUB` that `emulators:exec` exports, and
+the auth REST calls read `FIREBASE_AUTH_EMULATOR_HOST`.
+
 ## Branching Model
 
 - `main` is live production.
