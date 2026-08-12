@@ -40,7 +40,7 @@ function StateDot({ state, index }) {
 // The rail is the navigation the admin actually uses mid-shift, so it stays on
 // screen: pinned directly under the h-14 app bar (sticky top-14) instead of
 // scrolling away while money is being entered. z-10 keeps it beneath the app
-// bar's z-20 and above page content.
+// bar's z-40 and above page content.
 function DayRail({ steps, onStepClick }) {
     return (
         <nav

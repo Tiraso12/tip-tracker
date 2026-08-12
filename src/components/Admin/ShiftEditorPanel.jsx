@@ -1711,8 +1711,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
                 <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
                     <div className="flex flex-col gap-1">
+                        {/* No date here: the app bar now carries the day being edited
+                            at every width, pinned, and in a readable form. This header
+                            printed the raw ISO key, so the same day appeared twice on
+                            one screen in two different formats. */}
                         <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                            Shift Workspace - {date}
+                            Shift Workspace
                         </h2>
                         {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
                             <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
@@ -1739,12 +1743,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     cue (matching the workspace's accent frame) so it is clear you are in
                     the editing layer, not the read-only floor view. */}
                 {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
-                    <div className="sm:hidden flex items-center justify-between gap-2 px-3 py-2.5 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
+                    <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
+                        {/* The raw ISO date used to sit at the right of this strip,
+                            because the day was otherwise invisible on a phone. The app
+                            bar now carries it, pinned and readable, so this strip is
+                            back to saying only what it is for: this shift is paid out. */}
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-warning)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
                             Closed shift · Paid out
                         </span>
-                        <span className="text-[11px] tabular-nums text-[var(--color-warning)]/80">{date}</span>
                     </div>
                 ) : isEditingLayer ? (
                     <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">

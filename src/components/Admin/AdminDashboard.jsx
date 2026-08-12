@@ -5,7 +5,8 @@ import { useAuth } from "../../context/AuthContext";
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRailLanding from "./DayRailLanding";
 import BarDatePill from "./BarDatePill";
-import { Badge, Button } from "../ui";
+import AccountSheet from "../Account/AccountSheet";
+import { Badge } from "../ui";
 import { toDateKey } from "../../utils/dateUtils";
 import { getLandingStage } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
@@ -69,7 +70,10 @@ function SideNavItem({ item, active, onClick, collapsed }) {
             aria-current={active ? "page" : undefined}
             title={collapsed ? item.label : undefined}
             className={
-                "group relative w-full flex items-center gap-3 px-3 py-2 text-sm rounded-[var(--radius-sm)] " +
+                // min-h-11 on the phone band: these were 36px tall, under the 44px
+                // target guideline the rail already meets. Desktop keeps the denser
+                // sidebar row, where the pointer is not a thumb.
+                "group relative w-full flex items-center gap-3 px-3 py-2 min-h-11 lg:min-h-0 text-sm rounded-[var(--radius-sm)] " +
                 "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
                 (collapsed ? "lg:justify-center lg:px-0 lg:h-10 " : "") +
                 (active
@@ -94,7 +98,7 @@ function PanelLoading({ label = "Loading..." }) {
 }
 
 function AdminDashboard() {
-    const { logout, user } = useAuth();
+    const { user } = useAuth();
     const [allEmployees, setAllEmployees] = useState([]);
     const [employeesLoaded, setEmployeesLoaded] = useState(false);
     const [employeesLoading, setEmployeesLoading] = useState(false);
@@ -312,8 +316,12 @@ function AdminDashboard() {
         <div className="min-h-screen bg-[var(--color-bg)]">
             {/* Top app bar */}
             {/* px-3 below sm: at 320px the home control, the menu, the date pill and
-                Log Out only clear the viewport with the tighter inset. */}
-            <header className="sticky top-0 z-20 h-14 px-3 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
+                the account avatar only clear the viewport with the tighter inset. */}
+            {/* z-40, above the z-30 floating Edit / Cancel / Done controls: the bar
+                is app chrome, and the account sheet opens out of it as a bottom sheet
+                that lands exactly where those buttons float. At z-20 they painted
+                straight through it. */}
+            <header className="sticky top-0 z-40 h-14 px-3 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
                 <div className="flex items-center gap-2 sm:gap-3">
                     {/* Home: the app's only way back that is visible at every width.
                         It sits at the left edge of the bar - same place on a phone and
@@ -334,12 +342,13 @@ function AdminDashboard() {
                         aria-controls="admin-workspace-nav"
                         aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
                         title={navCollapsed ? "Open workspace" : "Collapse workspace"}
-                        className="h-9 w-9 inline-flex lg:hidden items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                        className="h-11 w-11 inline-flex lg:hidden items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
                     >
                         <MenuIcon />
                     </button>
                     {/* Brand is kept for desktop coherence but dropped on the
-                        mobile admin bar - there the Bar Date + Log Out are enough. */}
+                        mobile admin bar - there the day and the account avatar
+                        are all the width allows. */}
                     <span className="hidden sm:inline font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
                         Tip Tracker
                     </span>
@@ -348,20 +357,23 @@ function AdminDashboard() {
                     </span>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3">
-                    {activeTab === "shifts" ? (
+                    {/* The day lives in the bar on both day screens. On Shifts it is
+                        the control that changes the day; in the editor it is a label,
+                        because the day being typed against must be readable there and
+                        must not be swappable mid-edit. Team has no day. */}
+                    {activeTab === "shifts" || activeTab === "editor" ? (
                         <BarDatePill
                             selectedDate={selectedDate}
                             onSelectDate={setSelectedDate}
+                            readOnly={activeTab === "editor"}
                         />
                     ) : null}
-                    {user?.username ? (
-                        <span className="hidden sm:inline text-xs text-[var(--color-ink-muted)]">
-                            {user.username}
-                        </span>
-                    ) : null}
-                    <Button onClick={logout} variant="secondary" size="sm">
-                        Log Out
-                    </Button>
+                    {/* Who you are, and Log Out, live in here. Log Out was a 69px
+                        word-labelled button in this row - 17.7% of a 390px bar for a
+                        once-a-shift action, and the only worded control on the phone
+                        money screen. The sheet also carries the username the bar used
+                        to print beside it. */}
+                    <AccountSheet />
                 </div>
             </header>
 

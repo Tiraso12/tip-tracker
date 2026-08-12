@@ -11,6 +11,12 @@ import { toDateKey } from "../../utils/dateUtils";
 // which resets the day AND the screen. A separate "Today" return pill used to sit
 // here doing the same thing in a smaller target, and the two together overflowed
 // the bar at 320px, so the pill now reads the day and nothing else.
+//
+// `readOnly` renders the same pill as a plain label. The shift editor mounts it
+// that way: on a phone the editor's own header is `hidden sm:flex`, so the day
+// you are typing money against was not on screen at all, while desktop showed it.
+// The day has to be READABLE there and must not be CHANGEABLE mid-edit - swapping
+// the date under a half-entered shift is the thing this pill exists to prevent.
 
 function parseKey(dateKey) {
     return new Date(dateKey + "T12:00:00");
@@ -27,7 +33,7 @@ function CalendarIcon() {
     );
 }
 
-function BarDatePill({ selectedDate, onSelectDate }) {
+function BarDatePill({ selectedDate, onSelectDate, readOnly = false }) {
     const inputRef = useRef(null);
     const todayKey = toDateKey(new Date());
     const isToday = selectedDate === todayKey;
@@ -35,6 +41,32 @@ function BarDatePill({ selectedDate, onSelectDate }) {
     const monthDay = parseKey(selectedDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     const weekday = parseKey(selectedDate).toLocaleDateString(undefined, { weekday: "short" });
     const pillLabel = isToday ? `Today · ${monthDay}` : `${weekday}, ${monthDay}`;
+
+    // Shared between the interactive pill and the read-only label so the day
+    // reads identically wherever it appears in the bar.
+    const shellClass =
+        "relative inline-flex items-center gap-1.5 h-11 rounded-full border px-3 text-xs font-medium tabular-nums transition-colors " +
+        (isToday
+            ? "border-[var(--color-accent-soft)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+            : "border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] text-[var(--color-warning)]");
+
+    if (readOnly) {
+        const spokenDate = parseKey(selectedDate).toLocaleDateString(undefined, {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+        });
+        return (
+            // A plain span, not a button: nothing here can move the day. The abbreviated
+            // label is the sighted read; the full sentence is what gets announced, so
+            // "Mon, Jun 1" is never read as a bare fragment next to the controls.
+            <span className={shellClass} data-testid="editor-day-label">
+                <CalendarIcon />
+                <span className="sr-only">{`Editing the shift for ${spokenDate}`}</span>
+                <span aria-hidden="true" className="whitespace-nowrap">{pillLabel}</span>
+            </span>
+        );
+    }
 
     // Open the OS date picker on tap. showPicker() must run inside the tap
     // gesture; fall back to focus+click for browsers without it.
@@ -75,15 +107,14 @@ function BarDatePill({ selectedDate, onSelectDate }) {
                 aria-haspopup="dialog"
                 aria-label={`Shift date: ${pillLabel}. Tap to change day.`}
                 className={
-                    "relative inline-flex items-center gap-1.5 h-9 rounded-full border px-3 text-xs font-medium tabular-nums transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
-                    (isToday
-                        ? "border-[var(--color-accent-soft)] bg-[var(--color-accent-soft)] text-[var(--color-accent)] hover:border-[var(--color-accent)]/30"
-                        : "border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] text-[var(--color-warning)] hover:border-[var(--color-warning)]/50")
+                    shellClass +
+                    " focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+                    (isToday ? "hover:border-[var(--color-accent)]/30" : "hover:border-[var(--color-warning)]/50")
                 }
             >
                 <CalendarIcon />
                 {/* nowrap: at 320px the label would otherwise wrap inside the
-                    h-9 pill and spill out of it. */}
+                    fixed-height pill and spill out of it. */}
                 <span className="whitespace-nowrap">{pillLabel}</span>
                 {/* The picker chevron is the first thing to go on the narrowest
                     phones - the day itself must never be the control that shrinks. */}

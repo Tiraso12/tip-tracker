@@ -749,3 +749,81 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true })).toHaveValue("");
     });
 });
+
+// The app bar at the narrowest phone width the app supports. Log Out used to take
+// 17.7% of a 390px bar for a once-a-shift action and, on the money screen, was the
+// only word-labelled control on screen; the day being edited was not rendered at
+// all on a phone while desktop showed it.
+test.describe("app bar at 320px", () => {
+    test.use({ viewport: { width: 320, height: 568 } });
+
+    test("the editor shows the day being edited, as a label the bar cannot change mid-edit", async ({ page }) => {
+        const date = "2026-05-24";
+        await login(page);
+        await setShiftDate(page, date);
+
+        // Shifts: the day IS the control that changes the day.
+        await expect(page.locator('input[type="date"]')).toHaveCount(1);
+
+        await openEditor(page);
+
+        // Editor: the day is on screen at all - this is the money-correctness half.
+        const dayLabel = page.getByTestId("editor-day-label");
+        await expect(dayLabel).toBeVisible();
+        await expect(dayLabel).toHaveText(/May 24/);
+
+        // ...and it is a label, not a control: nothing here can swap the date under
+        // a half-entered shift.
+        await expect(page.locator('input[type="date"]')).toHaveCount(0);
+
+        // It is still there once the money work scrolls, because the bar is pinned.
+        await page.evaluate(() => window.scrollTo(0, 600));
+        await expect(dayLabel).toBeInViewport();
+    });
+
+    test("Log Out is out of the bar and lives in the account sheet", async ({ page }) => {
+        await login(page);
+
+        // Nothing on the primary bar is word-labelled any more.
+        await expect(page.getByRole("button", { name: "Log Out" })).toHaveCount(0);
+
+        const trigger = page.getByRole("button", { name: /Open account menu/ });
+        await trigger.click();
+
+        const sheet = page.getByRole("menu", { name: "Account" });
+        await expect(sheet).toBeVisible();
+        // Who you are signed in as, and the sign-out that belongs with it.
+        await expect(sheet.getByText("Admin").first()).toBeVisible();
+        await expect(sheet.getByRole("menuitem", { name: /Log Out/ })).toBeVisible();
+
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("menu", { name: "Account" })).toHaveCount(0);
+    });
+
+    test("every app-bar control clears the 44px target guideline, and the bar does not overflow", async ({ page }) => {
+        const date = "2026-05-24"; // not today: the bar carries its widest date label
+        await login(page);
+        await setShiftDate(page, date);
+
+        const bar = await page.evaluate(() => {
+            const el = document.querySelector("header.sticky");
+            return {
+                controls: [...el.querySelectorAll("button")].map((b) => ({
+                    label: b.getAttribute("aria-label"),
+                    w: b.getBoundingClientRect().width,
+                    h: b.getBoundingClientRect().height,
+                })),
+                barOverflows: el.scrollWidth > el.clientWidth + 1,
+                docOverflows: document.documentElement.scrollWidth > window.innerWidth + 1,
+            };
+        });
+
+        expect(bar.controls.length).toBeGreaterThanOrEqual(3);
+        for (const control of bar.controls) {
+            expect(control.w, `${control.label} width`).toBeGreaterThanOrEqual(44);
+            expect(control.h, `${control.label} height`).toBeGreaterThanOrEqual(44);
+        }
+        expect(bar.barOverflows).toBe(false);
+        expect(bar.docOverflows).toBe(false);
+    });
+});
