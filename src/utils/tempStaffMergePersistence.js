@@ -423,7 +423,7 @@ async function discoverTempLegacyTips(db, tempUid) {
 // automatic single-field index, so it reads the open nights only - a handful of
 // documents - not the shift history. A full `shifts` scan would grow with every
 // night the restaurant has ever worked and is not acceptable on a merge.
-async function discoverUnsettledShiftDates(db, tempUid) {
+export async function discoverUnsettledShiftDates(db, tempUid) {
     const openShifts = await getDocs(query(collection(db, "shifts"), where("status", "==", "setup")));
     return openShifts.docs
         .filter(shift => shiftReferencesUid(shift.data(), tempUid))

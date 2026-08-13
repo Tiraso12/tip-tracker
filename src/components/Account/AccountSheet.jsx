@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { roleLabel } from "../../utils/roleLabels";
+import { tierLabel } from "../../utils/permissions";
 import { fullNameFor } from "../../utils/userNames";
 
 // The account sheet: who you are signed in as, and the once-a-shift actions that
@@ -67,6 +68,7 @@ function AccountSheet({ items = [], pendingApprovalCount = 0 }) {
     }, [open]);
 
     const name = fullNameFor(user, "Signed in");
+    const tier = tierLabel(user);
     const initials = initialsFor(name);
     const pendingCount = Number.isFinite(pendingApprovalCount) ? Math.max(0, Math.trunc(pendingApprovalCount)) : 0;
     const hasPending = pendingCount > 0;
@@ -158,7 +160,7 @@ function AccountSheet({ items = [], pendingApprovalCount = 0 }) {
                             <div className="min-w-0">
                                 <p className="truncate text-sm font-medium text-[var(--color-ink)]">{name}</p>
                                 <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                    {roleLabel(user?.role)}
+                                    {tier ? `${tier} tier` : roleLabel(user?.role)}
                                 </p>
                             </div>
                         </div>

@@ -4,11 +4,14 @@ import {
     browserLocalPersistence,
     browserSessionPersistence,
     createUserWithEmailAndPassword,
+    EmailAuthProvider,
     onAuthStateChanged,
+    reauthenticateWithCredential,
     sendPasswordResetEmail,
     setPersistence,
     signInWithEmailAndPassword,
     signOut,
+    updatePassword,
 } from "firebase/auth";
 import { doc, getDoc, writeBatch } from "firebase/firestore";
 
@@ -32,6 +35,7 @@ export const AuthProvider = ({ children }) => {
                 let username = "";
                 let firstName = "";
                 let lastName = "";
+                let createdAt = null;
                 // The "Supervisor" switch - the captain tier. The manager sets
                 // it, absent means off, and the job title in `role` grants
                 // nothing on its own. See src/utils/permissions.js.
@@ -45,6 +49,7 @@ export const AuthProvider = ({ children }) => {
                         username = profile.username || "";
                         firstName = profile.firstName || "";
                         lastName = profile.lastName || "";
+                        createdAt = profile.createdAt || null;
                         isSupervisor = profile.isSupervisor === true;
                     } else if (registrationInProgressRef.current) {
                         role = "unassigned";
@@ -87,6 +92,7 @@ export const AuthProvider = ({ children }) => {
                     status,
                     isSupervisor,
                     managerUid,
+                    createdAt,
                 };
                 setUser(mappedUser);
             } else {
@@ -196,8 +202,32 @@ export const AuthProvider = ({ children }) => {
         await sendPasswordResetEmail(auth, email);
     };
 
+    const updateSessionProfile = (changes) => {
+        setUser((current) => current ? { ...current, ...changes } : current);
+    };
+
+    const changePassword = async (currentPassword, nextPassword) => {
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser?.email) throw new Error("Your sign-in session is unavailable. Log in again and retry.");
+        if (!currentPassword) throw new Error("Enter your current password.");
+        if (nextPassword.length < 8) throw new Error("Your new password must be at least 8 characters.");
+
+        const credential = EmailAuthProvider.credential(firebaseUser.email, currentPassword);
+        await reauthenticateWithCredential(firebaseUser, credential);
+        await updatePassword(firebaseUser, nextPassword);
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading, resetPassword }}>
+        <AuthContext.Provider value={{
+            user,
+            login,
+            register,
+            logout,
+            loading,
+            resetPassword,
+            updateSessionProfile,
+            changePassword,
+        }}>
             {!loading && children}
         </AuthContext.Provider>
     );

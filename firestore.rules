@@ -97,6 +97,22 @@ service cloud.firestore {
         .hasOnly(["hasShiftHistory", "hasTipHistory"]);
     }
 
+    // A signed-in person owns only the display-name fields and login handle on
+    // their own profile. Role, status, Supervisor rights, history flags, email,
+    // identity, and provenance stay outside this whitelist, so smuggling any of
+    // them into the same write rejects the whole write.
+    function onlySelfEditableProfileFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["firstName", "lastName", "username"]);
+    }
+
+    function isSelfServiceProfileWrite(uid) {
+      return request.auth != null &&
+        request.auth.uid == uid &&
+        resource.data.status == "active" &&
+        onlySelfEditableProfileFieldsChanged();
+    }
+
     // The Supervisor switch IS the captain tier, so moving it is the one write
     // that hands out access. Two separate guards: only manager authority may
     // move it at all, and nobody may move it on their own profile - a self-write
@@ -208,13 +224,38 @@ service cloud.firestore {
         (!("isSupervisor" in request.resource.data) || request.resource.data.isSupervisor is bool);
     }
 
-    function validUsernameMapping() {
+    function validUsernameMapping(username) {
       return request.resource.data.keys().hasOnly(["uid", "username", "email", "createdAt"]) &&
         request.resource.data.keys().hasAll(["uid", "username", "email"]) &&
         request.resource.data.uid == request.auth.uid &&
         request.resource.data.username is string &&
+        request.resource.data.username.size() > 0 &&
+        request.resource.data.username.size() <= 80 &&
+        request.resource.data.username.lower() == username &&
         request.resource.data.email is string &&
+        request.resource.data.email == request.auth.token.email &&
         (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    // Open floor plans carry a uid-keyed name override so a rename can restamp
+    // the person's own label without handing an employee write access to the
+    // nested roster, roles, or money. getAfter binds the stamp to the firstName
+    // landing in the same atomic batch. Closed shifts can never take this path.
+    function isSelfServiceShiftNameRestamp() {
+      return request.auth != null &&
+        isActiveUser() &&
+        resource.data.status == "setup" &&
+        request.resource.data.status == "setup" &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberNames"]) &&
+        request.resource.data.memberNames is map &&
+        request.resource.data.memberNames
+          .diff(resource.data.get("memberNames", {}))
+          .affectedKeys().hasOnly([request.auth.uid]) &&
+        request.resource.data.memberNames
+          .diff(resource.data.get("memberNames", {}))
+          .affectedKeys().hasAll([request.auth.uid]) &&
+        request.resource.data.memberNames.get(request.auth.uid, "") ==
+          getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.firstName;
     }
 
     function validManagerPointer() {
@@ -231,6 +272,7 @@ service cloud.firestore {
           "teams",
           "barTeam",
           "runners",
+          "memberNames",
           "setupSavedAt",
           "closeoutDraftSavedAt",
           "summary",
@@ -249,6 +291,7 @@ service cloud.firestore {
         request.resource.data.teams is list &&
         request.resource.data.barTeam is map &&
         request.resource.data.runners is list &&
+        (!("memberNames" in request.resource.data) || request.resource.data.memberNames is map) &&
         isStringOrTimestamp(request.resource.data.updatedAt) &&
         (!("setupSavedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.setupSavedAt)) &&
         (!("closeoutDraftSavedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.closeoutDraftSavedAt)) &&
@@ -453,7 +496,9 @@ service cloud.firestore {
       // in maySetSupervisorFlag(), which binds the manager too.
       allow update: if validUserProfile(uid) &&
         (!supervisorFlagChanged() || maySetSupervisorFlag(uid)) &&
-        (hasManagerAccess() || (hasCaptainAccess() && onlyHistoryFlagsChanged()));
+        (hasManagerAccess() ||
+          (hasCaptainAccess() && onlyHistoryFlagsChanged()) ||
+          isSelfServiceProfileWrite(uid));
       allow delete: if hasManagerAccess();
     }
 
@@ -462,15 +507,25 @@ service cloud.firestore {
     match /usernames/{username} {
       allow read: if true;
       allow create: if request.auth != null &&
-        validUsernameMapping();
-      allow update, delete: if hasManagerAccess();
+        validUsernameMapping(username);
+      allow update: if hasManagerAccess() ||
+        (request.auth != null &&
+          resource.data.uid == request.auth.uid &&
+          request.resource.data.uid == resource.data.uid &&
+          validUsernameMapping(username));
+      allow delete: if hasManagerAccess() ||
+        (request.auth != null && resource.data.uid == request.auth.uid);
     }
 
     // Shifts. Building a floor plan, settling up, and correcting an already
     // settled day are captain work; removing the day outright is not.
     match /shifts/{shiftId} {
-      allow read: if hasCaptainAccess();
-      allow create, update: if hasCaptainAccess() && validShift(shiftId);
+      allow get: if hasCaptainAccess();
+      allow list: if hasCaptainAccess() ||
+        (isActiveUser() && resource.data.status == "setup");
+      allow create: if hasCaptainAccess() && validShift(shiftId);
+      allow update: if validShift(shiftId) &&
+        (hasCaptainAccess() || isSelfServiceShiftNameRestamp());
       allow delete: if hasManagerAccess();
     }
 

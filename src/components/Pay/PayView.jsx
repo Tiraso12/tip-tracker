@@ -27,7 +27,14 @@ const WEEK_ICON = (
     </svg>
 );
 
-function PayView({ onOpenWorkspace }) {
+const ACCOUNT_ICON = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+    </svg>
+);
+
+function PayView({ onOpenWorkspace, onOpenAccount }) {
     const { user } = useAuth();
     // Any day inside the week being read. The pill picks a day; the week it
     // falls in is what the statement shows.
@@ -46,16 +53,18 @@ function PayView({ onOpenWorkspace }) {
     const handleHome = useCallback(() => setAnchorDate(toDateKey(new Date())), []);
 
     const accountItems = useMemo(() => {
-        if (!onOpenWorkspace) return [];
-        // The one destination on this side, for the people who hold both: the
-        // shift workspace. An employee has no such item and no such screen.
         return [{
+            key: "account",
+            label: "Your account",
+            icon: ACCOUNT_ICON,
+            onClick: onOpenAccount,
+        }, ...(onOpenWorkspace ? [{
             key: "shifts",
             label: "Shifts",
             icon: WEEK_ICON,
             onClick: onOpenWorkspace,
-        }];
-    }, [onOpenWorkspace]);
+        }] : [])];
+    }, [onOpenAccount, onOpenWorkspace]);
 
     return (
         <div className="min-h-screen bg-[var(--color-bg)]">

@@ -12,9 +12,17 @@ import { toDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 import { removeShiftAtomically } from "../../utils/closeoutPersistence";
+import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
+
+const ACCOUNT_ICON = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+    </svg>
+);
 
 // The workspace sidebar is DESKTOP-ONLY. A phone gets no top-level nav: the top
 // level has exactly one real destination (Shifts, which is the app), so a menu
@@ -98,7 +106,7 @@ function PanelLoading({ label = "Loading..." }) {
 // `onGoToMyPay` is set for anyone who is ALSO paid out of the pool - a captain.
 // It is what makes the workspace one of their two places rather than the only
 // one, and its presence is what moves the bar's home control: see handleHomeClick.
-function AdminDashboard({ onGoToMyPay }) {
+function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     const { user } = useAuth();
     const [allEmployees, setAllEmployees] = useState([]);
     const [employeesLoaded, setEmployeesLoaded] = useState(false);
@@ -198,7 +206,7 @@ function AdminDashboard({ onGoToMyPay }) {
             ]);
             if (fetchId !== dayFetchIdRef.current) return;
             if (shiftDoc.exists()) {
-                const d = shiftDoc.data();
+                const d = applyOpenShiftMemberNames(shiftDoc.data());
                 setDaySummary(attachLedgerPayoutsToSummary(d.summary || null, payoutEntries));
                 // Lift the saved floor plan (already returned here) so the setup
                 // landing can confirm the lineup team-by-team without another fetch.
@@ -392,6 +400,12 @@ function AdminDashboard({ onGoToMyPay }) {
     // listed here exactly when the bar's home control does not already lead
     // there. For the manager, home IS Shifts, so listing it would be noise.
     const accountItems = [
+        {
+            key: "account",
+            label: "Your account",
+            icon: ACCOUNT_ICON,
+            onClick: onOpenAccount,
+        },
         ...(onGoToMyPay ? [{
             key: "shifts",
             label: NAV_ITEMS[0].label,

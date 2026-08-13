@@ -265,10 +265,10 @@ test("the manager gets the workspace and no pay page - they have no pay record",
     await expect(workspace(page)).toBeAttached();
     await expect(payStatement(page)).toHaveCount(0);
 
-    // Home means today's shifts for them, and the sheet carries Team only:
+    // Home means today's shifts for them, and the sheet carries their account and Team:
     // a destination is listed there exactly when home does not already lead to it.
     await expect(page.getByRole("button", { name: "Go to today's shifts" })).toBeVisible();
-    expect(await accountMenuItems(page)).toEqual(["Team", "Log Out"]);
+    expect(await accountMenuItems(page)).toEqual(["Your account", "Team", "Log Out"]);
 });
 
 test("the manager gets one searchable roster and deliberate person actions", async ({ page }) => {
@@ -425,7 +425,7 @@ test("today's admin loses nothing when someone else is named manager", async ({ 
     await expect(workspace(page)).toBeVisible();
     await expect(removeShift(page)).toBeVisible();
     await expect(payStatement(page)).toHaveCount(0);
-    expect(await accountMenuItems(page)).toEqual(["Team", "Log Out"]);
+    expect(await accountMenuItems(page)).toEqual(["Your account", "Team", "Log Out"]);
 });
 
 test("today's admin is unchanged with no manager named at all", async ({ page }) => {
@@ -437,7 +437,7 @@ test("today's admin is unchanged with no manager named at all", async ({ page })
     await expect(workspace(page)).toBeVisible();
     await expect(removeShift(page)).toBeVisible();
     await expect(payStatement(page)).toHaveCount(0);
-    expect(await accountMenuItems(page)).toEqual(["Team", "Log Out"]);
+    expect(await accountMenuItems(page)).toEqual(["Your account", "Team", "Log Out"]);
 });
 
 test("Supervisor off is an ordinary employee, whatever the job title says", async ({ page }) => {
@@ -451,7 +451,7 @@ test("Supervisor off is an ordinary employee, whatever the job title says", asyn
     await expect(payStatement(page)).toBeVisible();
     await expect(workspace(page)).toHaveCount(0);
     await expect(removeShift(page)).toHaveCount(0);
-    expect(await accountMenuItems(page)).toEqual(["Log Out"]);
+    expect(await accountMenuItems(page)).toEqual(["Your account", "Log Out"]);
     await page.screenshot({ path: "artifacts/team-roster/supervisor-off-phone.png", fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.screenshot({ path: "artifacts/team-roster/supervisor-off-desktop.png", fullPage: true });

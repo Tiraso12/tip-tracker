@@ -138,7 +138,7 @@ test("CURRENT: the Supervisor switch grants nothing while no manager is named", 
 
     // Nor can they hand the switch to anyone, themselves included.
     await assertFails(updateDoc(doc(db, "users/serverUid"), { isSupervisor: true }));
-    await assertFails(updateDoc(doc(db, "users/supervisorUid"), { isSupervisor: true }));
+    await assertFails(updateDoc(doc(db, "users/supervisorUid"), { isSupervisor: false }));
 
     // Only the legacy admin can move it today, and never onto themselves.
     const admin = authedDb("adminUid");

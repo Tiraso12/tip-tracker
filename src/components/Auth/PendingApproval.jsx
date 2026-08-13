@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Button, Card } from '../ui';
+import { fullNameFor } from '../../utils/userNames';
 
 const PendingApproval = () => {
     const { user, logout } = useAuth();
@@ -43,6 +44,17 @@ const PendingApproval = () => {
                             ? 'You can log out and check back after your account is reactivated.'
                             : 'Check back later or contact your manager.'}
                     </p>
+
+                    <dl className="mt-5 rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface-muted)]/50 px-4 py-3 text-left">
+                        <div>
+                            <dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Signed up as</dt>
+                            <dd className="mt-1 text-sm font-medium text-[var(--color-ink)]">{fullNameFor(user, 'Name unavailable')}</dd>
+                        </div>
+                        <div className="mt-3 border-t border-[var(--color-line)] pt-3">
+                            <dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Login email</dt>
+                            <dd className="mt-1 break-all text-sm text-[var(--color-ink)]">{user?.email || 'Email unavailable'}</dd>
+                        </div>
+                    </dl>
 
                     <Button onClick={logout} variant="secondary" className="mt-6">
                         Log Out

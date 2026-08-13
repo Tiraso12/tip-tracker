@@ -92,8 +92,8 @@ test.after(async () => {
     await testEnv.cleanup();
 });
 
-function authedDb(uid) {
-    return testEnv.authenticatedContext(uid).firestore();
+function authedDb(uid, email) {
+    return testEnv.authenticatedContext(uid, email ? { email } : {}).firestore();
 }
 
 function guestDb() {
@@ -227,7 +227,7 @@ test("an employee cannot write payouts, shifts, temporary staff, or self-update 
 });
 
 test("new users can only create their own pending unassigned profile", async () => {
-    const db = authedDb("newUserUid");
+    const db = authedDb("newUserUid", "new@example.com");
 
     await assertSucceeds(setDoc(doc(db, "users/newUserUid"), {
         uid: "newUserUid",
@@ -273,9 +273,9 @@ test("new users can only create their own pending unassigned profile", async () 
 });
 
 test("username mappings can be created by their owner but not abused or overwritten", async () => {
-    const db = authedDb("newUserUid");
+    const db = authedDb("newUserUid", "new@example.com");
 
-    await assertSucceeds(setDoc(doc(db, "usernames/newuser"), {
+    await assertSucceeds(setDoc(doc(db, "usernames/new user"), {
         uid: "newUserUid",
         username: "New User",
         email: "new@example.com",
@@ -325,7 +325,7 @@ test("admin user writes must keep valid role and status enums", async () => {
     await assertFails(updateDoc(doc(db, "users/employeeUid"), { status: "disabled" }));
 });
 
-test("profile names are bounded, manager-writable, and never self-writable", async () => {
+test("profile names are bounded and self-editable without widening guarded fields", async () => {
     const admin = authedDb("adminUid");
     const employee = authedDb("employeeUid");
 
@@ -333,7 +333,7 @@ test("profile names are bounded, manager-writable, and never self-writable", asy
         firstName: "Sonia",
         lastName: "Alvarez Garcia",
     }));
-    await assertFails(updateDoc(doc(employee, "users/employeeUid"), { firstName: "Self rename" }));
+    await assertSucceeds(updateDoc(doc(employee, "users/employeeUid"), { firstName: "Self rename" }));
     await assertFails(updateDoc(doc(admin, "users/employeeUid"), { firstName: "" }));
     await assertFails(updateDoc(doc(admin, "users/employeeUid"), { firstName: "x".repeat(81) }));
     await assertFails(updateDoc(doc(admin, "users/employeeUid"), { lastName: "x".repeat(81) }));

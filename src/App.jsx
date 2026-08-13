@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from "react";
 import Login from "./components/Auth/Login";
 import PendingApproval from "./components/Auth/PendingApproval";
 import PayView from "./components/Pay/PayView";
+import AccountView from "./components/Account/AccountView";
 import { useAuth } from "./context/AuthContext";
 import { canOpenShiftWorkspace, hasOwnPayRecord } from "./utils/permissions";
 
@@ -55,15 +56,35 @@ function App() {
     return <PendingApproval />;
   }
 
+  if (surface === "account") {
+    const homeSurface = hasPayRecord ? "pay" : "workspace";
+    return (
+      <AccountView
+        onHome={() => setSurface(homeSurface)}
+        homeLabel={hasPayRecord ? "Go to my pay" : "Go to today's shifts"}
+        homeTitle={hasPayRecord ? "My pay" : "Today's shifts"}
+        onOpenWorkspace={canOpenWorkspace && hasPayRecord ? () => setSurface("workspace") : undefined}
+      />
+    );
+  }
+
   if (canOpenWorkspace && (surface === "workspace" || !hasPayRecord)) {
     return (
       <Suspense fallback={<InlineLoading label="Loading shift workspace..." />}>
-        <AdminDashboard onGoToMyPay={hasPayRecord ? () => setSurface("pay") : undefined} />
+        <AdminDashboard
+          onGoToMyPay={hasPayRecord ? () => setSurface("pay") : undefined}
+          onOpenAccount={() => setSurface("account")}
+        />
       </Suspense>
     );
   }
 
-  return <PayView onOpenWorkspace={canOpenWorkspace ? () => setSurface("workspace") : undefined} />;
+  return (
+    <PayView
+      onOpenWorkspace={canOpenWorkspace ? () => setSurface("workspace") : undefined}
+      onOpenAccount={() => setSurface("account")}
+    />
+  );
 }
 
 export default App;

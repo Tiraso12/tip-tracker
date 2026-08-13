@@ -31,6 +31,7 @@ import {
     validateTeamSetup,
 } from "./shiftEditorUtils";
 import { roleLabel } from "../../utils/roleLabels";
+import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 
 const NUMERIC_INPUT =
     // Money/number entry. On phones the field is a full 44px tap target and 16px
@@ -1383,7 +1384,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 let nextBar = emptyBar;
                 let nextRunners = [];
                 if (shiftDoc.exists()) {
-                    const d = shiftDoc.data();
+                    const d = applyOpenShiftMemberNames(shiftDoc.data());
                     if (d.teams) {
                         nextTeams = d.teams.map(t => ({
                             teamId: t.teamId,

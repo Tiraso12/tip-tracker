@@ -21,6 +21,7 @@ import {
     mergeTempStaffIntoAccount,
 } from "../../utils/tempStaffMergePersistence";
 import PayStatement from "../Pay/PayStatement";
+import IdentityCard from "../Account/IdentityCard";
 import { Badge, Button, Card, Select } from "../ui";
 import BarDatePill from "./BarDatePill";
 
@@ -277,7 +278,7 @@ function ManagementActions({
 
     const confirmDeny = () => {
         const confirmed = window.confirm(
-            `Deny ${name}'s sign-up request?\n\nThe account will be inactive and unable to access the app. Their username stays reserved.`
+            `Deny ${name}'s sign-up request?\n\nThe account will be inactive and unable to access the app. Their login handle remains tied to this account.`
         );
         if (confirmed) updateUser(person.uid, { status: "inactive" });
     };
@@ -420,13 +421,12 @@ function PersonView({
     mergeTemp,
     capabilities,
     viewerUid,
+    userManagerUid,
 }) {
     const [anchorDate, setAnchorDate] = useState(() => toDateKey(new Date()));
     const weekDates = useMemo(() => getCurrentWeek(new Date(`${anchorDate}T12:00:00`)), [anchorDate]);
     const weekStart = weekDates[0];
     const weekEnd = weekDates[6];
-    const status = personStatus(person);
-
     return (
         <div className="space-y-4" data-testid="person-view">
             <Button variant="ghost" className="min-h-11 !px-2" onClick={onBack} aria-label="Back to team roster">
@@ -434,22 +434,7 @@ function PersonView({
                 Team roster
             </Button>
 
-            <Card className="!p-0 overflow-hidden" data-testid="person-identity">
-                <div className="px-5 py-5 sm:px-6">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Team member</span>
-                            <h2 className="mt-1 truncate font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">{personName(person)}</h2>
-                            {person.email ? <p className="mt-1 truncate text-xs text-[var(--color-ink-muted)]">{person.email}</p> : null}
-                        </div>
-                        <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>
-                    </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-line)] bg-[var(--color-surface-muted)]/50 px-5 py-3 sm:px-6">
-                    <Badge tone="neutral" className="!normal-case">{roleLabel(person.role)}</Badge>
-                    {person.isSupervisor === true ? <Badge tone="accent" className="!normal-case">Supervisor</Badge> : null}
-                </div>
-            </Card>
+            <IdentityCard person={person} mode="manage" managerUid={userManagerUid} />
 
             <ManagementActions
                 person={person}
@@ -615,6 +600,7 @@ function TeamManagement({ allEmployees, refreshEmployees }) {
                 mergeTemp={mergeTemp}
                 capabilities={capabilities}
                 viewerUid={user?.uid}
+                userManagerUid={user?.managerUid}
             />
         );
     }
