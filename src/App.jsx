@@ -25,6 +25,24 @@ function InlineLoading({ label = "Loading..." }) {
 
 function App() {
   const { user, loading } = useAuth();
+  // The one gate between the two halves of the app, and it is DELIBERATELY still
+  // the legacy role test rather than canOpenShiftWorkspace(user), even though the
+  // capability exists, is tested, and would resolve correctly here.
+  //
+  // Moving it strands people. This app has exactly two halves and no way back:
+  // the employee side has no app bar at all (Header.jsx is an eyebrow, a title
+  // and Log Out), so whoever this gate sends to the workspace loses their own pay
+  // view with no navigation that could return them. A captain is a paid member of
+  // the tip pool. The first person the manager gave the Supervisor switch to
+  // would silently lose their week - proved in a running app, not theorised.
+  //
+  // So the gate moves ONLY together with a way for a captain to reach their own
+  // pay from inside the workspace, and the shape of that entry is an open
+  // question for the captain. The rules and the manager pointer landing ahead of
+  // it is safe and inert: a Supervisor-on captain really does hold settle-up
+  // write access, they simply have no screen routed to it yet. The reverse - UI
+  // routed somewhere the rules refuse, or a captain routed away from their pay -
+  // is what breaks people. See docs/MANAGER-CHANGEOVER.md, "the routing gate".
   const isAdmin = user?.role === "admin" && user?.status === "active";
   const [baseDate, setBaseDate] = useState(new Date());
   const [weekData, setWeekData] = useState(null);

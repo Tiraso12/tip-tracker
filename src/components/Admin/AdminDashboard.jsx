@@ -1,8 +1,8 @@
-import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from "react";
+import React, { Suspense, lazy, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
-import { canApproveAccounts } from "../../utils/permissions";
+import { canApproveAccounts, canRemoveSettledDay, tierLabel } from "../../utils/permissions";
 import DayRailLanding from "./DayRailLanding";
 import BarDatePill from "./BarDatePill";
 import AccountSheet from "../Account/AccountSheet";
@@ -138,6 +138,16 @@ function AdminDashboard() {
     // and when the capability moves it moves in one place.
     const canApprove = canApproveAccounts(user);
     const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+
+    // Team is the manager's screen - approvals, job titles, deactivation, the
+    // temp-staff merge - so a captain is never shown the door to it. Removing a
+    // settled day destroys the payout ledger and is manager-only for the same
+    // reason; correcting one is captain work and stays reachable to them.
+    // Both are refused server-side too; hiding them is so a captain is never
+    // offered a control that would come back PERMISSION_DENIED.
+    const canReachTeam = canApprove;
+    const canRemoveDay = canRemoveSettledDay(user);
+    const workspaceTier = tierLabel(user);
 
     // Live, because approving or denying someone has to take them off the count
     // immediately - including from the Team screen sitting under the same bar.
@@ -375,7 +385,7 @@ function AdminDashboard() {
     // Shifts is deliberately not listed here - the app bar's home control is the
     // way back, at every width, and a second door to it would just be noise.
     const accountItems = NAV_ITEMS
-        .filter((item) => item.value === "users")
+        .filter((item) => item.value === "users" && canReachTeam)
         .map((item) => ({
             key: item.value,
             label: item.label,
@@ -386,6 +396,20 @@ function AdminDashboard() {
             count: item.value === "users" ? pendingApprovalCount : 0,
             onClick: () => handleNavItemClick(item.value),
         }));
+
+    // Who can be put on a section tonight. The manager is excluded BY IDENTITY,
+    // not by job title: they oversee the operation, never work a section, and
+    // take no share of the pool. Their title is not what keeps them out - today
+    // it happens to be "admin", which the legacy filter beside this catches, but
+    // the pointer is what actually names them and it survives that value being
+    // retired. Assigning them would also pay them zero silently, since
+    // ROLE_POINTS knows no weight for a manager.
+    const floorPlanPool = useMemo(
+        () => allEmployees.filter((emp) =>
+            emp.status === "active" && emp.role !== "admin" && emp.uid !== user?.managerUid
+        ),
+        [allEmployees, user?.managerUid]
+    );
 
     // Day data is only shown for the date it was loaded for.
     const dayDataIsCurrent = dayDataDate === selectedDate;
@@ -465,9 +489,14 @@ function AdminDashboard() {
                     <span className="hidden sm:inline font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
                         Tip Tracker
                     </span>
-                    <span className="hidden sm:inline">
-                        <Badge tone="accent">Admin</Badge>
-                    </span>
+                    {/* Names the tier the viewer actually holds. It used to read
+                        "Admin" for everyone here, which stopped being true the
+                        moment captains could reach this workspace. */}
+                    {workspaceTier ? (
+                        <span className="hidden sm:inline">
+                            <Badge tone="accent">{workspaceTier}</Badge>
+                        </span>
+                    ) : null}
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3">
                     {/* The day lives in the bar on both day screens. On Shifts it is
@@ -523,7 +552,7 @@ function AdminDashboard() {
                             </button>
                         </div>
                         <div className="flex flex-col gap-1">
-                            {NAV_ITEMS.map((item) => (
+                            {NAV_ITEMS.filter((item) => item.value !== "users" || canReachTeam).map((item) => (
                                 <SideNavItem
                                     key={item.value}
                                     item={item}
@@ -586,7 +615,7 @@ function AdminDashboard() {
                                 onContinueSettle={() => enterEditor("settle")}
                                 onOpenReview={() => enterEditor("review")}
                                 onEditFloor={() => enterEditor("floor")}
-                                onRemoveShift={handleRemoveShift}
+                                onRemoveShift={canRemoveDay ? handleRemoveShift : undefined}
                                 removingShift={removingShift}
                             />
                         ) : activeTab === "editor" ? (
@@ -598,7 +627,7 @@ function AdminDashboard() {
                                 <Suspense fallback={<PanelLoading label="Loading shift…" />}>
                                     <ShiftEditorPanel
                                         date={selectedDate}
-                                        allEmployees={allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin")}
+                                        allEmployees={floorPlanPool}
                                         onClose={handleEditorClose}
                                         initialStep={editorStep}
                                         onRegisterLeaveGuard={registerEditorLeaveGuard}

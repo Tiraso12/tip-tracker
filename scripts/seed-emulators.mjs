@@ -13,18 +13,55 @@ const FIXED_NOW = "2026-06-01T12:00:00.000Z";
 const SETUP_SHIFT_DATE = "2026-06-01";
 const CLOSED_SHIFT_DATE = "2026-05-31";
 
+// The seeded restaurant carries all three tiers at once plus today's legacy
+// admin, because that is exactly the world the changeover creates: the pointer
+// names a manager while `role: "admin"` keeps working alongside it. See
+// docs/MANAGER-CHANGEOVER.md.
 const authUsers = [
     {
         key: "admin",
         email: "admin@example.com",
         username: "Admin",
+        // Today's authority, deliberately NOT the manager. Everything this
+        // account can do before the pointer exists it can still do after -
+        // that non-regression is what makes the cutover safe to ship.
         role: "admin",
         status: "active",
+    },
+    {
+        key: "manager",
+        email: "manager@example.com",
+        username: "Manager",
+        // The manager tier comes from restaurant/config.managerUid and from
+        // nothing else - no job title grants it, which is why this account
+        // carries none. They do not work a section and take no share of the
+        // pool, so they need no pay weight either.
+        //
+        // In production the manager is the captain's existing `role: "admin"`
+        // account, which is what keeps them off the roster and out of the
+        // floor-plan pool; retiring that value is a later, separate step. Here
+        // the title is left off so that signing in as this account proves the
+        // POINTER carried the tier and nothing else could have.
+        role: "unassigned",
+        status: "active",
+    },
+    {
+        key: "supervisor",
+        email: "supervisor@example.com",
+        username: "Captain Supervisor",
+        // Supervisor ON: the captain tier. Enters money, builds floor plans,
+        // corrects a settled day - and none of the manager-only work.
+        role: "captain",
+        status: "active",
+        isSupervisor: true,
     },
     {
         key: "captain",
         email: "captain@example.com",
         username: "Captain One",
+        // Supervisor OFF, which is the default every existing captain starts
+        // with. Same job title as the account above, same pay, an ordinary
+        // employee's access. The pair is the whole model in one seed.
         role: "captain",
         status: "active",
     },
@@ -173,6 +210,9 @@ function profileFor(user) {
         role: user.role,
         status: user.status,
         createdAt: FIXED_NOW,
+        // Absent reads as OFF everywhere, so only the accounts that hold the
+        // switch carry the key at all - the same shape a real roster has.
+        ...(user.isSupervisor ? { isSupervisor: true } : {}),
     };
 }
 
@@ -280,6 +320,17 @@ async function seedFirestore(seedUsers) {
                 }),
             ]));
 
+            // The manager pointer. One document, one field, one holder - the
+            // whole of "who is the manager". Written here with rules disabled
+            // for the same reason it is written from the console in production:
+            // firestore.rules allows no client to CREATE it, only the sitting
+            // manager to retarget it. docs/MANAGER-CHANGEOVER.md is the
+            // production procedure this mirrors.
+            await setDoc(doc(db, "restaurant", "config"), {
+                managerUid: seedUsers.manager.uid,
+                updatedAt: FIXED_NOW,
+            });
+
             await setDoc(doc(db, "unregisteredStaff", tempStaff.uid), tempStaff);
             await setDoc(doc(db, "shifts", SETUP_SHIFT_DATE), shifts.setup);
             await setDoc(doc(db, "shifts", CLOSED_SHIFT_DATE), shifts.closed);
@@ -316,6 +367,12 @@ await clearAuthUsers();
 const seedUsers = await seedAuthUsers();
 await seedFirestore(seedUsers);
 
-console.log(`Seeded ${PROJECT_ID} emulators.`);
-console.log(`Admin login: admin@example.com / ${PASSWORD}`);
+console.log(`Seeded ${PROJECT_ID} emulators. Password for every account: ${PASSWORD}`);
+console.log(`  admin@example.com       legacy admin - the ONLY login that opens the workspace today`);
+console.log(`  manager@example.com     manager tier via the pointer, no job title`);
+console.log(`  supervisor@example.com  captain tier: Supervisor ON`);
+console.log(`  captain@example.com     captain's title, Supervisor OFF`);
+console.log(`  server@example.com      employee`);
+console.log(`Only the admin sees the workspace: App.jsx still gates on role == "admin" on purpose.`);
+console.log(`The other tiers hold real server-side access - see docs/MANAGER-CHANGEOVER.md.`);
 console.log(`Setup shift: ${SETUP_SHIFT_DATE}; closed shift: ${CLOSED_SHIFT_DATE}`);

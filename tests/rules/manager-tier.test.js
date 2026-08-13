@@ -626,3 +626,80 @@ test("PROPOSED: the legacy admin keeps full authority alongside the manager", as
     // exactly one uid, and retargeting it is that person's alone.
     await assertFails(updateDoc(doc(db, CONFIG_PATH), { managerUid: "adminUid" }));
 });
+
+// The pointer is created and destroyed out of band or not at all. This is what
+// makes docs/MANAGER-CHANGEOVER.md a console procedure rather than a screen: no
+// client may mint a manager, and no client may leave the restaurant without one.
+// Only the sitting manager may retarget it, which is the atomic hand-over.
+test("PROPOSED: nobody may create or delete the manager pointer, the manager included", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        await deleteDoc(doc(context.firestore(), CONFIG_PATH));
+    });
+
+    // With the pointer gone the tiers are dormant again, so the legacy admin is
+    // the only authority left - and even they cannot mint a manager.
+    for (const uid of ["adminUid", "managerUid", "supervisorUid", "serverUid"]) {
+        await assertFails(setDoc(doc(authedDb(uid), CONFIG_PATH), { managerUid: uid }));
+    }
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        await setDoc(doc(context.firestore(), CONFIG_PATH), { managerUid: "managerUid" });
+    });
+
+    // Nor may the sitting manager stand the restaurant down by deleting it. The
+    // pointer is only ever retargeted, so there is no moment with no manager.
+    await assertFails(deleteDoc(doc(authedDb("managerUid"), CONFIG_PATH)));
+    await assertFails(deleteDoc(doc(authedDb("adminUid"), CONFIG_PATH)));
+
+    // The shape is pinned too: the pointer holds a manager and a timestamp and
+    // nothing else, so it cannot grow into a second place permissions live.
+    const manager = authedDb("managerUid");
+    await assertFails(updateDoc(doc(manager, CONFIG_PATH), { managerUid: "captainUid", isSupervisor: true }));
+    await assertFails(updateDoc(doc(manager, CONFIG_PATH), { managerUid: 42 }));
+    await assertSucceeds(updateDoc(doc(manager, CONFIG_PATH), {
+        managerUid: "captainUid",
+        updatedAt: `${OPEN_DATE}T15:00:00.000Z`,
+    }));
+});
+
+// The exact state the cutover creates, and the one production sits in the
+// morning after: the pointer names the person who ALREADY holds `role: "admin"`.
+// Both authorities land on the same account, and the point of the release is
+// that this changes nothing for anyone - see docs/MANAGER-CHANGEOVER.md.
+test("PROPOSED: the cutover state - the pointer names today's admin - takes nothing from anyone", async () => {
+    await repointManager("adminUid");
+
+    // The captain, holding both authorities at once, keeps every one of them.
+    const admin = authedDb("adminUid");
+    await assertSucceeds(getDocs(collection(admin, "users")));
+    await assertSucceeds(updateDoc(doc(admin, "users/pendingUid"), { status: "active", role: "server" }));
+    await assertSucceeds(deleteDoc(doc(admin, "unregisteredStaff/tempOne")));
+    await assertSucceeds(deleteDoc(doc(admin, "shifts/" + CLOSED_DATE)));
+
+    // ...and gains the one thing only the pointer carries: handing the tier on.
+    await assertSucceeds(updateDoc(doc(admin, CONFIG_PATH), { managerUid: "adminUid" }));
+
+    // The person the pointer used to name keeps nothing. No role, no switch, no
+    // tier - which is what makes writing the previous value back a real undo.
+    const formerManager = authedDb("managerUid");
+    await assertFails(getDocs(collection(formerManager, "users")));
+    await assertFails(updateDoc(doc(formerManager, CONFIG_PATH), { managerUid: "managerUid" }));
+
+    // Supervisor is still OFF for the captain who was never given it, which is
+    // exactly why the changeover has to happen between services: until the
+    // manager turns the switch on, nobody but them can settle up.
+    await assertNoCaptainAccess(authedDb("captainUid"), "captainUid", "captain with the switch off");
+
+    // The manager turns it on, and that captain can run the night.
+    await assertSucceeds(updateDoc(doc(admin, "users/captainUid"), { isSupervisor: true }));
+    const switchedOn = authedDb("captainUid");
+    await assertSucceeds(setDoc(doc(switchedOn, "shifts/" + OPEN_DATE), validShift(OPEN_DATE, { status: "setup" })));
+    await assertSucceeds(setDoc(doc(switchedOn, `payouts/${OPEN_DATE}/entries/serverUid`), validPayoutEntry()));
+
+    // ...and not a step further. Each of these changes a real value: an update
+    // whose diff is empty passes the history-flags gate because it affects no
+    // keys, so a probe that rewrites a value with itself proves nothing.
+    await assertFails(updateDoc(doc(switchedOn, "users/inactiveUid"), { status: "active" }));
+    await assertFails(updateDoc(doc(switchedOn, "users/serverUid"), { role: "captain" }));
+    await assertFails(deleteDoc(doc(switchedOn, "shifts/" + OPEN_DATE)));
+});

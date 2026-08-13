@@ -16,6 +16,7 @@ import {
     canSetSupervisor,
     canSettleUp,
     canTransferManagerTier,
+    tierLabel,
 } from "./permissions.js";
 
 // --- The approve-accounts capability, unchanged by the tier definitions ------
@@ -223,4 +224,27 @@ test("the Supervisor switch is read from the profile, not from anything a shift 
 
 test("the legacy admin keeps full authority after a manager is named", () => {
     assertTier({ uid: "adminUid", role: "admin", status: "active", managerUid: "managerUid" }, EVERYTHING, "admin alongside manager");
+});
+
+// --- The tier's name -------------------------------------------------------
+// One label, in the captain's vocabulary, for the app bar. It is derived from
+// the same predicates as every capability so it can never disagree with what
+// the workspace actually offers.
+
+test("the tier label names the tier the viewer holds", () => {
+    assert.equal(tierLabel({ uid: "managerUid", role: "unassigned", status: "active", managerUid: "managerUid" }), "Manager");
+    assert.equal(tierLabel({ uid: "captainUid", role: "captain", status: "active", managerUid: "managerUid", isSupervisor: true }), "Captain");
+});
+
+test("today's admin reads Manager, with or without a manager named", () => {
+    assert.equal(tierLabel({ uid: "adminUid", role: "admin", status: "active" }), "Manager");
+    assert.equal(tierLabel({ uid: "adminUid", role: "admin", status: "active", managerUid: "managerUid" }), "Manager");
+});
+
+test("an employee has no tier to name", () => {
+    // Including a captain by job title with the switch off - the badge must not
+    // advertise a tier the workspace would refuse.
+    assert.equal(tierLabel({ uid: "captainUid", role: "captain", status: "active", managerUid: "managerUid" }), null);
+    assert.equal(tierLabel({ uid: "serverUid", role: "server", status: "active", managerUid: "managerUid" }), null);
+    assert.equal(tierLabel(null), null);
 });

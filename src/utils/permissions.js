@@ -150,3 +150,18 @@ export function canReadRoster(user) {
 export function canReadColleaguePay(user) {
     return hasCaptainAccess(user);
 }
+
+// --- Naming the tier -------------------------------------------------------
+
+// The tier's own name, in the captain's vocabulary, for the one place the
+// interface has to say which one the viewer holds. This is a LABEL and not a
+// gate - every actual decision above asks for a capability by name. `null` for
+// an employee, who has no tier and is shown no badge.
+//
+// Today's `role: "admin"` account reads "Manager": it holds the manager tier
+// through the legacy clause, and "manager" is the word the restaurant uses.
+export function tierLabel(user) {
+    if (hasManagerAccess(user)) return "Manager";
+    if (hasCaptainAccess(user)) return "Captain";
+    return null;
+}
