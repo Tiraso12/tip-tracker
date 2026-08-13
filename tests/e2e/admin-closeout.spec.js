@@ -747,7 +747,7 @@ test.describe("mobile floor polish", () => {
         // Team is still two taps away - through the account sheet, not a menu band.
         await page.getByRole("button", { name: /Open account menu/ }).click();
         await page.getByRole("menuitem", { name: "Team" }).click();
-        await expect(page.getByRole("heading", { name: "Team Management" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
 
         // ...and the app bar's home control is the way back out of it.
         await page.getByRole("button", { name: "Go to today's shifts" }).click();

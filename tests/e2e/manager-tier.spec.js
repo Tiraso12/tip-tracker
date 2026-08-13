@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { deleteDoc, doc, setDoc } from "firebase/firestore";
@@ -45,6 +45,9 @@ const PEOPLE = {
     admin: { email: "admin-tier@example.com", displayName: "Admin", role: "admin" },
     supervisor: { email: "supervisor-tier@example.com", displayName: "Captain Supervisor", role: "captain", isSupervisor: true },
     captain: { email: "captain-tier@example.com", displayName: "Captain One", role: "captain" },
+    server: { email: "server-tier@example.com", displayName: "Server One", role: "server" },
+    pending: { email: "pending-tier@example.com", displayName: "Pending User", role: "unassigned", status: "pending" },
+    inactive: { email: "inactive-tier@example.com", displayName: "Inactive User", role: "server", status: "inactive" },
 };
 
 let testEnv;
@@ -93,10 +96,19 @@ async function seedRestaurant({ managerNamed = true } = {}) {
                 username: person.displayName,
                 email: person.email,
                 role: person.role,
-                status: "active",
+                status: person.status || "active",
                 ...(person.isSupervisor ? { isSupervisor: true } : {}),
             });
         }
+
+        await setDoc(doc(db, "unregisteredStaff/temp-tier"), {
+            uid: "temp-tier",
+            name: "Temp Staff",
+            username: "Temp Staff",
+            role: "server",
+            status: "active",
+            isUnregistered: true,
+        });
 
         if (managerNamed) {
             await setDoc(doc(db, CONFIG_PATH), { managerUid: uids.manager });
@@ -127,6 +139,19 @@ async function seedRestaurant({ managerNamed = true } = {}) {
             gratuity: 57.6,
             cash: 38.4,
             total: 241.6,
+            ledgerVersion: 1,
+            source: "closeout",
+        });
+        await setDoc(doc(db, "payouts", TODAY, "entries", uids.server), {
+            date: TODAY,
+            uid: uids.server,
+            name: "Server One",
+            role: "server",
+            points: 4,
+            tips: 123.45,
+            gratuity: 34.5,
+            cash: 20,
+            total: 157.95,
             ledgerVersion: 1,
             source: "closeout",
         });
@@ -173,7 +198,21 @@ async function accountMenuItems(page) {
     return texts.map((text) => text.replace(/\d+$/, "").trim());
 }
 
+async function openTeamFromWorkspace(page) {
+    await accountTrigger(page).click();
+    await page.getByRole("menuitem", { name: /^Team/ }).click();
+    await expect(page.getByTestId("team-roster")).toBeVisible();
+}
+
+async function openWorkspaceAndTeam(page) {
+    await accountTrigger(page).click();
+    await page.getByRole("menuitem", { name: /^Shifts/ }).click();
+    await expect(workspace(page)).toBeAttached();
+    await openTeamFromWorkspace(page);
+}
+
 test.beforeAll(async () => {
+    mkdirSync("artifacts/team-roster", { recursive: true });
     testEnv = await initializeTestEnvironment({
         projectId: PROJECT_ID,
         firestore: { rules: readFileSync("firestore.rules", "utf8") },
@@ -229,6 +268,77 @@ test("the manager gets the workspace and no pay page - they have no pay record",
     expect(await accountMenuItems(page)).toEqual(["Team", "Log Out"]);
 });
 
+test("the manager gets one searchable roster and deliberate person actions", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedRestaurant();
+    await login(page, "manager");
+    await openTeamFromWorkspace(page);
+
+    const rows = page.locator('[data-testid^="roster-row-"]');
+    await expect(rows).toHaveCount(6);
+    const geometry = await rows.evaluateAll((elements) => elements.map((element) => {
+        const box = element.getBoundingClientRect();
+        return { height: box.height, top: box.top, bottom: box.bottom };
+    }));
+    expect(geometry.every(({ height }) => height === 64)).toBe(true);
+    const fullyVisibleRows = geometry.filter(({ top, bottom }) => top >= 0 && bottom <= 844).length;
+    console.log(`TEAM_DENSITY phone row=64px fully-visible=${fullyVisibleRows} viewport=390x844`);
+
+    await page.screenshot({ path: "artifacts/team-roster/manager-roster-phone.png", fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: "artifacts/team-roster/manager-roster-desktop.png", fullPage: true });
+
+    await page.getByLabel("Search team").fill("nothing matches this");
+    await expect(page.getByText("No people found")).toBeVisible();
+    await page.getByRole("button", { name: "Clear filters" }).click();
+
+    await page.getByRole("button", { name: /^Pending 1$/ }).click();
+    await expect(rows).toHaveCount(1);
+    await page.getByRole("button", { name: /Open Pending User/ }).click();
+    await expect(page.getByTestId("management-actions")).toBeVisible();
+    await page.getByLabel("Job title").selectOption("server");
+
+    page.once("dialog", async (dialog) => {
+        expect(dialog.message()).toContain("Assign Pending User the job title Server?");
+        expect(dialog.message()).toContain("default point weight");
+        await dialog.accept();
+    });
+    await page.getByRole("button", { name: "Save job title" }).click();
+    await expect(page.getByTestId("person-identity")).toContainText("Server");
+    await expect(page.getByRole("button", { name: "Approve account" })).toBeEnabled();
+
+    await page.getByRole("button", { name: "Back to team roster" }).click();
+    await page.getByRole("button", { name: /^Temp 1$/ }).click();
+    await page.getByRole("button", { name: /Open Temp Staff/ }).click();
+    await expect(page.getByText(/per date and all-or-nothing/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Merge profile" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Delete temporary profile" })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: "artifacts/team-roster/manager-temp-person-phone.png", fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: "artifacts/team-roster/manager-temp-person-desktop.png", fullPage: true });
+});
+
+test("a Supervisor-on captain reads a colleague's shared pay statement and no management actions", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedRestaurant();
+    await login(page, "supervisor");
+    await openWorkspaceAndTeam(page);
+
+    await page.getByRole("button", { name: /Open Server One/ }).click();
+    await expect(page.getByTestId("person-identity")).toContainText("Server One");
+    await expect(page.getByTestId("management-actions")).toHaveCount(0);
+    await expect(payStatement(page)).toBeVisible();
+    await expect(payStatement(page)).toContainText("CTP");
+    await expect(payStatement(page)).toContainText("GRT");
+    await expect(payStatement(page)).toContainText("Cash");
+    await expect(payStatement(page)).toContainText("$157.95");
+
+    await page.screenshot({ path: "artifacts/team-roster/supervisor-person-phone.png", fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: "artifacts/team-roster/supervisor-person-desktop.png", fullPage: true });
+});
+
 test("the manager is not on the floor - they never appear in the pool to assign", async ({ page }) => {
     await seedRestaurant();
     // Driven as the admin, who is who reaches the workspace today. The pointer
@@ -279,6 +389,7 @@ test("today's admin is unchanged with no manager named at all", async ({ page })
 });
 
 test("Supervisor off is an ordinary employee, whatever the job title says", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await seedRestaurant();
     await login(page, "captain");
 
@@ -289,4 +400,7 @@ test("Supervisor off is an ordinary employee, whatever the job title says", asyn
     await expect(workspace(page)).toHaveCount(0);
     await expect(removeShift(page)).toHaveCount(0);
     expect(await accountMenuItems(page)).toEqual(["Log Out"]);
+    await page.screenshot({ path: "artifacts/team-roster/supervisor-off-phone.png", fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: "artifacts/team-roster/supervisor-off-desktop.png", fullPage: true });
 });

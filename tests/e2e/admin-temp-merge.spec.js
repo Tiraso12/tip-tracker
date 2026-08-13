@@ -232,7 +232,7 @@ async function loginAndOpenTeam(page) {
     // section lives in the workspace nav.
     await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
     await page.getByRole("button", { name: "Team", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Team Management" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
 }
 
 async function mergeTempProfile(page, { tempUid, tempName, targetUid }) {
@@ -242,9 +242,9 @@ async function mergeTempProfile(page, { tempUid, tempName, targetUid }) {
         await dialog.accept();
     });
 
-    const row = page.getByTestId(`temp-staff-row-${tempUid}`);
-    await row.getByLabel(`Merge ${tempName} into account`).selectOption(targetUid);
-    await row.getByRole("button", { name: "Merge" }).click();
+    await page.getByTestId(`roster-row-${tempUid}`).click();
+    await page.getByLabel(`Merge ${tempName} into account`).selectOption(targetUid);
+    await page.getByRole("button", { name: "Merge profile" }).click();
     await expect.poll(() => dialogMessages.length).toBe(2);
     return dialogMessages;
 }

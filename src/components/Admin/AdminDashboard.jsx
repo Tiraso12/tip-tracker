@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useState, useEffect, useCallback, useMemo, useRe
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
-import { canApproveAccounts, canRemoveSettledDay, tierLabel } from "../../utils/permissions";
+import { canApproveAccounts, canReadRoster, canRemoveSettledDay, tierLabel } from "../../utils/permissions";
 import DayRailLanding from "./DayRailLanding";
 import BarDatePill from "./BarDatePill";
 import AppBar from "../AppBar/AppBar";
@@ -132,13 +132,12 @@ function AdminDashboard({ onGoToMyPay }) {
     const canApprove = canApproveAccounts(user);
     const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
 
-    // Team is the manager's screen - approvals, job titles, deactivation, the
-    // temp-staff merge - so a captain is never shown the door to it. Removing a
-    // settled day destroys the payout ledger and is manager-only for the same
-    // reason; correcting one is captain work and stays reachable to them.
-    // Both are refused server-side too; hiding them is so a captain is never
-    // offered a control that would come back PERMISSION_DENIED.
-    const canReachTeam = canApprove;
+    // Captains read the roster and colleagues' pay; managers additionally see
+    // the controls that change access, job titles, account status, and temp
+    // profiles. Every write is capability-gated again inside the person view and
+    // refused server-side for a captain. Supervisor off is an ordinary employee,
+    // so it never reaches the workspace or this destination.
+    const canReachTeam = canReadRoster(user);
     const canRemoveDay = canRemoveSettledDay(user);
     const workspaceTier = tierLabel(user);
 
@@ -462,8 +461,8 @@ function AdminDashboard({ onGoToMyPay }) {
         }
         return {
             eyebrow: "Team",
-            title: "Team Management",
-            subtitle: "Approve new users, assign roles, and manage active employees.",
+            title: "Team",
+            subtitle: "Find a person, check their status, or open their pay history.",
         };
     };
 

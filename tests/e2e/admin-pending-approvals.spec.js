@@ -114,17 +114,20 @@ test("the count is real and clears as pending people are approved and denied", a
     // Tapping through lands on Team, where the two are actually acted on.
     await accountTrigger(page).click();
     await page.getByRole("menuitem", { name: /^Team/ }).click();
-    await expect(page.getByRole("heading", { name: "Team Management" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
 
     page.on("dialog", (dialog) => dialog.accept());
 
-    // Approve/Deny exist only on pending rows, so these are the two waiting people.
-    await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(2);
-    await page.getByRole("button", { name: "Approve" }).first().click();
+    // Pending people stay at the top of the roster. Their actions live inside
+    // the person view, so no manager control is repeated on every row.
+    await page.getByRole("button", { name: /Open Pending 1/ }).click();
+    await page.getByRole("button", { name: "Approve account" }).click();
     await expect(badge(page)).toHaveText("1");
     await expect(accountTrigger(page)).toHaveAccessibleName(/1 person awaiting approval/);
 
-    await page.getByRole("button", { name: "Deny" }).first().click();
+    await page.getByRole("button", { name: "Back to team roster" }).click();
+    await page.getByRole("button", { name: /Open Pending 2/ }).click();
+    await page.getByRole("button", { name: "Deny request" }).click();
     await expect(badge(page)).toHaveCount(0);
     await expect(accountTrigger(page)).toHaveAccessibleName(/Open account menu\.$/);
 });

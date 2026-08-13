@@ -1,67 +1,506 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../../config/firebase';
-import { doc, updateDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
-import { Badge, Button, Card, Select } from '../ui';
-import { useAuth } from '../../context/AuthContext';
-import { canApproveAccounts } from '../../utils/permissions';
+import React, { useEffect, useMemo, useState } from "react";
+import { collection, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
+import { db } from "../../config/firebase";
+import { useAuth } from "../../context/AuthContext";
+import { formatMonthDayRange, getCurrentWeek, toDateKey } from "../../utils/dateUtils";
+import {
+    canApproveAccounts,
+    canAssignRoles,
+    canDeactivateAccounts,
+    canMergeTempStaff,
+    canReadColleaguePay,
+    canSetSupervisor,
+    isPaidFromPool,
+} from "../../utils/permissions";
+import { ASSIGNABLE_ROLES, roleLabel, roleShortLabel } from "../../utils/roleLabels";
 import {
     formatTempStaffMergeCollisionMessage,
     formatTempStaffMergeResultMessage,
     isTempStaffMergeCollisionError,
     mergeTempStaffIntoAccount,
-} from '../../utils/tempStaffMergePersistence';
-import { ASSIGNABLE_ROLES, roleLabel } from '../../utils/roleLabels';
+} from "../../utils/tempStaffMergePersistence";
+import PayStatement from "../Pay/PayStatement";
+import { Badge, Button, Card, Select } from "../ui";
+import BarDatePill from "./BarDatePill";
 
-function SectionCard({ title, count, description, children, tone = "neutral" }) {
-    const toneClass =
-        tone === "accent"
-            ? "border-[var(--color-accent)]/15 bg-[var(--color-accent-soft)]/40"
-            : tone === "muted"
-                ? "opacity-90"
-                : "";
+const STATUS_FILTERS = [
+    { value: "all", label: "All" },
+    { value: "pending", label: "Pending" },
+    { value: "active", label: "Active" },
+    { value: "inactive", label: "Inactive" },
+    { value: "temp", label: "Temp" },
+];
 
+const STATUS_ORDER = { pending: 0, temp: 1, active: 2, inactive: 3 };
+
+function personName(person) {
+    return person?.username || person?.name || "Unnamed person";
+}
+
+function personStatus(person) {
+    return person?.isTemp ? "temp" : person?.status || "inactive";
+}
+
+function statusLabel(status) {
+    return status === "temp" ? "Temp" : status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function statusTone(status) {
+    if (status === "active") return "success";
+    if (status === "pending" || status === "temp") return "warning";
+    return "neutral";
+}
+
+function BackIcon() {
     return (
-        <Card className={"!p-0 " + toneClass}>
-            <header className="flex items-start justify-between gap-3 px-6 py-4 border-b border-[var(--color-line)]">
-                <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                        <h3 className="font-display text-base font-medium tracking-tight text-[var(--color-ink)]">
-                            {title}
-                        </h3>
-                        {count != null ? <Badge tone="accent">{count}</Badge> : null}
-                    </div>
-                    {description ? (
-                        <p className="text-xs text-[var(--color-ink-soft)]">{description}</p>
-                    ) : null}
-                </div>
-            </header>
-            <div className="divide-y divide-[var(--color-line)]">{children}</div>
-        </Card>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+        </svg>
     );
 }
 
-function EmptyRow({ children }) {
+function ChevronIcon() {
     return (
-        <div className="px-6 py-6 text-sm text-[var(--color-ink-muted)] text-center italic">
-            {children}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6" />
+        </svg>
+    );
+}
+
+function SearchIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="20" y1="20" x2="16.65" y2="16.65" />
+        </svg>
+    );
+}
+
+function RosterRow({ person, onOpen }) {
+    const status = personStatus(person);
+
+    return (
+        <button
+            type="button"
+            onClick={onOpen}
+            data-testid={`roster-row-${person.uid}`}
+            className="group flex min-h-16 w-full items-center gap-3 px-4 text-left transition-colors hover:bg-[var(--color-surface-muted)]/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]/30 sm:px-5"
+            aria-label={`Open ${personName(person)}, ${roleLabel(person.role)}, ${statusLabel(status)}`}
+        >
+            <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-[var(--color-ink)]">
+                    {personName(person)}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-[var(--color-ink-muted)]">
+                    {roleShortLabel(person.role)}
+                    {person.isSupervisor === true ? " · Supervisor" : ""}
+                </span>
+            </span>
+            <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>
+            <span className="text-[var(--color-ink-muted)] transition-colors group-hover:text-[var(--color-ink-soft)]">
+                <ChevronIcon />
+            </span>
+        </button>
+    );
+}
+
+function RosterList({ people, search, setSearch, statusFilter, setStatusFilter, onOpen }) {
+    const counts = useMemo(() => people.reduce((result, person) => {
+        const status = personStatus(person);
+        result[status] = (result[status] || 0) + 1;
+        return result;
+    }, {}), [people]);
+
+    const filteredPeople = useMemo(() => {
+        const query = search.trim().toLocaleLowerCase();
+        return people.filter((person) => {
+            const status = personStatus(person);
+            if (statusFilter !== "all" && status !== statusFilter) return false;
+            if (!query) return true;
+            return [
+                personName(person),
+                person.email,
+                roleLabel(person.role),
+                roleShortLabel(person.role),
+                statusLabel(status),
+            ].filter(Boolean).some((value) => value.toLocaleLowerCase().includes(query));
+        });
+    }, [people, search, statusFilter]);
+
+    return (
+        <div className="space-y-4" data-testid="team-roster">
+            <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[var(--color-ink-muted)]">
+                    <SearchIcon />
+                </span>
+                <input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    aria-label="Search team"
+                    placeholder="Search by name, email, or role"
+                    className="h-11 w-full rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] pl-10 pr-3 text-sm text-[var(--color-ink)] outline-none transition-colors placeholder:text-[var(--color-ink-muted)] hover:border-[var(--color-line-strong)] focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15"
+                />
+            </div>
+
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter team by status">
+                {STATUS_FILTERS.map((filter) => {
+                    const selected = statusFilter === filter.value;
+                    const count = filter.value === "all" ? people.length : counts[filter.value] || 0;
+                    return (
+                        <button
+                            type="button"
+                            key={filter.value}
+                            onClick={() => setStatusFilter(filter.value)}
+                            aria-pressed={selected}
+                            className={
+                                "inline-flex h-10 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+                                (selected
+                                    ? "border-[var(--color-accent)]/20 bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                                    : "border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:border-[var(--color-line-strong)]")
+                            }
+                        >
+                            {filter.label}
+                            <span className={selected ? "text-[var(--color-accent)]/75" : "text-[var(--color-ink-muted)]"}>{count}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 text-xs text-[var(--color-ink-muted)]">
+                <span>{filteredPeople.length} {filteredPeople.length === 1 ? "person" : "people"}</span>
+                {search || statusFilter !== "all" ? (
+                    <button
+                        type="button"
+                        className="min-h-10 px-2 font-medium text-[var(--color-accent)] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                        onClick={() => {
+                            setSearch("");
+                            setStatusFilter("all");
+                        }}
+                    >
+                        Clear filters
+                    </button>
+                ) : null}
+            </div>
+
+            <Card className="!p-0 overflow-hidden">
+                {filteredPeople.length > 0 ? (
+                    <div className="divide-y divide-[var(--color-line)]">
+                        {filteredPeople.map((person) => (
+                            <RosterRow key={`${person.isTemp ? "temp" : "user"}-${person.uid}`} person={person} onOpen={() => onOpen(person)} />
+                        ))}
+                    </div>
+                ) : (
+                    <div className="px-6 py-12 text-center">
+                        <p className="text-sm font-medium text-[var(--color-ink)]">No people found</p>
+                        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Try another name or status.</p>
+                    </div>
+                )}
+            </Card>
         </div>
     );
 }
 
-const TeamManagement = ({ allEmployees, refreshEmployees }) => {
+function ManagementActions({
+    person,
+    allEmployees,
+    loadingId,
+    updateUser,
+    deleteTemp,
+    mergeTemp,
+    canApprove,
+    canAssign,
+    canDeactivate,
+    canMerge,
+    canManageSupervisor,
+    viewerUid,
+}) {
+    const [roleDraft, setRoleDraft] = useState(person.role || "unassigned");
+    const [mergeTarget, setMergeTarget] = useState("");
+    const name = personName(person);
+
+    useEffect(() => {
+        setRoleDraft(person.role || "unassigned");
+        setMergeTarget("");
+    }, [person.uid, person.role]);
+
+    const busy = loadingId === person.uid;
+    const mergeTargets = allEmployees.filter((employee) =>
+        !employee.isTemp && employee.status === "active" && employee.role !== "admin" && employee.uid !== viewerUid
+    );
+
+    const confirmRoleChange = () => {
+        if (!roleDraft || roleDraft === "unassigned" || roleDraft === person.role) return;
+        const hadRole = person.role && person.role !== "unassigned";
+        const action = hadRole
+            ? `Change ${name}'s job title from ${roleLabel(person.role)} to ${roleLabel(roleDraft)}?`
+            : `Assign ${name} the job title ${roleLabel(roleDraft)}?`;
+        const confirmed = window.confirm(
+            `${action}\n\nThis changes their default point weight for future shifts. Saved floor plans and past pay do not change.`
+        );
+        if (confirmed) updateUser(person.uid, { role: roleDraft });
+    };
+
+    const confirmSupervisorChange = () => {
+        const enabling = person.isSupervisor !== true;
+        const confirmed = window.confirm(
+            `${enabling ? "Turn on" : "Turn off"} Supervisor for ${name}?\n\n` +
+            (enabling
+                ? "They will be able to open the full roster, read colleagues' pay, build floor plans, enter money, and correct settled days. Their job title and pay do not change."
+                : "They will lose roster and shift-management access. Their job title and pay do not change.")
+        );
+        if (confirmed) updateUser(person.uid, { isSupervisor: enabling });
+    };
+
+    const confirmDeactivate = () => {
+        const confirmed = window.confirm(
+            `Deactivate ${name}?\n\nThey keep their account, username, and saved pay history, but cannot access the app until reactivated. Saved floor plans are not changed.`
+        );
+        if (confirmed) updateUser(person.uid, { status: "inactive" });
+    };
+
+    const confirmReactivate = () => {
+        if (window.confirm(`Reactivate ${name}?\n\nThey will be able to sign in again.`)) {
+            updateUser(person.uid, { status: "active" });
+        }
+    };
+
+    const confirmDeny = () => {
+        const confirmed = window.confirm(
+            `Deny ${name}'s sign-up request?\n\nThe account will be inactive and unable to access the app. Their username stays reserved.`
+        );
+        if (confirmed) updateUser(person.uid, { status: "inactive" });
+    };
+
+    if (person.isTemp) {
+        if (!canMerge) return null;
+        return (
+            <Card className="!p-0 overflow-hidden" data-testid="management-actions">
+                <div className="border-b border-[var(--color-line)] px-5 py-4 sm:px-6">
+                    <h3 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">Temporary profile</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
+                        Merge as soon as the real account is approved. The rule is per date and all-or-nothing: if both profiles have saved payout history on even one same date, the entire merge stops and nothing moves.
+                    </p>
+                </div>
+                <div className="space-y-3 px-5 py-4 sm:px-6">
+                    <Select
+                        label="Real employee account"
+                        value={mergeTarget}
+                        onChange={(event) => setMergeTarget(event.target.value)}
+                        disabled={busy || mergeTargets.length === 0}
+                        aria-label={`Merge ${name} into account`}
+                    >
+                        <option value="" disabled>Choose an active account…</option>
+                        {mergeTargets.map((employee) => (
+                            <option key={employee.uid} value={employee.uid}>
+                                {personName(employee)} ({roleLabel(employee.role)})
+                            </option>
+                        ))}
+                    </Select>
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            className="min-h-11"
+                            onClick={() => mergeTemp(person, mergeTarget)}
+                            disabled={busy || !mergeTarget}
+                        >
+                            Merge profile
+                        </Button>
+                        <Button
+                            className="min-h-11"
+                            variant="danger"
+                            onClick={() => deleteTemp(person)}
+                            disabled={busy}
+                        >
+                            Delete temporary profile
+                        </Button>
+                    </div>
+                </div>
+            </Card>
+        );
+    }
+
+    const hasAnyAction = canAssign || canDeactivate || canApprove || canManageSupervisor;
+    if (!hasAnyAction) return null;
+
+    return (
+        <Card className="!p-0 overflow-hidden" data-testid="management-actions">
+            <div className="border-b border-[var(--color-line)] px-5 py-4 sm:px-6">
+                <h3 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">Manage person</h3>
+                <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Changes here affect access or future pay weight.</p>
+            </div>
+
+            {canAssign ? (
+                <div className="space-y-3 border-b border-[var(--color-line)] px-5 py-4 sm:px-6">
+                    <Select
+                        id={`job-title-${person.uid}`}
+                        label="Job title"
+                        value={roleDraft}
+                        onChange={(event) => setRoleDraft(event.target.value)}
+                        disabled={busy}
+                    >
+                        <option value="unassigned" disabled>Select a job title…</option>
+                        {ASSIGNABLE_ROLES.map((role) => (
+                            <option key={role} value={role}>{roleLabel(role)}</option>
+                        ))}
+                    </Select>
+                    <Button
+                        variant="secondary"
+                        className="min-h-11"
+                        onClick={confirmRoleChange}
+                        disabled={busy || roleDraft === person.role || roleDraft === "unassigned"}
+                    >
+                        Save job title
+                    </Button>
+                </div>
+            ) : null}
+
+            {canManageSupervisor && person.status === "active" && person.uid !== viewerUid ? (
+                <div className="flex flex-col gap-3 border-b border-[var(--color-line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    <div>
+                        <p className="text-sm font-medium text-[var(--color-ink)]">Supervisor</p>
+                        <p className="mt-0.5 text-xs text-[var(--color-ink-muted)]">Shift and roster access. Separate from job title and pay.</p>
+                    </div>
+                    <Button
+                        variant={person.isSupervisor === true ? "secondary" : "primary"}
+                        className="min-h-11 self-start sm:self-auto"
+                        onClick={confirmSupervisorChange}
+                        disabled={busy}
+                    >
+                        Turn {person.isSupervisor === true ? "off" : "on"}
+                    </Button>
+                </div>
+            ) : null}
+
+            <div className="flex flex-wrap gap-2 px-5 py-4 sm:px-6">
+                {person.status === "pending" && canApprove ? (
+                    <>
+                        <Button
+                            className="min-h-11"
+                            onClick={() => updateUser(person.uid, { status: "active" })}
+                            disabled={busy || person.role === "unassigned"}
+                            title={person.role === "unassigned" ? "Save a job title first" : "Approve account"}
+                        >
+                            Approve account
+                        </Button>
+                        <Button className="min-h-11" variant="danger" onClick={confirmDeny} disabled={busy}>
+                            Deny request
+                        </Button>
+                    </>
+                ) : person.status === "active" && canDeactivate ? (
+                    <Button className="min-h-11" variant="danger" onClick={confirmDeactivate} disabled={busy}>
+                        Deactivate account
+                    </Button>
+                ) : person.status === "inactive" && canDeactivate ? (
+                    <Button className="min-h-11" onClick={confirmReactivate} disabled={busy}>
+                        Reactivate account
+                    </Button>
+                ) : null}
+            </div>
+        </Card>
+    );
+}
+
+function PersonView({
+    person,
+    allEmployees,
+    onBack,
+    loadingId,
+    updateUser,
+    deleteTemp,
+    mergeTemp,
+    capabilities,
+    viewerUid,
+}) {
+    const [anchorDate, setAnchorDate] = useState(() => toDateKey(new Date()));
+    const weekDates = useMemo(() => getCurrentWeek(new Date(`${anchorDate}T12:00:00`)), [anchorDate]);
+    const weekStart = weekDates[0];
+    const weekEnd = weekDates[6];
+    const status = personStatus(person);
+
+    return (
+        <div className="space-y-4" data-testid="person-view">
+            <Button variant="ghost" className="min-h-11 !px-2" onClick={onBack} aria-label="Back to team roster">
+                <BackIcon />
+                Team roster
+            </Button>
+
+            <Card className="!p-0 overflow-hidden" data-testid="person-identity">
+                <div className="px-5 py-5 sm:px-6">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Team member</span>
+                            <h2 className="mt-1 truncate font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">{personName(person)}</h2>
+                            {person.email ? <p className="mt-1 truncate text-xs text-[var(--color-ink-muted)]">{person.email}</p> : null}
+                        </div>
+                        <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>
+                    </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 border-t border-[var(--color-line)] bg-[var(--color-surface-muted)]/50 px-5 py-3 sm:px-6">
+                    <Badge tone="neutral" className="!normal-case">{roleLabel(person.role)}</Badge>
+                    {person.isSupervisor === true ? <Badge tone="accent" className="!normal-case">Supervisor</Badge> : null}
+                </div>
+            </Card>
+
+            <ManagementActions
+                person={person}
+                allEmployees={allEmployees}
+                loadingId={loadingId}
+                updateUser={updateUser}
+                deleteTemp={deleteTemp}
+                mergeTemp={mergeTemp}
+                canApprove={capabilities.canApprove}
+                canAssign={capabilities.canAssign}
+                canDeactivate={capabilities.canDeactivate}
+                canMerge={capabilities.canMerge}
+                canManageSupervisor={capabilities.canManageSupervisor}
+                viewerUid={viewerUid}
+            />
+
+            {capabilities.canReadPay ? (
+                <section className="space-y-3" aria-labelledby="person-pay-heading">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Pay history</span>
+                            <h3 id="person-pay-heading" className="mt-1 font-display text-xl font-medium tracking-tight text-[var(--color-ink)]">{personName(person)}'s pay</h3>
+                        </div>
+                        <BarDatePill selectedDate={anchorDate} onSelectDate={setAnchorDate} unit="week" />
+                    </div>
+                    <PayStatement
+                        person={person}
+                        startDate={weekStart}
+                        endDate={weekEnd}
+                        eyebrow="Selected week"
+                        heading={`${formatMonthDayRange(weekStart, weekEnd)}, ${weekEnd.getFullYear()}`}
+                        voice="colleague"
+                    />
+                </section>
+            ) : null}
+        </div>
+    );
+}
+
+function TeamManagement({ allEmployees, refreshEmployees }) {
     const { user } = useAuth();
-    // The gate on acting on a pending sign-up. The app bar's pending count reads
-    // the same predicate, so the badge can never advertise work its viewer
-    // cannot do. See src/utils/permissions.js.
-    const canApprove = canApproveAccounts(user);
     const [loadingId, setLoadingId] = useState(null);
     const [unregisteredStaff, setUnregisteredStaff] = useState([]);
-    const [linkTargetUpdates, setLinkTargetUpdates] = useState({});
+    const [selectedKey, setSelectedKey] = useState(null);
+    const [search, setSearch] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
+
+    const capabilities = useMemo(() => ({
+        canApprove: canApproveAccounts(user),
+        canAssign: canAssignRoles(user),
+        canDeactivate: canDeactivateAccounts(user),
+        canMerge: canMergeTempStaff(user),
+        canManageSupervisor: canSetSupervisor(user),
+        canReadPay: canReadColleaguePay(user),
+    }), [user]);
 
     const fetchUnregistered = async () => {
         try {
-            const snap = await getDocs(collection(db, "unregisteredStaff"));
-            setUnregisteredStaff(snap.docs.map(d => ({ uid: d.id, ...d.data() })));
+            const snapshot = await getDocs(collection(db, "unregisteredStaff"));
+            setUnregisteredStaff(snapshot.docs.map((item) => ({ uid: item.id, ...item.data(), isTemp: true })));
         } catch (error) {
             console.error("Failed to fetch unregistered staff:", error);
         }
@@ -71,277 +510,116 @@ const TeamManagement = ({ allEmployees, refreshEmployees }) => {
         fetchUnregistered();
     }, []);
 
-    const pendingUsers = useMemo(() => allEmployees.filter(emp => emp.status === "pending"), [allEmployees]);
-    const activeUsers = useMemo(() => allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin"), [allEmployees]);
-    const inactiveUsers = useMemo(() => allEmployees.filter(emp => emp.status === "inactive" && emp.role !== "admin"), [allEmployees]);
-    const mergeTargetUsers = useMemo(
-        () => activeUsers,
-        [activeUsers]
-    );
+    const rosterPeople = useMemo(() => {
+        const realPeople = allEmployees
+            .filter((person) => isPaidFromPool(person, user?.managerUid))
+            .map((person) => ({ ...person, isTemp: false }));
+        return [...realPeople, ...unregisteredStaff].sort((left, right) => {
+            const statusDifference = STATUS_ORDER[personStatus(left)] - STATUS_ORDER[personStatus(right)];
+            return statusDifference || personName(left).localeCompare(personName(right));
+        });
+    }, [allEmployees, unregisteredStaff, user?.managerUid]);
 
-    const handleUpdateUser = async (uid, updates) => {
+    const selectedPerson = useMemo(() => {
+        if (!selectedKey) return null;
+        return rosterPeople.find((person) => `${person.isTemp ? "temp" : "user"}:${person.uid}` === selectedKey) || null;
+    }, [rosterPeople, selectedKey]);
+
+    useEffect(() => {
+        if (selectedKey && !selectedPerson) setSelectedKey(null);
+    }, [selectedKey, selectedPerson]);
+
+    const updateUser = async (uid, updates) => {
         setLoadingId(uid);
         try {
-            await updateDoc(doc(db, 'users', uid), updates);
+            await updateDoc(doc(db, "users", uid), updates);
             await refreshEmployees();
         } catch (error) {
             console.error("Failed to update user:", error);
-            alert("Error updating user.");
+            alert("The account could not be updated. Please try again.");
         } finally {
             setLoadingId(null);
         }
     };
 
-    // A role change writes immediately and shifts the person's default point
-    // weight in future shifts, so confirm when *changing* an already-assigned
-    // role. First-time assignment (unassigned -> a role) writes without a prompt.
-    // On cancel we do nothing; the controlled <Select> reverts to the saved role.
-    const handleRoleChange = (user, newRole) => {
-        if (!newRole || newRole === user.role) return;
-        const hadRole = user.role && user.role !== 'unassigned';
-        if (hadRole) {
-            // The prompt has a whole dialog to itself, so it names roles in full.
-            const from = roleLabel(user.role);
-            const to = roleLabel(newRole);
-            const ok = window.confirm(
-                `Change ${user.username || 'this employee'}'s role from ${from} to ${to}?\n\nThis also changes their default point weight in future shifts.`
-            );
-            if (!ok) return;
-        }
-        handleUpdateUser(user.uid, { role: newRole });
-    };
-
-    const handleDeactivateUser = async (uid, confirmMessage) => {
-        if (!window.confirm(confirmMessage)) return;
-        await handleUpdateUser(uid, { status: 'inactive' });
-    };
-
-    const handleLinkAccount = async (unregUser) => {
-        const targetRealUid = linkTargetUpdates[unregUser.uid];
-        if (!targetRealUid) return alert("Select the real employee account to merge this temporary profile into.");
-
-        const realUser = allEmployees.find(e => e.uid === targetRealUid);
+    const mergeTemp = async (tempPerson, targetUid) => {
+        if (!targetUid) return;
+        const realUser = allEmployees.find((employee) => employee.uid === targetUid);
         if (!realUser) return;
+        const confirmed = window.confirm(
+            `Merge temporary profile '${personName(tempPerson)}' into ${personName(realUser)}?\n\n` +
+            "This merge is per date and all-or-nothing. A same-date payout on both profiles stops the entire merge and changes nothing. If it succeeds, saved payout history moves to the real account, every floor plan still listing the temporary profile is updated, and the temporary profile is removed."
+        );
+        if (!confirmed) return;
 
-        if (!window.confirm(`Merge temporary profile '${unregUser.name}' into ${realUser.username || realUser.name}?\n\nThis moves saved payout history to the real account and takes the temporary profile off every floor plan that still lists it, including nights that have not been settled up yet. The temporary profile will be removed after the merge.`)) return;
-
-        setLoadingId(unregUser.uid);
+        setLoadingId(tempPerson.uid);
         try {
             const result = await mergeTempStaffIntoAccount({
                 db,
-                tempUser: unregUser,
+                tempUser: tempPerson,
                 realUser,
                 updatedBy: user?.uid || null,
             });
-
             await fetchUnregistered();
             await refreshEmployees();
-            setLinkTargetUpdates(prev => {
-                const n = { ...prev };
-                delete n[unregUser.uid];
-                return n;
-            });
+            setSelectedKey(null);
             alert(formatTempStaffMergeResultMessage({ realUser, ...result }));
         } catch (error) {
             console.error("Failed to link account:", error);
             if (isTempStaffMergeCollisionError(error)) {
                 alert(formatTempStaffMergeCollisionMessage(error.collisions));
             } else {
-                alert("Error linking account.");
+                alert("The temporary profile could not be merged. Please try again.");
             }
         } finally {
             setLoadingId(null);
         }
     };
 
-    const handleDeleteUnregistered = async (uid) => {
-        if (!window.confirm("Delete this temporary staff profile? Past shifts keep the saved name/UID, but this profile will no longer appear when assigning future shifts.")) return;
-        setLoadingId(uid);
+    const deleteTemp = async (tempPerson) => {
+        const confirmed = window.confirm(
+            `Delete temporary profile ${personName(tempPerson)}?\n\nPast shifts keep the saved name and UID, but the profile will no longer appear for future floor plans. This does not merge any pay history.`
+        );
+        if (!confirmed) return;
+        setLoadingId(tempPerson.uid);
         try {
-            await deleteDoc(doc(db, "unregisteredStaff", uid));
+            await deleteDoc(doc(db, "unregisteredStaff", tempPerson.uid));
             await fetchUnregistered();
-        } catch (e) {
-            console.error("Failed to delete unreg:", e);
+            setSelectedKey(null);
+        } catch (error) {
+            console.error("Failed to delete temporary profile:", error);
+            alert("The temporary profile could not be deleted. Please try again.");
         } finally {
             setLoadingId(null);
         }
     };
 
-    const UserRow = ({ user, isPending }) => (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 max-[560px]:px-4 max-[560px]:py-3">
-            <div className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-sm font-medium text-[var(--color-ink)] truncate">
-                    {user.username}
-                </span>
-                <span className="text-xs text-[var(--color-ink-muted)] truncate">{user.email}</span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-                <Select
-                    value={user.role || ""}
-                    onChange={(e) => handleRoleChange(user, e.target.value)}
-                    disabled={loadingId === user.uid}
-                    className="!h-9 !text-xs min-w-[8rem]"
-                >
-                    <option value="unassigned" disabled>Select role…</option>
-                    {/* Full names: this is the canonical control for what someone
-                        IS, and the select takes the whole row on a phone, so there
-                        is room to be precise. */}
-                    {ASSIGNABLE_ROLES.map(role => (
-                        <option key={role} value={role}>{roleLabel(role)}</option>
-                    ))}
-                </Select>
-
-                {isPending ? (
-                    canApprove ? (
-                        <>
-                            <Button
-                                size="sm"
-                                onClick={() => handleUpdateUser(user.uid, { status: 'active' })}
-                                disabled={loadingId === user.uid || user.role === 'unassigned'}
-                                title={user.role === 'unassigned' ? "Assign a role first" : "Approve user"}
-                            >
-                                Approve
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => handleDeactivateUser(
-                                    user.uid,
-                                    "Deny this sign-up request? The account will be marked inactive, and the user will not be able to access the dashboard. Their username stays reserved so it cannot be reused by another account."
-                                )}
-                                disabled={loadingId === user.uid}
-                            >
-                                Deny
-                            </Button>
-                        </>
-                    ) : (
-                        <span className="text-xs text-[var(--color-ink-muted)]">Awaiting approval</span>
-                    )
-                ) : (
-                    <Button
-                        size="sm"
-                        variant={user.status === 'active' ? 'secondary' : 'primary'}
-                        onClick={() => user.status === 'active'
-                            ? handleDeactivateUser(
-                                user.uid,
-                                "Deactivate this employee? They will keep their account, username, and saved history, but they will not be able to access the dashboard until reactivated."
-                            )
-                            : handleUpdateUser(user.uid, { status: 'active' })}
-                        disabled={loadingId === user.uid}
-                    >
-                        {user.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                    </Button>
-                )}
-            </div>
-        </div>
-    );
-
-    const UnregisteredRow = ({ unregUser }) => (
-        <div
-            data-testid={`temp-staff-row-${unregUser.uid}`}
-            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4"
-        >
-            <div className="flex flex-col gap-1 min-w-0">
-                <span className="text-sm font-medium text-[var(--color-ink)] truncate">{unregUser.name}</span>
-                {/* Badge defaults to all-caps, which is right for the count badges
-                    it was built for but shouts a role name. This row has the width
-                    for the full name, so it reads as a name, not a stored value. */}
-                <Badge tone="neutral" className="self-start !normal-case">{roleLabel(unregUser.role)}</Badge>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-                <Select
-                    aria-label={`Merge ${unregUser.name} into account`}
-                    value={linkTargetUpdates[unregUser.uid] || ""}
-                    onChange={(e) => setLinkTargetUpdates(prev => ({ ...prev, [unregUser.uid]: e.target.value }))}
-                    disabled={mergeTargetUsers.length === 0}
-                    className="!h-9 !text-xs min-w-[10rem]"
-                >
-                    <option value="" disabled>Merge into account…</option>
-                    {mergeTargetUsers.map(emp => (
-                        <option key={emp.uid} value={emp.uid}>{emp.username || emp.name} ({roleLabel(emp.role)})</option>
-                    ))}
-                </Select>
-                {mergeTargetUsers.length === 0 ? (
-                    <span className="text-xs text-[var(--color-ink-muted)]">No active accounts</span>
-                ) : null}
-                <Button
-                    size="sm"
-                    onClick={() => handleLinkAccount(unregUser)}
-                    disabled={loadingId === unregUser.uid || !linkTargetUpdates[unregUser.uid]}
-                    title="Merge this temporary profile into a real account"
-                >
-                    Merge
-                </Button>
-                <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDeleteUnregistered(unregUser.uid)}
-                    disabled={loadingId === unregUser.uid}
-                    title="Delete temporary profile"
-                    aria-label="Delete temporary profile"
-                >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                </Button>
-            </div>
-        </div>
-    );
+    if (selectedPerson) {
+        return (
+            <PersonView
+                person={selectedPerson}
+                allEmployees={rosterPeople.filter((person) => !person.isTemp)}
+                onBack={() => setSelectedKey(null)}
+                loadingId={loadingId}
+                updateUser={updateUser}
+                deleteTemp={deleteTemp}
+                mergeTemp={mergeTemp}
+                capabilities={capabilities}
+                viewerUid={user?.uid}
+            />
+        );
+    }
 
     return (
-        <div className="space-y-6">
-            <div className="px-4 py-3 text-xs text-[var(--color-ink-soft)] bg-[var(--color-surface-muted)]/60 border border-[var(--color-line)] rounded-[var(--radius-sm)]">
-                <strong className="text-[var(--color-ink)]">Account safety:</strong> denied or
-                deactivated employees keep their username and saved history reserved. Reactivate
-                the same profile if they return.
-            </div>
-
-            <SectionCard title="Pending Approvals" count={pendingUsers.length || null}>
-                {pendingUsers.length === 0 ? (
-                    <EmptyRow>No pending sign-ups.</EmptyRow>
-                ) : (
-                    pendingUsers.map(user => <UserRow key={user.uid} user={user} isPending />)
-                )}
-            </SectionCard>
-
-            <SectionCard title="Active Team">
-                {activeUsers.length === 0 ? (
-                    <EmptyRow>No active employees.</EmptyRow>
-                ) : (
-                    activeUsers.map(user => <UserRow key={user.uid} user={user} isPending={false} />)
-                )}
-            </SectionCard>
-
-            {unregisteredStaff.length > 0 ? (
-                <SectionCard
-                    title="Temporary Staff Profiles"
-                    description="Staff added during shift setup before they had an account. Merge one into a real active account to transfer saved history."
-                    tone="accent"
-                >
-                    <div className="px-6 py-3 text-xs text-[var(--color-ink-soft)] bg-[var(--color-surface-muted)]/60">
-                        <strong className="text-[var(--color-ink)]">Merge early:</strong> merge a
-                        temporary profile as soon as the employee's real account is approved. If the
-                        same night ends up saved under both the temporary profile and their real
-                        account, the merge is blocked for good and this history stays behind.
-                    </div>
-                    {unregisteredStaff.map(u => <UnregisteredRow key={u.uid} unregUser={u} />)}
-                </SectionCard>
-            ) : null}
-
-            {inactiveUsers.length > 0 ? (
-                <SectionCard
-                    title="Inactive Employees"
-                    description="These profiles cannot access the app, but their usernames and historical payout records remain attached to the same account."
-                    tone="muted"
-                >
-                    {inactiveUsers.map(user => <UserRow key={user.uid} user={user} isPending={false} />)}
-                </SectionCard>
-            ) : null}
-        </div>
+        <RosterList
+            people={rosterPeople}
+            search={search}
+            setSearch={setSearch}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            onOpen={(person) => setSelectedKey(`${person.isTemp ? "temp" : "user"}:${person.uid}`)}
+        />
     );
-};
+}
 
 export default TeamManagement;
