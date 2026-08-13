@@ -50,6 +50,21 @@ export const AuthProvider = ({ children }) => {
                     console.warn("Could not fetch user data:", e);
                 }
 
+                // Who holds the manager tier. It is a singleton pointer rather
+                // than a role value, so "exactly one manager" is structural.
+                // An absent or unreadable pointer means no manager has been
+                // named, which leaves every tier capability resolving the way
+                // it did before the tiers existed - see src/utils/permissions.js.
+                let managerUid = null;
+                try {
+                    const configDoc = await getDoc(doc(db, 'restaurant', 'config'));
+                    if (configDoc.exists()) {
+                        managerUid = configDoc.data().managerUid || null;
+                    }
+                } catch (e) {
+                    console.warn("Could not fetch the manager pointer:", e);
+                }
+
                 const mappedUser = {
                     uid: firebaseUser.uid,
                     username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
@@ -57,6 +72,7 @@ export const AuthProvider = ({ children }) => {
                     emailVerified: true, // Default to true as we're removing verification step
                     role,
                     status,
+                    managerUid,
                 };
                 setUser(mappedUser);
             } else {

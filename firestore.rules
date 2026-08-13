@@ -3,11 +3,87 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: check if the requester is an active admin
-    function isAdmin() {
+    // ------------------------------------------------------------------
+    // Permission tiers: Manager > Captain > Employee, cumulative.
+    //
+    // Permission is bound to the ROSTER role on users/{uid} plus the manager
+    // pointer at restaurant/config. The floor plan's teams[].members[].role is
+    // pay weight for one night and is NEVER a permission - any floor-plan
+    // editor can change that dropdown, so reading it here would let a captain
+    // promote themselves or anyone else.
+    //
+    // MIGRATION STATE - read this before changing anything below.
+    // The tier model is dormant until the restaurant names a manager. With no
+    // restaurant/config document, isManager() and isCaptain() are false for
+    // everyone and the only authority is the legacy `role: "admin"` account,
+    // exactly as it was before this file grew tiers. Naming the manager is the
+    // cutover and it is a separate release; until it lands nobody gains or
+    // loses access. tests/rules/current-state.test.js pins that, and
+    // tests/rules/manager-tier.test.js proves the tiers once a manager exists.
+    // ------------------------------------------------------------------
+
+    function selfProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isActiveUser() {
+      return request.auth != null && selfProfile().status == "active";
+    }
+
+    // The tier model is live only once a manager has been named.
+    function tierModelActive() {
+      return exists(/databases/$(database)/documents/restaurant/config);
+    }
+
+    // Exactly one manager, named by a singleton pointer rather than a role
+    // value: rules cannot cheaply assert "only one document carries this role",
+    // but a single field has a single holder by construction.
+    function isManager() {
       return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin" &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == "active";
+        tierModelActive() &&
+        request.auth.uid == get(/databases/$(database)/documents/restaurant/config).data.get("managerUid", "") &&
+        isActiveUser();
+    }
+
+    // Cumulative: the manager holds every captain power too.
+    function isCaptain() {
+      return isManager() ||
+        (request.auth != null &&
+          tierModelActive() &&
+          selfProfile().role == "captain" &&
+          isActiveUser());
+    }
+
+    // Legacy authority, deliberately kept: today's `role: "admin"` account keeps
+    // exactly the access it has now. The cutover retires it. Do not drop this
+    // clause before then - it is what makes the tier release safe.
+    function isLegacyAdmin() {
+      return request.auth != null &&
+        selfProfile().role == "admin" &&
+        selfProfile().status == "active";
+    }
+
+    function hasCaptainAccess() {
+      return isCaptain() || isLegacyAdmin();
+    }
+
+    function hasManagerAccess() {
+      return isManager() || isLegacyAdmin();
+    }
+
+    // Settle-up stamps history flags onto every participant's profile, so a
+    // captain must be able to update users/*. Restricting that write to these
+    // two fields is what stops "a captain can settle up" from quietly becoming
+    // "a captain can change roles".
+    function onlyHistoryFlagsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["hasShiftHistory", "hasTipHistory"]);
+    }
+
+    // Closing and recalculating a night are captain work; merging a temporary
+    // profile and removing a settled day are not.
+    function isCaptainAuditType() {
+      return request.resource.data.type in ["shift_closed", "shift_recalculated"];
     }
 
     function isRole(role) {
@@ -91,6 +167,13 @@ service cloud.firestore {
         request.resource.data.username is string &&
         request.resource.data.email is string &&
         (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    function validManagerPointer() {
+      return request.resource.data.keys().hasOnly(["managerUid", "updatedAt"]) &&
+        request.resource.data.keys().hasAll(["managerUid"]) &&
+        request.resource.data.managerUid is string &&
+        (!("updatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.updatedAt));
     }
 
     function validShift(shiftId) {
@@ -296,16 +379,31 @@ service cloud.firestore {
         (!("collisionDates" in request.resource.data) || request.resource.data.collisionDates is list);
     }
 
+    // The restaurant's manager pointer - the single holder of the manager tier.
+    // Any signed-in client reads it so it can tell whether it holds the tier.
+    // Transfer is one atomic write by the sitting manager, so there is never a
+    // moment with zero or two managers. Creating the pointer is the cutover and
+    // is done out of band, the same way today's admin account was created; the
+    // pointer is never deleted, only retargeted.
+    match /restaurant/config {
+      allow read: if request.auth != null;
+      allow update: if isManager() && validManagerPointer();
+      allow create, delete: if false;
+    }
+
     // Users collection
     match /users/{uid} {
       allow read: if request.auth != null &&
-        (request.auth.uid == uid || isAdmin());
+        (request.auth.uid == uid || hasCaptainAccess());
       // Enforce safe defaults on self-registration - prevents SDK-level role elevation.
       allow create: if request.auth != null &&
         request.auth.uid == uid &&
         validSelfProfileCreate(uid);
-      allow update: if isAdmin() && validUserProfile(uid);
-      allow delete: if isAdmin();
+      // Roles and account status are manager-only. A captain may write nothing
+      // but the settle-up history flags - see onlyHistoryFlagsChanged().
+      allow update: if validUserProfile(uid) &&
+        (hasManagerAccess() || (hasCaptainAccess() && onlyHistoryFlagsChanged()));
+      allow delete: if hasManagerAccess();
     }
 
     // Minimal public username lookup. This avoids exposing full user profiles
@@ -314,51 +412,61 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null &&
         validUsernameMapping();
-      allow update, delete: if isAdmin();
+      allow update, delete: if hasManagerAccess();
     }
 
-    // Shifts
+    // Shifts. Building a floor plan, settling up, and correcting an already
+    // settled day are captain work; removing the day outright is not.
     match /shifts/{shiftId} {
-      allow read: if isAdmin();
-      allow create, update: if isAdmin() && validShift(shiftId);
-      allow delete: if isAdmin();
+      allow read: if hasCaptainAccess();
+      allow create, update: if hasCaptainAccess() && validShift(shiftId);
+      allow delete: if hasManagerAccess();
     }
 
     // Canonical payout ledger. Employees can read only their own exact entry doc.
+    // Entry deletes stay at captain tier because correcting a settled day drops
+    // the entries of anyone taken off the floor plan (saveClosedShiftAtomically).
+    // Deleting the meta doc is only ever part of removing the whole day, so it
+    // sits with the manager alongside the shifts/{date} delete.
     match /payouts/{shiftDate} {
-      allow read: if isAdmin();
-      allow create, update: if isAdmin() && validPayoutMeta(shiftDate);
-      allow delete: if isAdmin();
+      allow read: if hasCaptainAccess();
+      allow create, update: if hasCaptainAccess() && validPayoutMeta(shiftDate);
+      allow delete: if hasManagerAccess();
 
       match /entries/{uid} {
         allow get: if request.auth != null &&
-          (request.auth.uid == uid || isAdmin());
-        allow list: if isAdmin();
-        allow create, update: if isAdmin() && validPayoutEntry(shiftDate, uid);
-        allow delete: if isAdmin();
+          (request.auth.uid == uid || hasCaptainAccess());
+        allow list: if hasCaptainAccess();
+        allow create, update: if hasCaptainAccess() && validPayoutEntry(shiftDate, uid);
+        allow delete: if hasCaptainAccess();
       }
     }
 
-    // Per-user tip data - employees read-only; only admins write.
+    // Per-user tip data - employees read-only. Only the temp-staff merge still
+    // writes here, and merging is manager work.
     // Legacy data remains readable during migration, but new closeout writes use /payouts.
     match /users/{userId}/tips/{tipDate} {
       allow read: if request.auth != null &&
-        (request.auth.uid == userId || isAdmin());
-      allow create, update: if isAdmin() && validLegacyTip(userId, tipDate);
-      allow delete: if isAdmin();
+        (request.auth.uid == userId || hasCaptainAccess());
+      allow create, update: if hasManagerAccess() && validLegacyTip(userId, tipDate);
+      allow delete: if hasManagerAccess();
     }
 
-    // Unregistered (temporary) staff - admin-only, explicit rule prevents silent catch-all dependence.
+    // Unregistered (temporary) staff. Captains add them mid-setup; deleting one
+    // is the destructive half of a merge and stays with the manager.
     match /unregisteredStaff/{uid} {
-      allow read: if isAdmin();
-      allow create, update: if isAdmin() && validTempStaff(uid);
-      allow delete: if isAdmin();
+      allow read: if hasCaptainAccess();
+      allow create, update: if hasCaptainAccess() && validTempStaff(uid);
+      allow delete: if hasManagerAccess();
     }
 
-    // Money-changing actions append immutable audit events.
+    // Money-changing actions append immutable audit events. The event type is
+    // what separates a captain's closeout from a manager's merge or removal -
+    // each atomic batch stands or falls on its own audit event.
     match /auditEvents/{eventId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin() && validAuditEvent();
+      allow read: if hasCaptainAccess();
+      allow create: if validAuditEvent() &&
+        (hasManagerAccess() || (hasCaptainAccess() && isCaptainAuditType()));
       allow update, delete: if false;
     }
 
