@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { toDateKey } from "../../utils/dateUtils";
+import { formatMonthDay, getCurrentWeek, toDateKey } from "../../utils/dateUtils";
 
 // The "Bar Date" - the Shifts-tab date lives in the top app bar as a compact
 // reading pill so the content area opens flush with the Day Rail. Tapping the
@@ -17,6 +17,13 @@ import { toDateKey } from "../../utils/dateUtils";
 // you are typing money against was not on screen at all, while desktop showed it.
 // The day has to be READABLE there and must not be CHANGEABLE mid-edit - swapping
 // the date under a half-entered shift is the thing this pill exists to prevent.
+//
+// `unit="week"` is the same pill on the pay side, where the thing being read is
+// a week rather than a night. It is the SAME control and not a second date
+// picker: the bar owns the date, so the pay statement adds no date control of
+// its own - the pill just relabels itself for the screen it is standing on. The
+// two meanings never share a screen, which is what would make one pill dangerous
+// on the screen where money is typed against a date.
 
 function parseKey(dateKey) {
     return new Date(dateKey + "T12:00:00");
@@ -33,14 +40,21 @@ function CalendarIcon() {
     );
 }
 
-function BarDatePill({ selectedDate, onSelectDate, readOnly = false }) {
+function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day" }) {
     const inputRef = useRef(null);
     const todayKey = toDateKey(new Date());
-    const isToday = selectedDate === todayKey;
+    const isWeek = unit === "week";
+    const weekDates = isWeek ? getCurrentWeek(parseKey(selectedDate)) : null;
+    const weekKeys = weekDates ? weekDates.map(toDateKey) : null;
+    // "Current" is what turns the pill accent-green instead of warning-amber: the
+    // day you are on, or the week you are in.
+    const isToday = isWeek ? weekKeys.includes(todayKey) : selectedDate === todayKey;
 
     const monthDay = parseKey(selectedDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     const weekday = parseKey(selectedDate).toLocaleDateString(undefined, { weekday: "short" });
-    const pillLabel = isToday ? `Today · ${monthDay}` : `${weekday}, ${monthDay}`;
+    const pillLabel = isWeek
+        ? (isToday ? `This week · ${formatMonthDay(weekDates[0])}` : `Week of ${formatMonthDay(weekDates[0])}`)
+        : (isToday ? `Today · ${monthDay}` : `${weekday}, ${monthDay}`);
 
     // Shared between the interactive pill and the read-only label so the day
     // reads identically wherever it appears in the bar.
@@ -105,7 +119,11 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false }) {
                 type="button"
                 onClick={openPicker}
                 aria-haspopup="dialog"
-                aria-label={`Shift date: ${pillLabel}. Tap to change day.`}
+                aria-label={
+                    isWeek
+                        ? `Pay week: ${pillLabel}. Tap to change week.`
+                        : `Shift date: ${pillLabel}. Tap to change day.`
+                }
                 className={
                     shellClass +
                     " focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +

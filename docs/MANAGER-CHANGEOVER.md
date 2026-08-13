@@ -15,32 +15,30 @@ Read the two consequences below before you start. They are the whole reason this
 > settle up that night. That is the single most expensive mistake available here, and the only one
 > this procedure can actually cause.
 >
-> The order still holds while the app routes nobody new (see the next section): do it between
-> services and set the switches, so that whenever the screens do follow, the ground is already
-> prepared and no service is ever the first to find out.
+> The screens follow the switch now (see the next section), so this is no longer a rehearsal: the
+> afternoon you write the pointer is the afternoon the restaurant's ability to settle up moves.
 
-## The routing gate - read this before planning a go-live
+## What people SEE after the changeover
 
-**The manager pointer changes what people are ALLOWED to do. It does not yet change what they SEE.**
+The pointer changes what people are allowed to do, and the screens now follow it. `src/App.jsx` asks
+`canOpenShiftWorkspace(user)`, so once you name a manager and turn Supervisor on:
 
-`src/App.jsx` still decides who gets the shift workspace with the legacy `role === "admin"` test. So
-after this procedure the manager and every Supervisor-on captain genuinely hold their new server-side
-access - they can be proved to hold it - but they still land on their own pay screen, and today's
-admin is still the only person who sees the workspace.
+- **The manager** opens the shift workspace, and has no pay page. They oversee the operation, work no
+  section and take no share of the pool, so there is no pay record to show them.
+- **A Supervisor-on captain** lands on **their own pay**, and reaches the workspace from the account
+  menu - the same sheet Team lives in. They are two things at once: someone who enters the
+  restaurant's money, and someone the restaurant pays out of the pool.
+- **A Supervisor-off captain**, and every other employee, sees their own pay and nothing else.
+- **Today's admin** is unchanged: workspace, Team, Remove, exactly as before.
 
-That is deliberate and it is safe in this direction. Permission without a screen routed to it is
-inert. The reverse is what breaks people.
+Home means **the viewer's own home**, and that is not the same place for everyone: today's shifts for
+the manager, their own pay for a captain. That is deliberate and the captain chose it knowing the
+cost - reaching tonight's shift takes the extra tap through the account menu.
 
-**Moving the gate is a separate change, and it must land together with a captain's route back to
-their own pay.** The employee side has no navigation at all - `Header.jsx` is an eyebrow, a title and
-Log Out - so the moment the gate sends a captain to the workspace, their own pay view is gone with no
-way back. A captain is a paid member of the tip pool. **The first person the manager gives Supervisor
-to would silently lose their week.** This was proved in a running app, not theorised. The shape of
-that entry is an open question for the captain.
-
-Two tests in `tests/e2e/manager-tier.spec.js`, under "THE COUPLING", fail if the gate is moved on its
-own. Do not route around them. If a go-live plan says "the manager pointer is written, so captains can
-now run the night from their phones", that plan is wrong until the pay entry ships.
+The two halves are coupled and must stay coupled: route a captain to the workspace with no way back
+and they silently lose their week; leave the gate on the legacy `role === "admin"` test and nobody
+the manager promotes can run a night. The tests under "THE COUPLING" in
+`tests/e2e/manager-tier.spec.js` fail if either half is undone. Do not route around them.
 
 ## What this does and does not do
 
@@ -120,12 +118,12 @@ the original admin account was created.
 2. Sign in as the admin account and open a settled day. Everything is exactly where it was: the
    floor plan, settle up, Team, and the Remove control. **This is the check that matters** - the
    whole promise of this release is that nothing shrinks for the person running the restaurant.
-3. Sign in as anyone else. They see their own pay screen. That is correct and expected: see "The
-   routing gate" above - nobody is re-routed by this procedure.
+3. Sign in as the manager. They open the shift workspace and have no pay page, which is correct -
+   the manager takes no share of the pool.
+4. Sign in as anyone whose switch is still off. They see their own pay screen and no workspace.
 
-Do not expect the manager account to open a workspace unless it is also the admin account. If step 2
-shows anything missing, the fastest fix is to reverse the change (below) and look again; the pointer
-takes nothing from the admin, so a difference there means something else is wrong.
+If step 2 shows anything missing, the fastest fix is to reverse the change (below) and look again;
+the pointer takes nothing from the admin, so a difference there means something else is wrong.
 
 ## Step 4 - turn Supervisor on, before the next service
 
@@ -172,6 +170,8 @@ than a panic.
 ## Doing it locally first
 
 `npm run dev:local` seeds all of it: a manager named by the pointer, a Supervisor-on captain, a
-Supervisor-off captain, and today's legacy admin who is deliberately *not* the manager. The logins are
-printed when the seed runs. That is the same world this procedure creates, and it is the cheapest way
-to see what each person will see before doing it for real.
+Supervisor-off captain, and today's legacy admin who is deliberately *not* the manager. It also seeds
+a worked fortnight ending yesterday, so every paid account opens on a pay statement with real money in
+it rather than an empty week that cannot be told apart from a bug. The logins are printed when the
+seed runs. That is the same world this procedure creates, and it is the cheapest way to see what each
+person will see before doing it for real.

@@ -16,6 +16,8 @@ import {
     canSetSupervisor,
     canSettleUp,
     canTransferManagerTier,
+    hasOwnPayRecord,
+    isPaidFromPool,
     tierLabel,
 } from "./permissions.js";
 
@@ -247,4 +249,38 @@ test("an employee has no tier to name", () => {
     assert.equal(tierLabel({ uid: "captainUid", role: "captain", status: "active", managerUid: "managerUid" }), null);
     assert.equal(tierLabel({ uid: "serverUid", role: "server", status: "active", managerUid: "managerUid" }), null);
     assert.equal(tierLabel(null), null);
+});
+
+// --- Who the money is for --------------------------------------------------
+// Not a permission: whether a pay record EXISTS for someone. It decides whether
+// the app has a pay statement to show them at all, so a wrong answer either
+// hides a captain's own week or hands the manager an empty page.
+
+test("everyone on the roster is paid from the pool, switch or no switch", () => {
+    // The switch moves no money, so a captain holding it has exactly the same
+    // pay record as the captain who does not.
+    assert.equal(hasOwnPayRecord({ uid: "supervisorUid", role: "captain", status: "active", managerUid: "managerUid", isSupervisor: true }), true);
+    assert.equal(hasOwnPayRecord({ uid: "captainUid", role: "captain", status: "active", managerUid: "managerUid" }), true);
+    assert.equal(hasOwnPayRecord({ uid: "serverUid", role: "server", status: "active", managerUid: "managerUid" }), true);
+});
+
+test("the manager has no pay record - they work no section and take no share", () => {
+    // Excluded BY IDENTITY, exactly as the floor-plan pool excludes them, so
+    // "assignable to a section" and "has a pay record" cannot drift apart.
+    assert.equal(hasOwnPayRecord({ uid: "managerUid", role: "unassigned", status: "active", managerUid: "managerUid" }), false);
+});
+
+test("today's legacy admin has no pay record either", () => {
+    // Same kind of person as the manager: not on the roster, not in the pay
+    // maths. True with or without a manager named.
+    assert.equal(hasOwnPayRecord({ uid: "adminUid", role: "admin", status: "active" }), false);
+    assert.equal(hasOwnPayRecord({ uid: "adminUid", role: "admin", status: "active", managerUid: "managerUid" }), false);
+});
+
+test("nobody is paid from the pool without a person to pay", () => {
+    assert.equal(hasOwnPayRecord(null), false);
+    assert.equal(isPaidFromPool(undefined, "managerUid"), false);
+    // No manager named yet: a missing pointer must not read as "everyone is
+    // the manager" through an undefined-equals-undefined comparison.
+    assert.equal(isPaidFromPool({ role: "server" }, null), true);
 });

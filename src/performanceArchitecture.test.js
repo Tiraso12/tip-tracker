@@ -74,29 +74,32 @@ test("Shift editor isolates money closeout entry from unrelated input rerenders"
     );
 });
 
-test("Employee dashboard scopes tip subscriptions to the visible date window", () => {
-    const appSource = readSource("src/App.jsx");
+test("A pay statement scopes its reads to the days it actually shows", () => {
+    // The statement is where a person's payout documents are read now - one
+    // component for your own pay and, through the roster, a colleague's - so
+    // this is where the bounded window has to hold.
+    const statementSource = readSource("src/components/Pay/PayStatement.jsx");
     const dataServiceSource = readSource("src/services/dataService.js");
 
     assert.doesNotMatch(
-        appSource,
+        statementSource,
         /DataService\.subscribeToAllData/,
-        "Employee sessions should not subscribe to the full historical tips collection."
+        "A pay statement should not subscribe to the full historical tips collection."
     );
     assert.match(
-        appSource,
-        /getEmployeeTipSubscriptionDateKeys/,
-        "App should derive a small date window for employee tip subscriptions."
+        statementSource,
+        /getPayStatementSubscriptionKeys/,
+        "A pay statement should derive a small date window before subscribing."
     );
     assert.match(
-        appSource,
-        /DataService\.subscribeToDates/,
-        "Employee sessions should subscribe only to the needed tip documents."
+        statementSource,
+        /DataService\.subscribeToDatesForUser/,
+        "A pay statement should subscribe only to the needed payout documents, for one person."
     );
     assert.match(
         dataServiceSource,
-        /subscribeToDates/,
-        "DataService should expose a document-scoped subscription helper."
+        /subscribeToDatesForUser/,
+        "DataService should expose a document-scoped, per-person subscription helper."
     );
 });
 

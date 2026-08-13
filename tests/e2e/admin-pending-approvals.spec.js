@@ -142,9 +142,10 @@ test("someone who cannot approve accounts never sees the count", async ({ page }
     await seedUsers({ pending: 2 });
     await login(page, SERVER_EMAIL);
 
-    // An active server lands on their own dashboard: pending people exist, but
+    // An active server lands on their own pay: pending people exist, but
     // approving is not theirs, so neither the badge nor its screen is reachable.
-    await expect(page.getByRole("heading", { name: "Tip Tracker" })).toBeVisible();
+    // The bar they now share with the workspace must not leak the count.
+    await expect(page.getByTestId("pay-statement")).toBeVisible();
     await expect(badge(page)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Team", exact: true })).toHaveCount(0);
 });

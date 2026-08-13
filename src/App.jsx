@@ -1,17 +1,9 @@
-import React, { Suspense, lazy, useState, useEffect, useMemo } from "react";
-import Header from "./components/Header/Header";
-import Calendar from "./components/Calendar/Calendar";
-import MonthView from "./components/Calendar/MonthView";
-
-import WeekHeader from "./components/WeekHeader/WeekHeader";
-import { getCurrentWeek, getEmployeeTipSubscriptionDateKeys, toDateKey } from "./utils/dateUtils";
-
-import EmployeePeriodSummary from "./components/EmployeePeriodSummary/EmployeePeriodSummary";
-import DataService from "./services/dataService";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import Login from "./components/Auth/Login";
 import PendingApproval from "./components/Auth/PendingApproval";
-
+import PayView from "./components/Pay/PayView";
 import { useAuth } from "./context/AuthContext";
+import { canOpenShiftWorkspace, hasOwnPayRecord } from "./utils/permissions";
 
 const AdminDashboard = lazy(() => import("./components/Admin/AdminDashboard"));
 
@@ -25,109 +17,26 @@ function InlineLoading({ label = "Loading..." }) {
 
 function App() {
   const { user, loading } = useAuth();
-  // The one gate between the two halves of the app, and it is DELIBERATELY still
-  // the legacy role test rather than canOpenShiftWorkspace(user), even though the
-  // capability exists, is tested, and would resolve correctly here.
-  //
-  // Moving it strands people. This app has exactly two halves and no way back:
-  // the employee side has no app bar at all (Header.jsx is an eyebrow, a title
-  // and Log Out), so whoever this gate sends to the workspace loses their own pay
-  // view with no navigation that could return them. A captain is a paid member of
-  // the tip pool. The first person the manager gave the Supervisor switch to
-  // would silently lose their week - proved in a running app, not theorised.
-  //
-  // So the gate moves ONLY together with a way for a captain to reach their own
-  // pay from inside the workspace, and the shape of that entry is an open
-  // question for the captain. The rules and the manager pointer landing ahead of
-  // it is safe and inert: a Supervisor-on captain really does hold settle-up
-  // write access, they simply have no screen routed to it yet. The reverse - UI
-  // routed somewhere the rules refuse, or a captain routed away from their pay -
-  // is what breaks people. See docs/MANAGER-CHANGEOVER.md, "the routing gate".
-  const isAdmin = user?.role === "admin" && user?.status === "active";
-  const [baseDate, setBaseDate] = useState(new Date());
-  const [weekData, setWeekData] = useState(null);
-  const [currentWeekDates, setCurrentWeekDates] = useState([]);
-  const [viewMode, setViewMode] = useState('week'); // 'week' | 'month'
-  const [allData, setAllData] = useState({});
-  const tipSubscriptionDateKeys = useMemo(
-    () => getEmployeeTipSubscriptionDateKeys(baseDate, viewMode),
-    [baseDate, viewMode]
-  );
 
+  // The two halves of the app are no longer two disjoint audiences. A captain
+  // is a supervisor AND a paid member of the tip pool, so they hold both: the
+  // workspace because they run the night, their own pay because the pool pays
+  // them. The gate below decides whether the workspace is AVAILABLE, not which
+  // half of the app someone gets.
+  const canOpenWorkspace = canOpenShiftWorkspace(user);
+  // ...and this decides whether there is a pay statement to show at all. The
+  // manager has no pay record by design - they work no section and take no
+  // share - so they get the workspace and nothing else. Everyone else has one.
+  const hasPayRecord = hasOwnPayRecord(user);
+
+  // Which half is on screen for someone who holds both. A captain LANDS on
+  // their own pay: that is the shape the captain chose, knowing it costs a tap
+  // to reach tonight's shift, because the pool pays them and their week is
+  // theirs to check. The account sheet is how they cross, in either direction.
+  const [surface, setSurface] = useState("pay");
   useEffect(() => {
-    if (user) {
-      DataService.setUserId(user.uid);
-      // Reset to today's date on login so the calendar doesn't show a stale week/month
-      setBaseDate(new Date());
-    } else {
-      DataService.setUserId(null);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    // Week Mode Logic
-    if (viewMode === 'week') {
-      // Initialize the week based on baseDate
-      const dates = getCurrentWeek(baseDate);
-      setCurrentWeekDates(dates);
-
-      // Compute static weekData from allData
-      const computedWeekData = dates.map(date => {
-        const key = toDateKey(date);
-        return {
-          date: date,
-          dateKey: key,
-          gratuity: allData?.[key]?.gratuity || "",
-          tip: allData?.[key]?.tip || "",
-          cash: allData?.[key]?.cash || "",
-          role: allData?.[key]?.role || "",
-          points: allData?.[key]?.points || ""
-        };
-      });
-      setWeekData(computedWeekData);
-    } else {
-      // Month mode handled by component naturally
-    }
-  }, [baseDate, viewMode, allData]);
-
-
-  const handleNavigation = (direction) => {
-    setBaseDate(prev => {
-      if (viewMode === 'month') {
-        const newDate = new Date(prev);
-        newDate.setMonth(prev.getMonth() + direction);
-        return newDate;
-      }
-
-      if (currentWeekDates[0]) {
-        const newDate = new Date(currentWeekDates[0]);
-        newDate.setDate(currentWeekDates[0].getDate() + (direction * 7));
-        return newDate;
-      } else {
-        const newDate = new Date(prev);
-        newDate.setDate(prev.getDate() + (direction * 7));
-        return newDate;
-      }
-    });
-  };
-
-
-
-  // Keep user tip history fresh after login.
-  useEffect(() => {
-    if (!user || user.role === "admin") {
-      setAllData({});
-      return undefined;
-    }
-
-    return DataService.subscribeToDates(
-      tipSubscriptionDateKeys,
-      (dateKey, data) => {
-        setAllData(prev => ({ ...prev, [dateKey]: data }));
-      },
-      () => setAllData({})
-    );
-  }, [user, tipSubscriptionDateKeys]);
+    setSurface("pay");
+  }, [user?.uid]);
 
   if (loading) {
     return (
@@ -141,55 +50,20 @@ function App() {
     return <Login />;
   }
 
-  // Admins need an active profile before they can access manager workflows.
-  if (isAdmin) {
-    return (
-      <Suspense fallback={<InlineLoading label="Loading admin workspace..." />}>
-        <AdminDashboard />
-      </Suspense>
-    );
-  }
-
-  // Employees need an active profile before they can access the dashboard.
+  // Nobody reaches either half without an active profile.
   if (user.status !== "active") {
     return <PendingApproval />;
   }
 
-  return (
-    <main className="min-h-screen bg-[var(--color-bg)]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10 space-y-8">
-        <Header />
-        <WeekHeader
-          currentDate={baseDate}
-          startDate={currentWeekDates[0]}
-          endDate={currentWeekDates[6]}
-          onPrev={() => handleNavigation(-1)}
-          onNext={() => handleNavigation(1)}
-          viewMode={viewMode}
-          onViewChange={setViewMode}
-          onDateChange={setBaseDate}
-        />
-        <EmployeePeriodSummary
-          currentDate={baseDate}
-          currentWeekStart={currentWeekDates[0]}
-          currentWeekEnd={currentWeekDates[6]}
-          allData={allData}
-        />
-        {viewMode === 'week' ? (
-          <Calendar weekData={weekData} />
-        ) : (
-          <MonthView
-            currentDate={baseDate}
-            allData={allData}
-            onDaySelect={(day) => {
-              setBaseDate(new Date(day));
-              setViewMode('week');
-            }}
-          />
-        )}
-      </div>
-    </main>
-  );
+  if (canOpenWorkspace && (surface === "workspace" || !hasPayRecord)) {
+    return (
+      <Suspense fallback={<InlineLoading label="Loading shift workspace..." />}>
+        <AdminDashboard onGoToMyPay={hasPayRecord ? () => setSurface("pay") : undefined} />
+      </Suspense>
+    );
+  }
+
+  return <PayView onOpenWorkspace={canOpenWorkspace ? () => setSurface("workspace") : undefined} />;
 }
 
 export default App;

@@ -63,12 +63,21 @@ const DataService = {
      * Subscribe to real-time updates for a bounded set of date-key documents.
      * This avoids listening to the user's full historical tips collection.
      */
-    subscribeToDates: (dateKeys, onUpdate, onError) => {
+    /**
+     * Subscribe to one person's bounded set of date-key documents.
+     *
+     * Takes the uid rather than reading the signed-in one, because a pay
+     * statement is shown for a PERSON: your own, and - through the roster - a
+     * colleague's. firestore.rules is what decides which of those is allowed
+     * (own uid, or captain access); this just reads the documents it is asked
+     * for, one per date, never a collection query.
+     */
+    subscribeToDatesForUser: (uid, dateKeys, onUpdate, onError) => {
         const unsubscribes = [];
-        if (!DataService.currentUserId) return () => { };
+        if (!uid) return () => { };
 
         dateKeys.forEach(key => {
-            const docRef = payoutLedgerEntryRef(db, key, DataService.currentUserId);
+            const docRef = payoutLedgerEntryRef(db, key, uid);
             const unsub = onSnapshot(docRef, (doc) => {
                 if (doc.exists()) {
                     onUpdate(key, ledgerEntryToEmployeeData({ uid: doc.id, ...doc.data() }));
@@ -85,6 +94,11 @@ const DataService = {
 
         // Return a function to unsubscribe from all
         return () => unsubscribes.forEach(fn => fn());
+    },
+
+    /** The signed-in person's own bounded date subscription. */
+    subscribeToDates: (dateKeys, onUpdate, onError) => {
+        return DataService.subscribeToDatesForUser(DataService.currentUserId, dateKeys, onUpdate, onError);
     },
 
     subscribeToWeek: (dateKeys, onUpdate, onError) => {

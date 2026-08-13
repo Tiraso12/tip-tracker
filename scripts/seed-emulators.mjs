@@ -13,6 +13,16 @@ const FIXED_NOW = "2026-06-01T12:00:00.000Z";
 const SETUP_SHIFT_DATE = "2026-06-01";
 const CLOSED_SHIFT_DATE = "2026-05-31";
 
+// A worked fortnight ending yesterday, so every paid account opens on a pay
+// statement with real money in it and today is still a blank day to build a
+// floor plan on. The fixed dates above are deliberately old; a pay screen shows
+// the CURRENT week, so without recent nights the whole surface reads empty and
+// nobody can tell a bug from an unworked week. Two nights are skipped on
+// purpose - a statement shows days off as blanks, and the blanks are part of
+// what has to be looked at.
+const RECENT_SHIFT_DAYS = 13;
+const RECENT_DAYS_OFF = new Set([3, 9]);
+
 // The seeded restaurant carries all three tiers at once plus today's legacy
 // admin, because that is exactly the world the changeover creates: the pointer
 // names a manager while `role: "admin"` keeps working alongside it. See
@@ -295,6 +305,87 @@ function buildSeedShifts(seedUsers) {
     };
 }
 
+function toDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+// The nights behind the recent statements. Both captains work them - the one
+// with the Supervisor switch on is paid exactly like the one without, which is
+// the whole point of the switch being a separate field from the job title.
+function buildRecentShifts(seedUsers) {
+    const nights = [];
+
+    for (let daysAgo = RECENT_SHIFT_DAYS; daysAgo >= 1; daysAgo -= 1) {
+        if (RECENT_DAYS_OFF.has(daysAgo)) continue;
+
+        const date = new Date();
+        date.setHours(12, 0, 0, 0);
+        date.setDate(date.getDate() - daysAgo);
+        const dateKey = toDateKey(date);
+        // A busier Friday and Saturday, quieter midweek - so the week reads like
+        // a week rather than the same night thirteen times.
+        const weekend = date.getDay() === 5 || date.getDay() === 6;
+        const swing = ((daysAgo * 37) % 11) / 100;
+        const scale = (weekend ? 1.35 : 0.9) + swing;
+        const money = (base) => String(Math.round(base * scale * 100) / 100);
+
+        const teams = [
+            {
+                teamId: "team-1",
+                members: [
+                    member(seedUsers, "supervisor", "captain", 4),
+                    member(seedUsers, "captain", "captain", 4),
+                    member(seedUsers, "server", "server", 4),
+                    member(seedUsers, "back", "back", 2.5),
+                    member(seedUsers, "assistant", "assistant", 2),
+                ],
+                pools: {
+                    sales: money(3200),
+                    tips: money(640),
+                    gratuity: money(180),
+                    cash: money(120),
+                    covers: money(96),
+                    contract26Gratuity: "",
+                },
+                contracts: [],
+            },
+        ];
+        const barTeam = {
+            members: [member(seedUsers, "bartender", "bartender", 1)],
+            pools: { sales: money(900), tips: money(160), gratuity: money(45), covers: money(40), runners: "0" },
+        };
+        const runners = [
+            { ...member(seedUsers, "runner", "runner", null), payoutAmount: 85 },
+        ];
+
+        const summary = calculateShift({ teams, barTeam, runners });
+        const operationId = `seed-closeout-${dateKey}`;
+        const closedAt = `${dateKey}T23:30:00.000Z`;
+
+        nights.push({
+            dateKey,
+            operationId,
+            closedAt,
+            shift: buildClosedShiftPayload({
+                date: dateKey,
+                teams,
+                barTeam,
+                runners,
+                summary,
+                now: closedAt,
+                operationId,
+                updatedBy: seedUsers.admin.uid,
+            }),
+            payouts: mapPayoutsForFirebase(summary),
+        });
+    }
+
+    return nights;
+}
+
 async function seedFirestore(seedUsers) {
     const testEnv = await initializeTestEnvironment({
         projectId: PROJECT_ID,
@@ -356,6 +447,31 @@ async function seedFirestore(seedUsers) {
                     })
                 )
             ));
+
+            for (const night of buildRecentShifts(seedUsers)) {
+                await setDoc(doc(db, "shifts", night.dateKey), night.shift);
+                await setDoc(doc(db, "payouts", night.dateKey), {
+                    date: night.dateKey,
+                    ledgerVersion: PAYOUT_LEDGER_VERSION,
+                    updatedAt: night.closedAt,
+                    updatedBy: seedUsers.admin.uid,
+                    operationId: night.operationId,
+                });
+                await Promise.all(Object.entries(night.payouts).map(([uid, payout]) =>
+                    setDoc(
+                        doc(db, "payouts", night.dateKey, "entries", uid),
+                        buildPayoutLedgerEntry({
+                            date: night.dateKey,
+                            uid,
+                            payout,
+                            operationId: night.operationId,
+                            updatedAt: night.closedAt,
+                            updatedBy: seedUsers.admin.uid,
+                            source: "seed",
+                        })
+                    )
+                ));
+            }
         });
     } finally {
         await testEnv.cleanup();
@@ -373,6 +489,7 @@ console.log(`  manager@example.com     manager tier via the pointer, no job titl
 console.log(`  supervisor@example.com  captain tier: Supervisor ON`);
 console.log(`  captain@example.com     captain's title, Supervisor OFF`);
 console.log(`  server@example.com      employee`);
-console.log(`Only the admin sees the workspace: App.jsx still gates on role == "admin" on purpose.`);
-console.log(`The other tiers hold real server-side access - see docs/MANAGER-CHANGEOVER.md.`);
+console.log(`The workspace opens for the admin and the manager, and for the Supervisor-ON captain,`);
+console.log(`who ALSO lands on their own pay - they are paid from the pool. See docs/MANAGER-CHANGEOVER.md.`);
 console.log(`Setup shift: ${SETUP_SHIFT_DATE}; closed shift: ${CLOSED_SHIFT_DATE}`);
+console.log(`Plus a worked fortnight ending yesterday, so every paid account has a real pay statement.`);

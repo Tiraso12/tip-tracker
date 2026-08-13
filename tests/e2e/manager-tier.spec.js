@@ -4,31 +4,29 @@ import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { deleteDoc, doc, setDoc } from "firebase/firestore";
 
 // What each tier actually meets on screen once a manager is named. The rules
-// suites prove what the server allows and refuses; this suite is about the app,
-// and its most important job is to hold a LINE THAT HAS NOT MOVED YET.
+// suites prove what the server allows and refuses; this suite is about the app.
 //
-// The workspace routing gate in App.jsx is deliberately still the legacy
-// `role === "admin"` test. The manager pointer and the Supervisor switch are
-// live on the server, but nobody new is routed anywhere, because the employee
-// side has no navigation: send a captain to the workspace today and they lose
-// their own pay view with no door back, and a captain is paid from the pool.
-// The gate moves only together with a captain's route to their own pay. The two
-// tests under THE COUPLING below fail the moment someone moves it early - that is
-// what they are for. Verified by moving it and watching them go red.
+// Its most important job is THE COUPLING: the workspace routing gate and a
+// captain's route to their own pay are one change and must stay one. A captain
+// is a supervisor AND a paid member of the tip pool, so they hold both screens
+// and neither may be a dead end. Route them to the workspace with no way back
+// and they silently lose their week; leave the gate on the legacy role test and
+// nobody the manager promotes can run a night. The tests under THE COUPLING
+// below fail if either half is undone.
 //
 // Four accounts, because the release holds two authorities at once:
 //
 //   manager      named by restaurant/config.managerUid, carrying NO job title.
-//                Full manager authority on the server, no workspace yet.
+//                Full manager authority, and no pay record - they work no
+//                section and take no share of the pool.
 //   legacy admin `role: "admin"`, not named by the pointer. This is production
 //                until the pointer is written, and nothing may shrink for them.
-//   supervisor   the captain tier: the Supervisor switch on. Settle-up write
-//                access on the server, no workspace yet.
+//   supervisor   the captain tier: the Supervisor switch on. Lands on their own
+//                pay and reaches the workspace from it.
 //   captain      the same job title with the switch OFF, which is the default
-//                every existing captain starts with.
+//                every existing captain starts with: an ordinary employee.
 //
-// docs/MANAGER-CHANGEOVER.md is the procedure these four states come from, and
-// carries the coupling above under "The routing gate".
+// docs/MANAGER-CHANGEOVER.md is the procedure these four states come from.
 
 const PROJECT_ID = "demo-tip-tracker-test";
 const PASSWORD = "Password123!";
@@ -153,21 +151,26 @@ async function login(page, key) {
     await page.getByRole("button", { name: "Log In" }).click();
 }
 
-// The workspace marker. NOT the Day Rail - a paid-out day hides the rail - and
-// not a day-stage control either, so it reads the same whatever today holds.
-// The employee screen has no account sheet at all, so this is the tier line.
+// The two surfaces, each read by something structural rather than by a control
+// that a day's stage could hide. Both halves now carry the same app bar, so the
+// account sheet is no longer the line between them.
 const accountTrigger = (page) => page.getByRole("button", { name: /^Account:/ });
-const workspace = (page) => accountTrigger(page);
+const workspace = (page) => page.locator("#admin-workspace-nav");
+const payStatement = (page) => page.getByTestId("pay-statement");
 const removeShift = (page) => page.getByRole("button", { name: "Remove this shift" });
 
-// The account sheet is the only door to Team on a phone and is present at every
-// width, so its contents are the honest test of whether Team is reachable.
-async function teamMenuItemCount(page) {
+// The account sheet is the only door to Team or Shifts on a phone and is
+// present at every width, so its contents are the honest test of what is
+// reachable.
+async function accountMenuItems(page) {
     await accountTrigger(page).click();
     // Log Out is the sheet's one unconditional item, so it is what proves the
-    // sheet is open before a count of zero is allowed to mean anything.
+    // sheet is open before an empty list is allowed to mean anything.
     await expect(page.getByRole("menuitem", { name: "Log Out" })).toBeVisible();
-    return page.getByRole("menuitem", { name: /^Team/ }).count();
+    const texts = await page.getByRole("menuitem").allInnerTexts();
+    // Just the labels: an item may carry a pending-approval count, and how many
+    // people are waiting is a different test's business.
+    return texts.map((text) => text.replace(/\d+$/, "").trim());
 }
 
 test.beforeAll(async () => {
@@ -181,33 +184,49 @@ test.afterAll(async () => {
     await testEnv.cleanup();
 });
 
-// THE COUPLING. Naming a manager grants server authority and moves nobody. The
-// three tests below are the guard on that, and they are meant to fail loudly if
-// the routing gate is moved without a captain's route to their own pay landing
-// in the same change - see the comment on the gate in src/App.jsx.
+// THE COUPLING. A captain holds two things at once and neither may strand them.
+// The three tests below are the guard on that: the first pins that a captain
+// lands on their own pay AND can reach the workspace and get back, the second
+// that Supervisor off changes nothing for an ordinary employee, and the third
+// that the manager - who has no pay record - is not sent looking for one.
 
-test("naming a manager routes nobody: the pointer holder still lands on their own pay", async ({ page }) => {
-    await seedRestaurant();
-    await login(page, "manager");
-
-    // Full manager authority on the server - tests/rules/manager-tier.test.js
-    // proves every capability - and no workspace, because App.jsx still gates on
-    // `role: "admin"`. Inert and harmless in this direction. The other direction
-    // is not: it would take this person's own pay away with no door back.
-    await expect(page.getByRole("heading", { name: "Tip Tracker" })).toBeVisible();
-    await expect(workspace(page)).toHaveCount(0);
-});
-
-test("Supervisor on gains settle-up on the server and is still not routed to it", async ({ page }) => {
+test("a Supervisor-on captain holds both their own pay and the workspace, and neither is a dead end", async ({ page }) => {
     await seedRestaurant();
     await login(page, "supervisor");
 
-    // The captain the manager would promote first. They hold real settle-up
-    // write access now; the workspace waits on their own-pay entry, because a
-    // captain is paid from the pool and would otherwise lose their week.
-    await expect(page.getByRole("heading", { name: "Tip Tracker" })).toBeVisible();
+    // They LAND on their own pay. That is the shape the captain chose: the pool
+    // pays them, so their week is home, and tonight's shift is a tap away.
+    await expect(payStatement(page)).toBeVisible();
     await expect(workspace(page)).toHaveCount(0);
+
+    // The way across, in the one place a phone keeps destinations.
+    await accountTrigger(page).click();
+    await page.getByRole("menuitem", { name: /^Shifts/ }).click();
+    await expect(workspace(page)).toBeAttached();
+    await expect(payStatement(page)).toHaveCount(0);
+
+    // Removing a settled day is manager-only, and stays that way in here.
     await expect(removeShift(page)).toHaveCount(0);
+
+    // And the way back: home means THIS person's home, which is their pay.
+    await page.getByRole("button", { name: "Go to my pay" }).click();
+    await expect(payStatement(page)).toBeVisible();
+});
+
+test("the manager gets the workspace and no pay page - they have no pay record", async ({ page }) => {
+    await seedRestaurant();
+    await login(page, "manager");
+
+    // Full manager authority - tests/rules/manager-tier.test.js proves every
+    // capability - and no statement to show, because the manager oversees the
+    // operation, works no section and takes no share of the pool.
+    await expect(workspace(page)).toBeAttached();
+    await expect(payStatement(page)).toHaveCount(0);
+
+    // Home means today's shifts for them, and the sheet carries Team only:
+    // a destination is listed there exactly when home does not already lead to it.
+    await expect(page.getByRole("button", { name: "Go to today's shifts" })).toBeVisible();
+    expect(await accountMenuItems(page)).toEqual(["Team", "Log Out"]);
 });
 
 test("the manager is not on the floor - they never appear in the pool to assign", async ({ page }) => {
@@ -243,7 +262,8 @@ test("today's admin loses nothing when someone else is named manager", async ({ 
     // is written, and will be in it again the moment it is.
     await expect(workspace(page)).toBeVisible();
     await expect(removeShift(page)).toBeVisible();
-    expect(await teamMenuItemCount(page)).toBe(1);
+    await expect(payStatement(page)).toHaveCount(0);
+    expect(await accountMenuItems(page)).toEqual(["Team", "Log Out"]);
 });
 
 test("today's admin is unchanged with no manager named at all", async ({ page }) => {
@@ -254,19 +274,19 @@ test("today's admin is unchanged with no manager named at all", async ({ page })
     // document anywhere. Nothing here may differ from the test above.
     await expect(workspace(page)).toBeVisible();
     await expect(removeShift(page)).toBeVisible();
-    expect(await teamMenuItemCount(page)).toBe(1);
+    await expect(payStatement(page)).toHaveCount(0);
+    expect(await accountMenuItems(page)).toEqual(["Team", "Log Out"]);
 });
 
 test("Supervisor off is an ordinary employee, whatever the job title says", async ({ page }) => {
     await seedRestaurant();
     await login(page, "captain");
 
-    // Where every existing captain starts, and today the switch changes nothing
-    // about this screen - which is the point. Note what this screen does NOT
-    // have: no app bar, no account sheet, no nav of any kind. That is why the
-    // routing gate cannot move on its own; there would be no way back to here.
-    await expect(page.getByRole("heading", { name: "Tip Tracker" })).toBeVisible();
+    // Where every existing captain starts. They are paid exactly as a captain -
+    // the switch moves no money - and see exactly what a server sees: their own
+    // pay and no door to anything else.
+    await expect(payStatement(page)).toBeVisible();
+    await expect(workspace(page)).toHaveCount(0);
     await expect(removeShift(page)).toHaveCount(0);
-    await expect(accountTrigger(page)).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Team$/ })).toHaveCount(0);
+    expect(await accountMenuItems(page)).toEqual(["Log Out"]);
 });

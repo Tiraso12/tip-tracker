@@ -151,6 +151,31 @@ export function canReadColleaguePay(user) {
     return hasCaptainAccess(user);
 }
 
+// --- Who the money is for --------------------------------------------------
+
+// Whether a person is paid out of the tip pool, and so HAS a pay record to
+// read. This is not a permission - it decides what exists for someone, not what
+// they may do - but it is derived here for the same reason the capabilities
+// are: it needs the manager pointer, and one wrong answer either hides a
+// captain's own week or hands the manager an empty pay page.
+//
+// The manager is excluded BY IDENTITY: they oversee the operation, never work a
+// section, and take no share. `role: "admin"` is excluded because today's
+// legacy admin is the same kind of person - not on the roster and not in the
+// pay maths - and that value is due to be retired, which the pointer survives.
+// AdminDashboard's floor-plan pool filters on exactly this, so "assignable to a
+// section" and "has a pay record" cannot drift apart.
+export function isPaidFromPool(person, managerUid) {
+    if (!person) return false;
+    if (person.role === "admin") return false;
+    return !managerUid || person.uid !== managerUid;
+}
+
+// The signed-in viewer's own answer to the question above.
+export function hasOwnPayRecord(user) {
+    return isPaidFromPool(user, user?.managerUid);
+}
+
 // --- Naming the tier -------------------------------------------------------
 
 // The tier's own name, in the captain's vocabulary, for the one place the

@@ -111,66 +111,21 @@ export function getBiweeklyPeriod(date) {
 }
 
 /**
- * Returns an array of 42 dates (6 weeks) representing a calendar view for the given month.
- * The grid starts on the Sunday before the 1st (if 1st is not Sunday).
+ * Every day key from start to end inclusive, in order.
  */
-export function getCalendarMonth(baseDate) {
-    const year = baseDate.getFullYear();
-    const month = baseDate.getMonth();
+export function getDateKeys(start, end) {
+    if (!start || !end) return [];
 
-    // First day of the month
-    const firstDayOfMonth = new Date(year, month, 1);
-    // 0 = Sun, 1 = Mon ...
-    const dayOfWeek = firstDayOfMonth.getDay();
-
-    // Start date for the grid (Sunday)
-    const startDate = new Date(firstDayOfMonth);
-    startDate.setDate(1 - dayOfWeek);
-    startDate.setHours(0, 0, 0, 0);
-
-    // Last day of the month
-    const lastDayOfMonth = new Date(year, month + 1, 0);
-
-    // End date for the grid (Saturday)
-    // If last day is Sat (6), add 0. If Fri (5), add 1, etc.
-    const endDayOfWeek = lastDayOfMonth.getDay();
-    const daysToAdd = 6 - endDayOfWeek;
-
-    const endDate = new Date(lastDayOfMonth);
-    endDate.setDate(lastDayOfMonth.getDate() + daysToAdd);
-    endDate.setHours(0, 0, 0, 0);
-
-    const dates = [];
-    const current = new Date(startDate);
-
-    // Loop until we pass the endDate
-    // Use a safety break just in case, though logic should be sound
-    while (current <= endDate) {
-        dates.push(new Date(current));
-        current.setDate(current.getDate() + 1);
-    }
-
-    return dates;
-}
-
-/**
- * Returns the date keys the employee dashboard needs to render the current
- * visible surface without subscribing to the user's entire tip history.
- */
-export function getEmployeeTipSubscriptionDateKeys(baseDate, viewMode = "week") {
-    const date = baseDate || new Date();
-
-    if (viewMode === "month") {
-        return getCalendarMonth(date).map(toDateKey);
-    }
-
-    const period = getBiweeklyPeriod(date);
     const keys = [];
-    const current = new Date(period.start);
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
 
-    while (current <= period.end) {
-        keys.push(toDateKey(current));
-        current.setDate(current.getDate() + 1);
+    const finalDate = new Date(end);
+    finalDate.setHours(0, 0, 0, 0);
+
+    while (cursor <= finalDate) {
+        keys.push(toDateKey(cursor));
+        cursor.setDate(cursor.getDate() + 1);
     }
 
     return keys;

@@ -5,8 +5,8 @@ import { useAuth } from "../../context/AuthContext";
 import { canApproveAccounts, canRemoveSettledDay, tierLabel } from "../../utils/permissions";
 import DayRailLanding from "./DayRailLanding";
 import BarDatePill from "./BarDatePill";
-import AccountSheet from "../Account/AccountSheet";
-import { Badge, TopProgressBar } from "../ui";
+import AppBar from "../AppBar/AppBar";
+import { TopProgressBar } from "../ui";
 import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
 import { toDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
@@ -49,16 +49,6 @@ const NAV_ITEMS = [
         ),
     },
 ];
-
-function HomeIcon() {
-    return (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 10.5 12 3l9 7.5" />
-            <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
-            <path d="M9.5 21v-6h5v6" />
-        </svg>
-    );
-}
 
 function MenuIcon() {
     return (
@@ -105,7 +95,10 @@ function PanelLoading({ label = "Loading..." }) {
     );
 }
 
-function AdminDashboard() {
+// `onGoToMyPay` is set for anyone who is ALSO paid out of the pool - a captain.
+// It is what makes the workspace one of their two places rather than the only
+// one, and its presence is what moves the bar's home control: see handleHomeClick.
+function AdminDashboard({ onGoToMyPay }) {
     const { user } = useAuth();
     const [allEmployees, setAllEmployees] = useState([]);
     const [employeesLoaded, setEmployeesLoaded] = useState(false);
@@ -360,11 +353,11 @@ function AdminDashboard() {
         if (needsRefresh) fetchDayPayouts(selectedDate);
     }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
 
-    // Home: back to today's Shifts landing from anywhere, in one tap. Home means TODAY,
-    // not the day that happened to be selected - the admin reaching for home mid-shift
-    // wants the shift they are working, so a day they browsed to earlier is not sticky.
-    // Routed through the same leave guard as everything else that exits the editor.
-    const handleHomeClick = useCallback(() => {
+    // Today's Shifts landing, from anywhere, in one tap. TODAY, not the day that
+    // happened to be selected - whoever reaches for it mid-shift wants the shift
+    // they are working, so a day browsed to earlier is not sticky. Routed through
+    // the same leave guard as everything else that exits the editor.
+    const goToTodayShifts = useCallback(() => {
         if (!confirmLeaveEditor()) return;
         const today = toDateKey(new Date());
         // A setup shift autosaves while editing, so the landing has to re-read the day.
@@ -376,26 +369,50 @@ function AdminDashboard() {
         if (needsRefresh) fetchDayPayouts(today);
     }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
 
+    // HOME MEANS THE VIEWER'S OWN HOME, and the two tiers here do not share one.
+    // The manager runs the restaurant and is not paid from the pool, so home is
+    // today's shifts, exactly as it always was. A captain IS paid from the pool,
+    // so home is their own pay - that is the trade the captain chose knowingly:
+    // tonight's shift costs a tap (the account sheet's Shifts item, below) to buy
+    // their own week being where they land. Same leave guard either way.
+    const handleHomeClick = useCallback(() => {
+        if (!onGoToMyPay) return goToTodayShifts();
+        if (!confirmLeaveEditor()) return;
+        onGoToMyPay();
+    }, [onGoToMyPay, goToTodayShifts, confirmLeaveEditor]);
+
     // The sidebar treats "editor" as still belonging to the Shifts section.
     const sidebarValue = activeTab === "editor" ? "shifts" : activeTab;
 
     // Team in the account sheet. This is the ONLY door to it on a phone, and it is
     // present at every width so the destination lives in one predictable place
     // rather than moving between a sidebar and a menu as the viewport changes.
-    // Shifts is deliberately not listed here - the app bar's home control is the
-    // way back, at every width, and a second door to it would just be noise.
-    const accountItems = NAV_ITEMS
-        .filter((item) => item.value === "users" && canReachTeam)
-        .map((item) => ({
-            key: item.value,
-            label: item.label,
-            icon: item.icon,
-            active: sidebarValue === item.value,
-            // Team is where a pending sign-up is acted on, so the avatar's count
-            // repeats here - the tap from the badge lands on the number's screen.
-            count: item.value === "users" ? pendingApprovalCount : 0,
-            onClick: () => handleNavItemClick(item.value),
-        }));
+    //
+    // Shifts joins it for whoever's home is NOT Shifts - a captain, whose home
+    // control goes to their own pay. The rule is one line: a destination is
+    // listed here exactly when the bar's home control does not already lead
+    // there. For the manager, home IS Shifts, so listing it would be noise.
+    const accountItems = [
+        ...(onGoToMyPay ? [{
+            key: "shifts",
+            label: NAV_ITEMS[0].label,
+            icon: NAV_ITEMS[0].icon,
+            active: sidebarValue === "shifts",
+            onClick: goToTodayShifts,
+        }] : []),
+        ...NAV_ITEMS
+            .filter((item) => item.value === "users" && canReachTeam)
+            .map((item) => ({
+                key: item.value,
+                label: item.label,
+                icon: item.icon,
+                active: sidebarValue === item.value,
+                // Team is where a pending sign-up is acted on, so the avatar's count
+                // repeats here - the tap from the badge lands on the number's screen.
+                count: pendingApprovalCount,
+                onClick: () => handleNavItemClick(item.value),
+            })),
+    ];
 
     // Who can be put on a section tonight. The manager is excluded BY IDENTITY,
     // not by job title: they oversee the operation, never work a section, and
@@ -459,66 +476,28 @@ function AdminDashboard() {
                 write is in flight, including while the floating actions are away. */}
             <TopProgressBar active={isPending} label="Saving and loading shift data" />
 
-            {/* Top app bar */}
-            {/* px-3 below sm: at 320px the home control, the date pill and the
-                account avatar only clear the viewport with the tighter inset.
-                Dropping the phone hamburger gave the row back 52px: measured at
-                320px on today, slack went from 15px to 67px, so the day pill is
-                no longer the control that gets squeezed to make room. */}
-            {/* z-40, above the z-30 floating Edit / Cancel / Done controls: the bar
-                is app chrome, and the account sheet opens out of it as a bottom sheet
-                that lands exactly where those buttons float. At z-20 they painted
-                straight through it. */}
-            <header className="sticky top-0 z-40 h-14 px-3 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
-                <div className="flex items-center gap-2 sm:gap-3">
-                    {/* Home: the app's only way back that is visible at every width.
-                        It sits at the left edge of the bar - same place on a phone and
-                        on desktop - and is a full 44x44 target. */}
-                    <button
-                        type="button"
-                        onClick={handleHomeClick}
-                        aria-label="Go to today's shifts"
-                        title="Today's shifts"
-                        className="h-11 w-11 inline-flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                    >
-                        <HomeIcon />
-                    </button>
-                    {/* Brand is kept for desktop coherence but dropped on the
-                        mobile admin bar - there the day and the account avatar
-                        are all the width allows. */}
-                    <span className="hidden sm:inline font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                        Tip Tracker
-                    </span>
-                    {/* Names the tier the viewer actually holds. It used to read
-                        "Admin" for everyone here, which stopped being true the
-                        moment captains could reach this workspace. */}
-                    {workspaceTier ? (
-                        <span className="hidden sm:inline">
-                            <Badge tone="accent">{workspaceTier}</Badge>
-                        </span>
-                    ) : null}
-                </div>
-                <div className="flex items-center gap-2 sm:gap-3">
-                    {/* The day lives in the bar on both day screens. On Shifts it is
-                        the control that changes the day; in the editor it is a label,
-                        because the day being typed against must be readable there and
-                        must not be swappable mid-edit. Team has no day. */}
-                    {activeTab === "shifts" || activeTab === "editor" ? (
+            {/* The top app bar, shared with the pay side - see components/AppBar.
+                The day lives in it on both day screens. On Shifts it is the control
+                that changes the day; in the editor it is a label, because the day
+                being typed against must be readable there and must not be swappable
+                mid-edit. Team has no day. */}
+            <AppBar
+                onHome={handleHomeClick}
+                homeLabel={onGoToMyPay ? "Go to my pay" : "Go to today's shifts"}
+                homeTitle={onGoToMyPay ? "My pay" : "Today's shifts"}
+                tier={workspaceTier}
+                dateControl={
+                    activeTab === "shifts" || activeTab === "editor" ? (
                         <BarDatePill
                             selectedDate={selectedDate}
                             onSelectDate={setSelectedDate}
                             readOnly={activeTab === "editor"}
                         />
-                    ) : null}
-                    {/* Who you are, and Log Out, live in here. Log Out was a 69px
-                        word-labelled button in this row - 17.7% of a 390px bar for a
-                        once-a-shift action, and the only worded control on the phone
-                        money screen. The sheet also carries the username the bar used
-                        to print beside it. Team rides in the same sheet - on a phone
-                        this avatar is the only door to it. */}
-                    <AccountSheet items={accountItems} pendingApprovalCount={pendingApprovalCount} />
-                </div>
-            </header>
+                    ) : null
+                }
+                accountItems={accountItems}
+                pendingApprovalCount={pendingApprovalCount}
+            />
 
             <div className="flex flex-col lg:flex-row min-h-[calc(100vh-3.5rem)]">
                 {/* Workspace sidebar - desktop only, and unchanged from what it has

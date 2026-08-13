@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getBiweeklyPeriod, getEmployeeTipSubscriptionDateKeys, toDateKey } from "./dateUtils.js";
+import { getBiweeklyPeriod, getDateKeys, toDateKey } from "./dateUtils.js";
 
 test("formats local calendar dates as stable date keys", () => {
     assert.equal(toDateKey(new Date(2026, 5, 1, 23, 59)), "2026-06-01");
@@ -17,14 +17,14 @@ test("calculates biweekly period boundaries by calendar day", () => {
     assert.equal(toDateKey(nextPeriod.end), "2026-06-04");
 });
 
-test("builds scoped employee tip subscription keys for week and month views", () => {
-    const weekKeys = getEmployeeTipSubscriptionDateKeys(new Date(2026, 4, 29), "week");
-    assert.equal(weekKeys.length, 14);
-    assert.equal(weekKeys[0], "2026-05-22");
-    assert.equal(weekKeys.at(-1), "2026-06-04");
+test("lists every day key in a range, inclusive of both ends", () => {
+    const period = getBiweeklyPeriod(new Date(2026, 4, 29));
+    const keys = getDateKeys(period.start, period.end);
 
-    const monthKeys = getEmployeeTipSubscriptionDateKeys(new Date(2026, 4, 15), "month");
-    assert.equal(monthKeys[0], "2026-04-26");
-    assert.equal(monthKeys.at(-1), "2026-06-06");
-    assert.equal(monthKeys.length, 42);
+    assert.equal(keys.length, 14);
+    assert.equal(keys[0], "2026-05-22");
+    assert.equal(keys.at(-1), "2026-06-04");
+
+    assert.deepEqual(getDateKeys(new Date(2026, 5, 1), new Date(2026, 5, 1)), ["2026-06-01"]);
+    assert.deepEqual(getDateKeys(null, new Date(2026, 5, 1)), []);
 });
