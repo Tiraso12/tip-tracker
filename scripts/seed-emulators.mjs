@@ -136,6 +136,32 @@ const tempStaff = {
     createdAt: FIXED_NOW,
 };
 
+// Hidden profile fixtures exercise the post-migration name shape without
+// changing the visible seeded roster used for before/after UI comparisons.
+// They have no Auth account or login mapping and cannot sign in.
+const nameShapeProfiles = [
+    {
+        uid: "name_shape_two_surnames",
+        username: "sonia-name-shape",
+        firstName: "Sonia",
+        lastName: "Alvarez Garcia",
+        email: "sonia-name-shape@example.com",
+        role: "admin",
+        status: "inactive",
+        createdAt: FIXED_NOW,
+    },
+    {
+        uid: "name_shape_single_word",
+        username: "prince-name-shape",
+        firstName: "Prince",
+        lastName: "",
+        email: "prince-name-shape@example.com",
+        role: "admin",
+        status: "inactive",
+        createdAt: FIXED_NOW,
+    },
+];
+
 function getProjectId() {
     const firebaseConfig = process.env.FIREBASE_CONFIG
         ? JSON.parse(process.env.FIREBASE_CONFIG)
@@ -216,6 +242,8 @@ function profileFor(user) {
     return {
         uid: user.uid,
         username: user.username,
+        firstName: user.username,
+        lastName: "",
         email: user.email,
         role: user.role,
         status: user.status,
@@ -410,6 +438,10 @@ async function seedFirestore(seedUsers) {
                     createdAt: FIXED_NOW,
                 }),
             ]));
+
+            await Promise.all(nameShapeProfiles.map((profile) =>
+                setDoc(doc(db, "users", profile.uid), profile)
+            ));
 
             // The manager pointer. One document, one field, one holder - the
             // whole of "who is the manager". Written here with rules disabled

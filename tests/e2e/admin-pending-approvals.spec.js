@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 
 // The app bar's account avatar carries a count of people awaiting approval, for
 // whoever can approve them. These specs hold the three things that make it worth
@@ -56,6 +56,8 @@ async function seedUsers({ pending = 2 } = {}) {
         await setDoc(doc(db, `users/${admin.localId}`), {
             uid: admin.localId,
             username: "Admin",
+            firstName: "Admin",
+            lastName: "",
             email: ADMIN_EMAIL,
             role: "admin",
             status: "active",
@@ -64,6 +66,8 @@ async function seedUsers({ pending = 2 } = {}) {
         await setDoc(doc(db, `users/${server.localId}`), {
             uid: server.localId,
             username: "Sam Server",
+            firstName: "Sam Server",
+            lastName: "",
             email: SERVER_EMAIL,
             role: "server",
             status: "active",
@@ -73,6 +77,8 @@ async function seedUsers({ pending = 2 } = {}) {
             await setDoc(doc(db, `users/pendingUid${i}`), {
                 uid: `pendingUid${i}`,
                 username: `Pending ${i + 1}`,
+                firstName: `Pending ${i + 1}`,
+                lastName: "",
                 email: `pending${i + 1}@example.com`,
                 // A role is already assigned, which is what makes Approve actionable.
                 role: "server",
@@ -151,6 +157,75 @@ test("someone who cannot approve accounts never sees the count", async ({ page }
     await expect(page.getByTestId("pay-statement")).toBeVisible();
     await expect(badge(page)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Team", exact: true })).toHaveCount(0);
+});
+
+test("sign-up stores a work name separately from the login handle", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+
+    await expect(page.getByLabel("First name")).toBeVisible();
+    await expect(page.getByLabel("Last name (optional)")).toBeVisible();
+    await expect(page.getByLabel("Login handle")).toBeVisible();
+
+    await page.getByLabel("Email").fill("sonia-signup@example.com");
+    await page.getByLabel("First name").fill("Sonia");
+    await page.getByLabel("Last name (optional)").fill("Alvarez Garcia");
+    await page.getByLabel("Login handle").fill("sonia-login");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === "sonia-signup@example.com");
+        expect(profile?.data()).toMatchObject({
+            username: "sonia-login",
+            firstName: "Sonia",
+            lastName: "Alvarez Garcia",
+            role: "unassigned",
+            status: "pending",
+        });
+
+        const mapping = await getDoc(doc(db, "usernames/sonia-login"));
+        expect(mapping.data()).toMatchObject({
+            uid: profile.id,
+            username: "sonia-login",
+            email: "sonia-signup@example.com",
+        });
+    });
+
+    const signIn = await fetch(
+        `http://${AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-api-key`,
+        {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+                email: "sonia-signup@example.com",
+                password: PASSWORD,
+                returnSecureToken: true,
+            }),
+        }
+    ).then((response) => response.json());
+    const lookup = await fetch(
+        `http://${AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:lookup?key=demo-api-key`,
+        {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ idToken: signIn.idToken }),
+        }
+    ).then((response) => response.json());
+    const [authUser] = lookup.users;
+    expect(authUser.displayName).toBeUndefined();
+
+    await page.getByRole("button", { name: "Log Out" }).click();
+    await page.getByLabel("Username or Email").fill("sonia-login");
+    await page.getByRole("textbox", { name: "Password" }).fill(PASSWORD);
+    await page.getByRole("button", { name: "Log In" }).click();
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
 });
 
 test("the badge does not disturb the phone app bar", async ({ page }) => {

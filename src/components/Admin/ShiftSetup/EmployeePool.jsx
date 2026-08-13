@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ScrollRail from '../ScrollRail';
 import { ASSIGNABLE_ROLES, rolePluralLabel, roleShortLabel } from '../../../utils/roleLabels';
+import { firstNameFor, fullNameFor, tempStaffNameFor, tempStaffRosterNameFor } from '../../../utils/userNames';
 
 // Captains lead the list per captain direction; the "All" chip is gone - the
 // unfiltered view is the default, and tapping the active role chip again clears it.
@@ -16,6 +17,18 @@ const ROLE_FILTERS = [
     })),
     { value: 'temp', label: 'Temp' },
 ];
+
+const poolNameFor = (employee) => employee?.isUnregistered
+    ? tempStaffNameFor(employee)
+    : firstNameFor(employee);
+
+const poolActionNameFor = (employee) => employee?.isUnregistered
+    ? tempStaffRosterNameFor(employee)
+    : firstNameFor(employee);
+
+const searchableNamesFor = (employee) => employee?.isUnregistered
+    ? [tempStaffNameFor(employee, ""), tempStaffRosterNameFor(employee, "")]
+    : [firstNameFor(employee, ""), fullNameFor(employee, "")];
 
 function EmployeePool({
     employees,
@@ -38,7 +51,8 @@ function EmployeePool({
 
     const filtered = unassigned.filter(emp => {
         const term = searchTerm.toLowerCase();
-        const matchesSearch = emp.name?.toLowerCase().includes(term) || emp.username?.toLowerCase().includes(term);
+        const matchesSearch = searchableNamesFor(emp)
+            .some((name) => name.toLocaleLowerCase().includes(term));
         const matchesRole = roleFilter === 'all'
             || (roleFilter === 'temp' ? emp.isUnregistered : emp.role === roleFilter);
         return matchesSearch && matchesRole;
@@ -150,9 +164,9 @@ function EmployeePool({
                         onDragStart={(e) => onDragStart(e, emp.uid, 'pool')}
                         onClick={() => clickable && onEmployeeClick(emp)}
                         onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEmployeeClick(emp); } } : undefined}
-                        title={clickable ? `Assign ${emp.username || emp.name} to selected team` : 'Drag to assign'}
+                        title={clickable ? `Assign ${poolActionNameFor(emp)} to selected team` : 'Drag to assign'}
                     >
-                        <span className="font-semibold text-[0.8rem]">{emp.name || emp.username}</span>
+                        <span className="font-semibold text-[0.8rem]">{poolNameFor(emp)}</span>
                         <span className="text-[0.65rem] text-[var(--color-accent)] uppercase tracking-[0.05em] font-bold">{roleShortLabel(emp.role)}</span>
                     </div>
                 ))}

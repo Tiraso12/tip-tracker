@@ -9,7 +9,6 @@ import {
     setPersistence,
     signInWithEmailAndPassword,
     signOut,
-    updateProfile,
 } from "firebase/auth";
 import { doc, getDoc, writeBatch } from "firebase/firestore";
 
@@ -30,6 +29,9 @@ export const AuthProvider = ({ children }) => {
                 // or unreadable state must not become an active employee.
                 let role = "unassigned";
                 let status = "profile_error";
+                let username = "";
+                let firstName = "";
+                let lastName = "";
                 // The "Supervisor" switch - the captain tier. The manager sets
                 // it, absent means off, and the job title in `role` grants
                 // nothing on its own. See src/utils/permissions.js.
@@ -37,9 +39,13 @@ export const AuthProvider = ({ children }) => {
                 try {
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
-                        role = userDoc.data().role || "unassigned";
-                        status = userDoc.data().status || "pending";
-                        isSupervisor = userDoc.data().isSupervisor === true;
+                        const profile = userDoc.data();
+                        role = profile.role || "unassigned";
+                        status = profile.status || "pending";
+                        username = profile.username || "";
+                        firstName = profile.firstName || "";
+                        lastName = profile.lastName || "";
+                        isSupervisor = profile.isSupervisor === true;
                     } else if (registrationInProgressRef.current) {
                         role = "unassigned";
                         status = "pending";
@@ -72,7 +78,9 @@ export const AuthProvider = ({ children }) => {
 
                 const mappedUser = {
                     uid: firebaseUser.uid,
-                    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+                    username,
+                    firstName,
+                    lastName,
                     email: firebaseUser.email,
                     emailVerified: true, // Default to true as we're removing verification step
                     role,
@@ -118,9 +126,11 @@ export const AuthProvider = ({ children }) => {
         return await signInWithEmailAndPassword(auth, emailToSignIn, password);
     };
 
-    const register = async (email, password, username) => {
+    const register = async (email, password, username, firstName, lastName) => {
         const cleanEmail = email.trim();
         const cleanUsername = username.trim();
+        const cleanFirstName = firstName.trim();
+        const cleanLastName = lastName.trim();
         const usernameKey = normalizeUsername(cleanUsername);
         const usernameRef = doc(db, 'usernames', usernameKey);
 
@@ -131,8 +141,6 @@ export const AuthProvider = ({ children }) => {
             const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
             firebaseUser = userCredential.user;
 
-            await updateProfile(firebaseUser, { displayName: cleanUsername });
-
             // Atomically claim the username and create the user doc without a
             // client-side username read. Firestore rules allow creating the
             // username mapping, but deny updating it, so an existing username
@@ -141,6 +149,8 @@ export const AuthProvider = ({ children }) => {
             batch.set(doc(db, 'users', firebaseUser.uid), {
                 uid: firebaseUser.uid,
                 username: cleanUsername,
+                firstName: cleanFirstName,
+                lastName: cleanLastName,
                 email: cleanEmail,
                 role: "unassigned",
                 status: "pending",
@@ -169,7 +179,16 @@ export const AuthProvider = ({ children }) => {
 
         // A self-registered account is pending with no title and no switch - the
         // same safe defaults firestore.rules enforces on the create.
-        setUser(prev => ({ ...prev, username: cleanUsername, role: "unassigned", status: "pending", isSupervisor: false, emailVerified: true }));
+        setUser(prev => ({
+            ...prev,
+            username: cleanUsername,
+            firstName: cleanFirstName,
+            lastName: cleanLastName,
+            role: "unassigned",
+            status: "pending",
+            isSupervisor: false,
+            emailVerified: true,
+        }));
         return firebaseUser;
     };
 

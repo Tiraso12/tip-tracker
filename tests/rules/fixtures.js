@@ -126,7 +126,16 @@ export function validAuditEvent(overrides = {}) {
 }
 
 export function userDoc(uid, role, status, username = uid, overrides = {}) {
-    return { uid, username, email: `${uid}@example.com`, role, status, ...overrides };
+    return {
+        uid,
+        username,
+        firstName: username,
+        lastName: "",
+        email: `${uid}@example.com`,
+        role,
+        status,
+        ...overrides,
+    };
 }
 
 // Someone the manager has given the "Supervisor" switch to. `role` stays their

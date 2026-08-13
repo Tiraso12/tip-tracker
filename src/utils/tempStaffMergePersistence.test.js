@@ -16,7 +16,9 @@ const tempUser = {
 
 const realUser = {
     uid: "real_server",
-    username: "Real Server",
+    username: "real-server",
+    firstName: "Real Server",
+    lastName: "",
     role: "server",
 };
 
@@ -26,7 +28,7 @@ function ledgerEntry(date, uid, data = {}) {
         data: {
             date,
             uid,
-            name: uid === tempUser.uid ? tempUser.name : realUser.username,
+            name: uid === tempUser.uid ? tempUser.name : realUser.firstName,
             role: "server",
             tips: 100,
             gratuity: 25,
@@ -82,7 +84,7 @@ test("plans a clean temp-staff merge into an empty target account", () => {
 
     const mergedEntry = plan.ledgerWrites[0].data;
     assert.equal(mergedEntry.uid, realUser.uid);
-    assert.equal(mergedEntry.name, realUser.username);
+    assert.equal(mergedEntry.name, realUser.firstName);
     assert.equal(mergedEntry.tips, 100);
     assert.equal(mergedEntry.source, "temp_staff_merge");
     assert.deepEqual(mergedEntry.mergedFromTempStaff, {
@@ -93,7 +95,7 @@ test("plans a clean temp-staff merge into an empty target account", () => {
 
     const member = plan.shiftUpdates[0].data.teams[0].members[0];
     assert.equal(member.uid, realUser.uid);
-    assert.equal(member.name, realUser.username);
+    assert.equal(member.name, realUser.firstName);
     assert.deepEqual(member.mergedFromTempStaff, {
         uid: tempUser.uid,
         name: tempUser.name,
@@ -119,7 +121,7 @@ test("allows merge into a non-empty target account when dates do not collide", (
     assert.deepEqual(existingTargetPayout.data, {
         date: "2026-05-29",
         uid: realUser.uid,
-        name: realUser.username,
+        name: realUser.firstName,
         role: "server",
         tips: 220,
         gratuity: 55,
@@ -158,7 +160,7 @@ test("legacy shift payout collisions are detected before rewriting historical pa
         shiftDocs: [shiftDoc("2026-05-28", {
             payouts: {
                 [tempUser.uid]: { name: tempUser.name, total: 125 },
-                [realUser.uid]: { name: realUser.username, total: 600 },
+                [realUser.uid]: { name: realUser.firstName, total: 600 },
             },
         })],
     });
@@ -207,7 +209,7 @@ test("rewrites an unsettled shift that carries no payouts and reports it separat
     const unsettledMembers = plan.shiftUpdates[1].data.teams[0].members;
     assert.equal(unsettledMembers[0].uid, "other_uid");
     assert.equal(unsettledMembers[1].uid, realUser.uid);
-    assert.equal(unsettledMembers[1].name, realUser.username);
+    assert.equal(unsettledMembers[1].name, realUser.firstName);
     assert.equal(shiftReferencesUid(plan.shiftUpdates[1].data, tempUser.uid), false);
 });
 

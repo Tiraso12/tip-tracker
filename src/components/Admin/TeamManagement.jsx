@@ -13,6 +13,7 @@ import {
     isPaidFromPool,
 } from "../../utils/permissions";
 import { ASSIGNABLE_ROLES, roleLabel, roleShortLabel } from "../../utils/roleLabels";
+import { firstNameFor, fullNameFor, tempStaffRosterNameFor } from "../../utils/userNames";
 import {
     formatTempStaffMergeCollisionMessage,
     formatTempStaffMergeResultMessage,
@@ -34,7 +35,15 @@ const STATUS_FILTERS = [
 const STATUS_ORDER = { pending: 0, temp: 1, active: 2, inactive: 3 };
 
 function personName(person) {
-    return person?.username || person?.name || "Unnamed person";
+    return person?.isTemp
+        ? tempStaffRosterNameFor(person)
+        : fullNameFor(person);
+}
+
+function rosterName(person) {
+    return person?.isTemp
+        ? tempStaffRosterNameFor(person)
+        : firstNameFor(person);
 }
 
 function personStatus(person) {
@@ -86,11 +95,11 @@ function RosterRow({ person, onOpen }) {
             onClick={onOpen}
             data-testid={`roster-row-${person.uid}`}
             className="group flex min-h-16 w-full items-center gap-3 px-4 text-left transition-colors hover:bg-[var(--color-surface-muted)]/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]/30 sm:px-5"
-            aria-label={`Open ${personName(person)}, ${roleLabel(person.role)}, ${statusLabel(status)}`}
+            aria-label={`Open ${rosterName(person)}, ${roleLabel(person.role)}, ${statusLabel(status)}`}
         >
             <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-[var(--color-ink)]">
-                    {personName(person)}
+                    {rosterName(person)}
                 </span>
                 <span className="mt-0.5 block truncate text-xs text-[var(--color-ink-muted)]">
                     {roleShortLabel(person.role)}
@@ -516,7 +525,7 @@ function TeamManagement({ allEmployees, refreshEmployees }) {
             .map((person) => ({ ...person, isTemp: false }));
         return [...realPeople, ...unregisteredStaff].sort((left, right) => {
             const statusDifference = STATUS_ORDER[personStatus(left)] - STATUS_ORDER[personStatus(right)];
-            return statusDifference || personName(left).localeCompare(personName(right));
+            return statusDifference || rosterName(left).localeCompare(rosterName(right));
         });
     }, [allEmployees, unregisteredStaff, user?.managerUid]);
 

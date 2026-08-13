@@ -50,6 +50,8 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [username, setUsername] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [rememberMe, setRememberMe] = useState(true);
     const [isForgotPassword, setIsForgotPassword] = useState(false);
     const [resetSent, setResetSent] = useState(false);
@@ -74,9 +76,9 @@ const Login = () => {
                 if (!email || !password) throw new Error("Please fill in all fields.");
                 await login(email, password, rememberMe);
             } else {
-                if (!email || !password || !username) throw new Error("Please fill in all fields.");
+                if (!email || !password || !username || !firstName) throw new Error("Please fill in all required fields.");
                 if (password !== confirmPassword) throw new Error("Passwords do not match");
-                await register(email, password, username);
+                await register(email, password, username, firstName, lastName);
             }
         } catch (err) {
             console.error(err);
@@ -144,16 +146,44 @@ const Login = () => {
                         />
 
                         {!isLogin && (
-                            <Input
-                                id="login-username"
-                                name="username"
-                                label="Username"
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                placeholder="Display name"
-                                autoComplete="username"
-                            />
+                            <>
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <Input
+                                        id="signup-first-name"
+                                        name="given-name"
+                                        label="First name"
+                                        type="text"
+                                        value={firstName}
+                                        onChange={(e) => setFirstName(e.target.value)}
+                                        placeholder="Sonia"
+                                        autoComplete="given-name"
+                                        maxLength={80}
+                                        required
+                                    />
+                                    <Input
+                                        id="signup-last-name"
+                                        name="family-name"
+                                        label="Last name (optional)"
+                                        type="text"
+                                        value={lastName}
+                                        onChange={(e) => setLastName(e.target.value)}
+                                        placeholder="Alvarez Garcia"
+                                        autoComplete="family-name"
+                                        maxLength={80}
+                                    />
+                                </div>
+                                <Input
+                                    id="login-username"
+                                    name="username"
+                                    label="Login handle"
+                                    type="text"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    placeholder="Choose a login handle"
+                                    autoComplete="username"
+                                    required
+                                />
+                            </>
                         )}
 
                         {!isForgotPassword && (

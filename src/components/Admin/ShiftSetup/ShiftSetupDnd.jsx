@@ -3,6 +3,7 @@ import EmployeePool from './EmployeePool';
 import TeamAssignmentPanel from './TeamAssignmentPanel';
 import { ROLE_POINTS, RUNNER_FLAT_RATE } from '../../../utils/constants';
 import { FLOOR_PLAN_ROLES, roleShortLabel } from '../../../utils/roleLabels';
+import { firstNameFor, tempStaffRosterNameFor } from '../../../utils/userNames';
 import { db } from '../../../config/firebase';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
@@ -121,7 +122,8 @@ function ShiftSetupDnd({
 
     const addEmployee = useCallback((emp, targetTeamId, pts) => {
         const restaurantRole = getRestaurantRole(emp.role);
-        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: restaurantRole, points: pts };
+        const name = emp.isUnregistered ? tempStaffRosterNameFor(emp) : firstNameFor(emp);
+        const newMember = { uid: emp.uid, name, role: restaurantRole, points: pts };
         if (targetTeamId === 'bar') {
             setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
         } else if (targetTeamId === 'runner') {

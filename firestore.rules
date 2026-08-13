@@ -155,15 +155,22 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
           "uid",
           "username",
+          "firstName",
+          "lastName",
           "email",
           "role",
           "status",
           "createdAt"
         ]) &&
-        request.resource.data.keys().hasAll(["uid", "username", "email", "role", "status"]) &&
+        request.resource.data.keys().hasAll(["uid", "username", "firstName", "lastName", "email", "role", "status"]) &&
         request.resource.data.uid == uid &&
         request.resource.data.uid == request.auth.uid &&
         request.resource.data.username is string &&
+        request.resource.data.firstName is string &&
+        request.resource.data.firstName.size() > 0 &&
+        request.resource.data.firstName.size() <= 80 &&
+        request.resource.data.lastName is string &&
+        request.resource.data.lastName.size() <= 80 &&
         request.resource.data.email is string &&
         request.resource.data.role == "unassigned" &&
         request.resource.data.status == "pending" &&
@@ -174,6 +181,8 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
           "uid",
           "username",
+          "firstName",
+          "lastName",
           "email",
           "role",
           "status",
@@ -182,11 +191,16 @@ service cloud.firestore {
           "hasTipHistory",
           "isSupervisor"
         ]) &&
-        request.resource.data.keys().hasAll(["uid", "role", "status"]) &&
+        request.resource.data.keys().hasAll(["uid", "firstName", "lastName", "role", "status"]) &&
         request.resource.data.uid == uid &&
         isRole(request.resource.data.role) &&
         isStatus(request.resource.data.status) &&
         (!("username" in request.resource.data) || request.resource.data.username is string) &&
+        request.resource.data.firstName is string &&
+        request.resource.data.firstName.size() > 0 &&
+        request.resource.data.firstName.size() <= 80 &&
+        request.resource.data.lastName is string &&
+        request.resource.data.lastName.size() <= 80 &&
         (!("email" in request.resource.data) || request.resource.data.email is string) &&
         (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt)) &&
         (!("hasShiftHistory" in request.resource.data) || request.resource.data.hasShiftHistory is bool) &&

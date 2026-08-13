@@ -56,6 +56,8 @@ async function seedBaseUsers() {
         await setDoc(doc(db, `users/${admin.localId}`), {
             uid: admin.localId,
             username: "Admin",
+            firstName: "Admin",
+            lastName: "",
             email: ADMIN_EMAIL,
             role: "admin",
             status: "active",
@@ -64,6 +66,8 @@ async function seedBaseUsers() {
         await setDoc(doc(db, "users/emptyTargetUid"), {
             uid: "emptyTargetUid",
             username: "Empty Target",
+            firstName: "Empty Target",
+            lastName: "",
             email: "empty@example.com",
             role: "server",
             status: "active",
@@ -74,6 +78,8 @@ async function seedBaseUsers() {
         await setDoc(doc(db, "users/backStaffUid"), {
             uid: "backStaffUid",
             username: "Back Staff",
+            firstName: "Back Staff",
+            lastName: "",
             email: "back@example.com",
             role: "back",
             status: "active",
@@ -82,6 +88,8 @@ async function seedBaseUsers() {
         await setDoc(doc(db, "users/historyTargetUid"), {
             uid: "historyTargetUid",
             username: "History Target",
+            firstName: "History Target",
+            lastName: "",
             email: "history@example.com",
             role: "server",
             status: "active",

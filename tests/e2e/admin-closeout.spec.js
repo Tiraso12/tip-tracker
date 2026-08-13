@@ -58,6 +58,8 @@ async function seedCloseoutData() {
         await setDoc(doc(db, `users/${admin.localId}`), {
             uid: admin.localId,
             username: "Admin",
+            firstName: "Admin",
+            lastName: "",
             email: ADMIN_EMAIL,
             role: "admin",
             status: "active",
@@ -66,6 +68,8 @@ async function seedCloseoutData() {
         await setDoc(doc(db, "users/captainUid"), {
             uid: "captainUid",
             username: "Captain One",
+            firstName: "Captain One",
+            lastName: "",
             email: "captain@example.com",
             role: "captain",
             status: "active",
@@ -74,6 +78,8 @@ async function seedCloseoutData() {
         await setDoc(doc(db, "users/serverUid"), {
             uid: "serverUid",
             username: "Server One",
+            firstName: "Server One",
+            lastName: "",
             email: "server@example.com",
             role: "server",
             status: "active",
@@ -82,6 +88,8 @@ async function seedCloseoutData() {
         await setDoc(doc(db, "users/backUid"), {
             uid: "backUid",
             username: "Back One",
+            firstName: "Back One",
+            lastName: "",
             email: "back@example.com",
             role: "back",
             status: "active",

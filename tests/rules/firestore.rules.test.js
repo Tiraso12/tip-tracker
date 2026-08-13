@@ -35,24 +35,32 @@ test.beforeEach(async () => {
         await setDoc(doc(db, "users/adminUid"), {
             uid: "adminUid",
             username: "Admin",
+            firstName: "Admin",
+            lastName: "",
             role: "admin",
             status: "active",
         });
         await setDoc(doc(db, "users/inactiveAdminUid"), {
             uid: "inactiveAdminUid",
             username: "Inactive Admin",
+            firstName: "Inactive Admin",
+            lastName: "",
             role: "admin",
             status: "inactive",
         });
         await setDoc(doc(db, "users/employeeUid"), {
             uid: "employeeUid",
             username: "Employee",
+            firstName: "Employee",
+            lastName: "",
             role: "server",
             status: "active",
         });
         await setDoc(doc(db, "users/otherEmployeeUid"), {
             uid: "otherEmployeeUid",
             username: "Other Employee",
+            firstName: "Other Employee",
+            lastName: "",
             role: "server",
             status: "active",
         });
@@ -224,6 +232,8 @@ test("new users can only create their own pending unassigned profile", async () 
     await assertSucceeds(setDoc(doc(db, "users/newUserUid"), {
         uid: "newUserUid",
         username: "New User",
+        firstName: "New User",
+        lastName: "",
         email: "new@example.com",
         role: "unassigned",
         status: "pending",
@@ -234,6 +244,8 @@ test("new users can only create their own pending unassigned profile", async () 
     await assertFails(setDoc(doc(db, "users/newUserUid"), {
         uid: "newUserUid",
         username: "New User",
+        firstName: "New User",
+        lastName: "",
         email: "new@example.com",
         role: "admin",
         status: "active",
@@ -242,6 +254,8 @@ test("new users can only create their own pending unassigned profile", async () 
     await assertFails(setDoc(doc(db, "users/newUserUid"), {
         uid: "newUserUid",
         username: "New User",
+        firstName: "New User",
+        lastName: "",
         email: "new@example.com",
         role: "unassigned",
         status: "pending",
@@ -251,6 +265,8 @@ test("new users can only create their own pending unassigned profile", async () 
     await assertFails(setDoc(doc(db, "users/someoneElseUid"), {
         uid: "someoneElseUid",
         username: "Someone Else",
+        firstName: "Someone Else",
+        lastName: "",
         role: "unassigned",
         status: "pending",
     }));
@@ -307,6 +323,20 @@ test("admin user writes must keep valid role and status enums", async () => {
     await assertSucceeds(updateDoc(doc(db, "users/employeeUid"), { status: "inactive" }));
     await assertFails(updateDoc(doc(db, "users/employeeUid"), { role: "owner" }));
     await assertFails(updateDoc(doc(db, "users/employeeUid"), { status: "disabled" }));
+});
+
+test("profile names are bounded, manager-writable, and never self-writable", async () => {
+    const admin = authedDb("adminUid");
+    const employee = authedDb("employeeUid");
+
+    await assertSucceeds(updateDoc(doc(admin, "users/employeeUid"), {
+        firstName: "Sonia",
+        lastName: "Alvarez Garcia",
+    }));
+    await assertFails(updateDoc(doc(employee, "users/employeeUid"), { firstName: "Self rename" }));
+    await assertFails(updateDoc(doc(admin, "users/employeeUid"), { firstName: "" }));
+    await assertFails(updateDoc(doc(admin, "users/employeeUid"), { firstName: "x".repeat(81) }));
+    await assertFails(updateDoc(doc(admin, "users/employeeUid"), { lastName: "x".repeat(81) }));
 });
 
 test("an admin can manage users, shifts, payout ledger entries, and temporary staff", async () => {

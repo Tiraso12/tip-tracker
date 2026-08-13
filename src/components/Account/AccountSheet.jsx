@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { roleLabel } from "../../utils/roleLabels";
+import { fullNameFor } from "../../utils/userNames";
 
 // The account sheet: who you are signed in as, and the once-a-shift actions that
 // belong with that. It exists to get Log Out out of the top app bar - a 69px
@@ -65,8 +66,8 @@ function AccountSheet({ items = [], pendingApprovalCount = 0 }) {
         panelRef.current?.querySelector("button")?.focus();
     }, [open]);
 
-    const name = user?.username || "Signed in";
-    const initials = initialsFor(user?.username);
+    const name = fullNameFor(user, "Signed in");
+    const initials = initialsFor(name);
     const pendingCount = Number.isFinite(pendingApprovalCount) ? Math.max(0, Math.trunc(pendingApprovalCount)) : 0;
     const hasPending = pendingCount > 0;
 

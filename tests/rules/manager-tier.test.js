@@ -361,6 +361,8 @@ test("PROPOSED: only the manager may move the Supervisor switch, and never onto 
     await assertFails(setDoc(doc(newcomer, "users/newcomerUid"), {
         uid: "newcomerUid",
         username: "Newcomer",
+        firstName: "Newcomer",
+        lastName: "",
         email: "newcomer@example.com",
         role: "unassigned",
         status: "pending",

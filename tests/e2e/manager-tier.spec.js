@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
 
 // What each tier actually meets on screen once a manager is named. The rules
 // suites prove what the server allows and refuses; this suite is about the app.
@@ -94,6 +94,8 @@ async function seedRestaurant({ managerNamed = true } = {}) {
             await setDoc(doc(db, `users/${uids[key]}`), {
                 uid: uids[key],
                 username: person.displayName,
+                firstName: person.displayName,
+                lastName: "",
                 email: person.email,
                 role: person.role,
                 status: person.status || "active",
@@ -213,6 +215,7 @@ async function openWorkspaceAndTeam(page) {
 
 test.beforeAll(async () => {
     mkdirSync("artifacts/team-roster", { recursive: true });
+    mkdirSync("artifacts/profile-name-split", { recursive: true });
     testEnv = await initializeTestEnvironment({
         projectId: PROJECT_ID,
         firestore: { rules: readFileSync("firestore.rules", "utf8") },
@@ -317,6 +320,55 @@ test("the manager gets one searchable roster and deliberate person actions", asy
     await page.screenshot({ path: "artifacts/team-roster/manager-temp-person-phone.png", fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.screenshot({ path: "artifacts/team-roster/manager-temp-person-desktop.png", fullPage: true });
+});
+
+test("work names have one source while the login handle and Auth display name stay separate", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await seedRestaurant();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), `users/${uids.server}`), {
+            username: "server-login",
+            firstName: "Sonia",
+            lastName: "Alvarez Garcia",
+        });
+    });
+
+    await login(page, "manager");
+    await openTeamFromWorkspace(page);
+    await expect(page.getByRole("button", { name: /Open Sonia, Server, Active/ })).toBeVisible();
+    await expect(page.getByText("server-login")).toHaveCount(0);
+
+    await page.getByRole("button", { name: /Open Sonia, Server, Active/ }).click();
+    await expect(page.getByTestId("person-identity")).toContainText("Sonia Alvarez Garcia");
+    await page.getByRole("button", { name: "Back to team roster" }).click();
+
+    await page.getByRole("button", { name: "Shifts", exact: true }).click();
+    await setShiftDate(page, EMPTY_DAY);
+    await page.getByRole("button", { name: /Build floor plan/i }).click();
+    const poolRows = page.locator('[title="Drag to assign"]');
+    await expect(poolRows.filter({ hasText: "Sonia" })).toHaveCount(1);
+    await expect(poolRows.filter({ hasText: "Alvarez Garcia" })).toHaveCount(0);
+    await expect(poolRows.filter({ hasText: "server-login" })).toHaveCount(0);
+
+    const teamZone = page.getByRole("heading", { name: "Team 1", exact: true }).locator("..").locator("..");
+    await teamZone.getByRole("button", { name: /Team 1/i }).click();
+    await page.getByRole("button", { name: "Sonia SERVER" }).click();
+    await expect(page.getByText("Sonia", { exact: true }).first()).toBeVisible();
+    await page.screenshot({ path: "artifacts/profile-name-split/manager-floor-desktop.png", fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: "artifacts/profile-name-split/manager-floor-phone.png", fullPage: true });
+    await page.getByRole("button", { name: "Done", exact: true }).click();
+
+    await accountTrigger(page).click();
+    await page.getByRole("menuitem", { name: "Log Out" }).click();
+    await login(page, "server");
+    await expect(accountTrigger(page)).toHaveAccessibleName(/Account: Sonia Alvarez Garcia/);
+    await accountTrigger(page).click();
+    await expect(page.getByText("Sonia Alvarez Garcia", { exact: true })).toBeVisible();
+    await expect(page.getByText("Server One", { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: "artifacts/profile-name-split/employee-account-phone.png", fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: "artifacts/profile-name-split/employee-account-desktop.png", fullPage: true });
 });
 
 test("a Supervisor-on captain reads a colleague's shared pay statement and no management actions", async ({ page }) => {

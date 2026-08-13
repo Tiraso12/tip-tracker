@@ -14,6 +14,7 @@ import {
     payoutLedgerEntryRef,
     payoutLedgerMetaRef,
 } from "./payoutLedger.js";
+import { firstNameFor, fullNameFor } from "./userNames.js";
 
 const LEGACY_TIP_COLLECTION = "tips";
 const MAX_TRANSACTION_WRITES = 450;
@@ -45,7 +46,7 @@ function snapshotData(snapshot) {
 }
 
 function displayNameFor(user = {}) {
-    return user.username || user.name || "Unknown";
+    return firstNameFor(user, "Unknown");
 }
 
 function sortDates(dates) {
@@ -373,7 +374,7 @@ function buildMergeAuditEvent({
         targetUser: {
             uid: realUser.uid,
             username: realUser.username || null,
-            name: realUser.name || null,
+            name: fullNameFor(realUser, null),
             role: realUser.role || null,
         },
         migratedDates: plan.migratedDates,
