@@ -30,11 +30,16 @@ export const AuthProvider = ({ children }) => {
                 // or unreadable state must not become an active employee.
                 let role = "unassigned";
                 let status = "profile_error";
+                // The "Supervisor" switch - the captain tier. The manager sets
+                // it, absent means off, and the job title in `role` grants
+                // nothing on its own. See src/utils/permissions.js.
+                let isSupervisor = false;
                 try {
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
                         role = userDoc.data().role || "unassigned";
                         status = userDoc.data().status || "pending";
+                        isSupervisor = userDoc.data().isSupervisor === true;
                     } else if (registrationInProgressRef.current) {
                         role = "unassigned";
                         status = "pending";
@@ -72,6 +77,7 @@ export const AuthProvider = ({ children }) => {
                     emailVerified: true, // Default to true as we're removing verification step
                     role,
                     status,
+                    isSupervisor,
                     managerUid,
                 };
                 setUser(mappedUser);
@@ -161,7 +167,9 @@ export const AuthProvider = ({ children }) => {
             registrationInProgressRef.current = false;
         }
 
-        setUser(prev => ({ ...prev, username: cleanUsername, role: "unassigned", status: "pending", emailVerified: true }));
+        // A self-registered account is pending with no title and no switch - the
+        // same safe defaults firestore.rules enforces on the create.
+        setUser(prev => ({ ...prev, username: cleanUsername, role: "unassigned", status: "pending", isSupervisor: false, emailVerified: true }));
         return firebaseUser;
     };
 

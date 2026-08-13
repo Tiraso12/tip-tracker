@@ -6,11 +6,27 @@ service cloud.firestore {
     // ------------------------------------------------------------------
     // Permission tiers: Manager > Captain > Employee, cumulative.
     //
-    // Permission is bound to the ROSTER role on users/{uid} plus the manager
-    // pointer at restaurant/config. The floor plan's teams[].members[].role is
-    // pay weight for one night and is NEVER a permission - any floor-plan
-    // editor can change that dropdown, so reading it here would let a captain
-    // promote themselves or anyone else.
+    // Permission is bound to the SUPERVISOR switch on users/{uid} plus the
+    // manager pointer at restaurant/config. A job title grants nothing:
+    //
+    //   users.role          the job title, and the ONLY thing the money is
+    //                       calculated from. A captain with the switch off is
+    //                       still paid as a captain and can still do nothing.
+    //   users.isSupervisor  the "Supervisor" switch. Manager-set, per person,
+    //                       absent reads as OFF. This is the captain tier.
+    //
+    // Never move this predicate back onto a role value, and never add a role
+    // value that means "supervisor": src/utils/engine.js reads ROLE_POINTS by
+    // role and matches role == "captain" exactly for the captain override, so a
+    // compound title would silently pay someone zero. The switch is a separate
+    // field for that reason.
+    //
+    // The floor plan's teams[].members[].role is pay weight for one night and is
+    // NEVER a permission - any floor-plan editor can change that dropdown, so
+    // reading it here would let a supervisor promote themselves or anyone else.
+    // The same holds for any other key smuggled onto a floor-plan member: every
+    // predicate below reads the reader's own users/{uid} document and nothing on
+    // the shift.
     //
     // MIGRATION STATE - read this before changing anything below.
     // The tier model is dormant until the restaurant names a manager. With no
@@ -45,12 +61,13 @@ service cloud.firestore {
         isActiveUser();
     }
 
-    // Cumulative: the manager holds every captain power too.
+    // Cumulative: the manager holds every captain power too, without needing the
+    // switch set on their own profile.
     function isCaptain() {
       return isManager() ||
         (request.auth != null &&
           tierModelActive() &&
-          selfProfile().role == "captain" &&
+          selfProfile().get("isSupervisor", false) == true &&
           isActiveUser());
     }
 
@@ -78,6 +95,21 @@ service cloud.firestore {
     function onlyHistoryFlagsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(["hasShiftHistory", "hasTipHistory"]);
+    }
+
+    // The Supervisor switch IS the captain tier, so moving it is the one write
+    // that hands out access. Two separate guards: only manager authority may
+    // move it at all, and nobody may move it on their own profile - a self-write
+    // is the only path by which an account could gain the tier without a
+    // manager's decision. The manager needs no self-write: isCaptain() already
+    // returns true for them through isManager().
+    function supervisorFlagChanged() {
+      return request.resource.data.get("isSupervisor", false) !=
+        resource.data.get("isSupervisor", false);
+    }
+
+    function maySetSupervisorFlag(uid) {
+      return hasManagerAccess() && request.auth.uid != uid;
     }
 
     // Closing and recalculating a night are captain work; merging a temporary
@@ -147,7 +179,8 @@ service cloud.firestore {
           "status",
           "createdAt",
           "hasShiftHistory",
-          "hasTipHistory"
+          "hasTipHistory",
+          "isSupervisor"
         ]) &&
         request.resource.data.keys().hasAll(["uid", "role", "status"]) &&
         request.resource.data.uid == uid &&
@@ -157,7 +190,8 @@ service cloud.firestore {
         (!("email" in request.resource.data) || request.resource.data.email is string) &&
         (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt)) &&
         (!("hasShiftHistory" in request.resource.data) || request.resource.data.hasShiftHistory is bool) &&
-        (!("hasTipHistory" in request.resource.data) || request.resource.data.hasTipHistory is bool);
+        (!("hasTipHistory" in request.resource.data) || request.resource.data.hasTipHistory is bool) &&
+        (!("isSupervisor" in request.resource.data) || request.resource.data.isSupervisor is bool);
     }
 
     function validUsernameMapping() {
@@ -399,9 +433,12 @@ service cloud.firestore {
       allow create: if request.auth != null &&
         request.auth.uid == uid &&
         validSelfProfileCreate(uid);
-      // Roles and account status are manager-only. A captain may write nothing
-      // but the settle-up history flags - see onlyHistoryFlagsChanged().
+      // Roles, account status and the Supervisor switch are manager-only. A
+      // captain may write nothing but the settle-up history flags - see
+      // onlyHistoryFlagsChanged(). The switch carries the extra self-write ban
+      // in maySetSupervisorFlag(), which binds the manager too.
       allow update: if validUserProfile(uid) &&
+        (!supervisorFlagChanged() || maySetSupervisorFlag(uid)) &&
         (hasManagerAccess() || (hasCaptainAccess() && onlyHistoryFlagsChanged()));
       allow delete: if hasManagerAccess();
     }

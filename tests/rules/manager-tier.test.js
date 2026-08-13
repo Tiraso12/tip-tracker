@@ -1,9 +1,16 @@
 // The three-tier model - Manager > Captain > Employee - once a manager exists.
 //
 // Everything here runs with restaurant/config seeded, which is what makes the
-// tiers live. The manager's own users/{uid} document deliberately carries
-// `role: "unassigned"`: the tier comes from the pointer and from nothing else,
-// so a role value can neither grant it nor be confused for it.
+// tiers live. Two structural facts this suite exists to prove:
+//
+//   - The manager's own users/{uid} document deliberately carries
+//     `role: "unassigned"`: the tier comes from the pointer and from nothing
+//     else, so a role value can neither grant it nor be confused for it.
+//   - The captain tier comes from the "Supervisor" switch (users.isSupervisor)
+//     and NOT from the job title. captainUid and supervisorUid below share the
+//     role "captain" - one has the switch, one does not - and they must come out
+//     of every probe with different access. trustedServerUid holds the switch
+//     with a server's title, and must come out with a supervisor's access.
 //
 // current-state.test.js is the counterpart - same rules file, no pointer, and
 // today's behaviour unchanged.
@@ -30,6 +37,7 @@ import {
     CLOSED_DATE,
     OPEN_DATE,
     shiftWithWorkedRole,
+    supervisorDoc,
     userDoc,
     validAuditEvent,
     validLegacyTip,
@@ -59,12 +67,19 @@ test.beforeEach(async () => {
         const db = context.firestore();
         await setDoc(doc(db, CONFIG_PATH), { managerUid: "managerUid" });
 
-        // The manager's roster role is NOT what makes them the manager. They do
-        // not work a section and are not paid from the pool, so they carry no
-        // pay weight at all.
+        // The manager's job title is NOT what makes them the manager, and they
+        // hold no switch of their own. They do not work a section and are not
+        // paid from the pool, so they carry no pay weight at all.
         await setDoc(doc(db, "users/managerUid"), userDoc("managerUid", "unassigned", "active", "Manager"));
         await setDoc(doc(db, "users/adminUid"), userDoc("adminUid", "admin", "active", "Admin"));
+
+        // Same title, different switch. This pair is the whole model.
+        await setDoc(doc(db, "users/supervisorUid"), supervisorDoc("supervisorUid", "captain", "active", "Captain Supervisor"));
         await setDoc(doc(db, "users/captainUid"), userDoc("captainUid", "captain", "active", "Captain One"));
+
+        // A trusted server given the switch, with no new title invented for them.
+        await setDoc(doc(db, "users/trustedServerUid"), supervisorDoc("trustedServerUid", "server", "active", "Server Trusted"));
+
         await setDoc(doc(db, "users/serverUid"), userDoc("serverUid", "server", "active", "Server One"));
         await setDoc(doc(db, "users/otherServerUid"), userDoc("otherServerUid", "server", "active", "Server Two"));
         await setDoc(doc(db, "users/pendingUid"), userDoc("pendingUid", "unassigned", "pending", "New Hire"));
@@ -130,8 +145,74 @@ async function assertCorrectionPathAllowed(db, operationId) {
     })));
 }
 
-test("PROPOSED: a captain can build a floor plan, settle money, and audit it", async () => {
-    const db = authedDb("captainUid");
+// Every capability the captain tier carries, refused. Used to prove that a
+// captain with the switch off is an ordinary employee and nothing more. Each
+// probe names itself so a regression says which capability leaked, not just
+// which line failed.
+async function assertNoCaptainAccess(db, uid, label) {
+    const refused = async (what, operation) => {
+        try {
+            await assertFails(operation);
+        } catch (error) {
+            error.message = `${label} was allowed to ${what}: ${error.message}`;
+            throw error;
+        }
+    };
+
+    // Someone else's documents, whoever the actor is - their own are theirs.
+    const colleague = uid === "serverUid" ? "otherServerUid" : "serverUid";
+
+    // Reading the roster and colleagues' pay.
+    await refused("list the roster", getDocs(collection(db, "users")));
+    await refused("read a colleague's profile", getDoc(doc(db, "users/" + colleague)));
+    await refused("read a colleague's legacy tips", getDoc(doc(db, `users/${colleague}/tips/${CLOSED_DATE}`)));
+    await refused("read a colleague's payout", getDoc(doc(db, `payouts/${CLOSED_DATE}/entries/${colleague}`)));
+    await refused("scan a settled night", getDocs(collection(db, `payouts/${CLOSED_DATE}/entries`)));
+    await refused("scan every night", getDocs(collection(db, "payouts")));
+
+    // Reaching the shift workspace and building a floor plan.
+    await refused("read a shift", getDoc(doc(db, "shifts/" + CLOSED_DATE)));
+    await refused("build a floor plan", setDoc(doc(db, "shifts/" + OPEN_DATE), validShift(OPEN_DATE, { status: "setup" })));
+
+    // Adding temporary staff.
+    await refused("list temp staff", getDocs(collection(db, "unregisteredStaff")));
+    await refused("add temp staff", setDoc(doc(db, "unregisteredStaff/tempTwo"), validTempStaff("tempTwo")));
+
+    // Entering money, and the audit trail that goes with it.
+    await refused("write the ledger meta", setDoc(doc(db, "payouts/" + OPEN_DATE), validPayoutMeta()));
+    await refused("pay someone", setDoc(doc(db, `payouts/${OPEN_DATE}/entries/serverUid`), validPayoutEntry()));
+    await refused("stamp history flags", updateDoc(doc(db, "users/" + colleague), { hasShiftHistory: true, hasTipHistory: true }));
+    await refused("read the audit trail", getDocs(collection(db, "auditEvents")));
+    await refused("close a shift", setDoc(doc(db, "auditEvents/" + uid + "Close"), validAuditEvent({ operationId: uid + "Close" })));
+
+    // Correcting an already-settled day - every write in that batch.
+    await refused("rewrite a settled shift", setDoc(doc(db, "shifts/" + CLOSED_DATE), validShift(CLOSED_DATE)));
+    await refused("rewrite a settled ledger meta", setDoc(doc(db, "payouts/" + CLOSED_DATE), validPayoutMeta(CLOSED_DATE)));
+    await refused("rewrite a settled payout", setDoc(
+        doc(db, `payouts/${CLOSED_DATE}/entries/serverUid`),
+        validPayoutEntry(CLOSED_DATE, "serverUid", { total: 175, tips: 125 }),
+    ));
+    await refused("drop a settled payout", deleteDoc(doc(db, `payouts/${CLOSED_DATE}/entries/${colleague}`)));
+    await refused("recalculate a settled day", setDoc(doc(db, "auditEvents/" + uid + "Recalc"), validAuditEvent({
+        operationId: uid + "Recalc",
+        type: "shift_recalculated",
+    })));
+
+    // ...and every manager-only capability, which was never theirs either.
+    await refused("approve an account", updateDoc(doc(db, "users/pendingUid"), { status: "active" }));
+    await refused("assign a job title", updateDoc(doc(db, "users/" + colleague), { role: "captain" }));
+    await refused("move the Supervisor switch", updateDoc(doc(db, "users/" + colleague), { isSupervisor: true }));
+    await refused("grant themselves the switch", updateDoc(doc(db, "users/" + uid), { isSupervisor: true }));
+    await refused("merge a temp profile", deleteDoc(doc(db, "unregisteredStaff/tempOne")));
+    await refused("remove a settled day", deleteDoc(doc(db, "shifts/" + CLOSED_DATE)));
+    await refused("take the manager pointer", updateDoc(doc(db, CONFIG_PATH), { managerUid: uid }));
+
+    // Their own profile and their own pay stay theirs, as for any employee.
+    await assertSucceeds(getDoc(doc(db, "users/" + uid)));
+}
+
+test("PROPOSED: a supervisor can build a floor plan, settle money, and audit it", async () => {
+    const db = authedDb("supervisorUid");
 
     // The floor plan pool needs the roster.
     await assertSucceeds(getDocs(collection(db, "users")));
@@ -154,12 +235,53 @@ test("PROPOSED: a captain can build a floor plan, settle money, and audit it", a
     await assertSucceeds(getDocs(collection(db, "auditEvents")));
 });
 
-test("PROPOSED: a captain can read ANOTHER person's pay history, employees still cannot", async () => {
-    const captain = authedDb("captainUid");
-    await assertSucceeds(getDoc(doc(captain, `payouts/${CLOSED_DATE}/entries/serverUid`)));
-    await assertSucceeds(getDocs(collection(captain, `payouts/${CLOSED_DATE}/entries`)));
-    await assertSucceeds(getDoc(doc(captain, "users/serverUid")));
-    await assertSucceeds(getDoc(doc(captain, `users/serverUid/tips/${CLOSED_DATE}`)));
+test("PROPOSED: the switch carries the tier whatever the job title - a trusted server runs the night", async () => {
+    const db = authedDb("trustedServerUid");
+
+    // Their title is still "server", and it is still what they are paid as.
+    const profile = await getDoc(doc(db, "users/trustedServerUid"));
+    assert.equal(profile.data().role, "server");
+
+    await assertSucceeds(getDocs(collection(db, "users")));
+    await assertSucceeds(setDoc(doc(db, "shifts/" + OPEN_DATE), validShift(OPEN_DATE, { status: "setup" })));
+    await assertSucceeds(setDoc(doc(db, "unregisteredStaff/tempTwo"), validTempStaff("tempTwo")));
+    await assertSucceeds(setDoc(doc(db, "payouts/" + OPEN_DATE), validPayoutMeta()));
+    await assertSucceeds(setDoc(doc(db, `payouts/${OPEN_DATE}/entries/serverUid`), validPayoutEntry()));
+    await assertSucceeds(setDoc(doc(db, "auditEvents/trustedClose"), validAuditEvent({ operationId: "trustedClose" })));
+
+    // ...and it stops exactly where a supervisor's does.
+    await assertFails(updateDoc(doc(db, "users/pendingUid"), { status: "active" }));
+    await assertFails(deleteDoc(doc(db, "shifts/" + CLOSED_DATE)));
+});
+
+// ACCEPTANCE CRITERION: a captain with the switch off is an ordinary employee.
+// Same job title as supervisorUid, same pay weight, and none of the access.
+test("PROPOSED: a captain with Supervisor off has exactly an employee's access", async () => {
+    const titledCaptain = authedDb("captainUid");
+
+    const profile = await getDoc(doc(titledCaptain, "users/captainUid"));
+    assert.equal(profile.data().role, "captain");
+    assert.equal(profile.data().isSupervisor, undefined, "absent must read as off");
+
+    await assertNoCaptainAccess(titledCaptain, "captainUid", "captain with the switch off");
+
+    // Which is the same answer an ordinary server gets, capability for
+    // capability - the title made no difference anywhere.
+    await assertNoCaptainAccess(authedDb("serverUid"), "serverUid", "server");
+
+    // And the switch explicitly set to false reads the same as absent.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        await updateDoc(doc(context.firestore(), "users/captainUid"), { isSupervisor: false });
+    });
+    await assertNoCaptainAccess(authedDb("captainUid"), "captainUid", "captain with the switch explicitly off");
+});
+
+test("PROPOSED: a supervisor can read ANOTHER person's pay history, employees still cannot", async () => {
+    const supervisor = authedDb("supervisorUid");
+    await assertSucceeds(getDoc(doc(supervisor, `payouts/${CLOSED_DATE}/entries/serverUid`)));
+    await assertSucceeds(getDocs(collection(supervisor, `payouts/${CLOSED_DATE}/entries`)));
+    await assertSucceeds(getDoc(doc(supervisor, "users/serverUid")));
+    await assertSucceeds(getDoc(doc(supervisor, `users/serverUid/tips/${CLOSED_DATE}`)));
 
     const server = authedDb("serverUid");
     await assertSucceeds(getDoc(doc(server, `payouts/${CLOSED_DATE}/entries/serverUid`)));
@@ -170,21 +292,23 @@ test("PROPOSED: a captain can read ANOTHER person's pay history, employees still
     await assertFails(getDoc(doc(server, "users/captainUid")));
 });
 
-test("PROPOSED: a captain cannot approve accounts, assign roles, merge, or remove a day", async () => {
-    const db = authedDb("captainUid");
+test("PROPOSED: a supervisor cannot approve accounts, assign roles, merge, or remove a day", async () => {
+    const db = authedDb("supervisorUid");
 
     // Approvals and role assignment are the manager's.
     await assertFails(updateDoc(doc(db, "users/pendingUid"), { status: "active" }));
     await assertFails(updateDoc(doc(db, "users/pendingUid"), { status: "active", role: "server" }));
     await assertFails(updateDoc(doc(db, "users/serverUid"), { role: "captain" }));
-    await assertFails(updateDoc(doc(db, "users/captainUid"), { role: "admin" }));
+    await assertFails(updateDoc(doc(db, "users/supervisorUid"), { role: "admin" }));
     await assertFails(updateDoc(doc(db, "users/serverUid"), { status: "inactive" }));
     await assertFails(deleteDoc(doc(db, "users/serverUid")));
-    await assertFails(updateDoc(doc(db, "usernames/server one"), { uid: "captainUid" }));
+    await assertFails(updateDoc(doc(db, "usernames/server one"), { uid: "supervisorUid" }));
 
-    // Settle-up may stamp history flags and nothing else - no smuggled role change.
+    // Settle-up may stamp history flags and nothing else - no smuggled role
+    // change, and above all no smuggled switch.
     await assertFails(updateDoc(doc(db, "users/serverUid"), { hasShiftHistory: true, role: "captain" }));
     await assertFails(updateDoc(doc(db, "users/serverUid"), { hasShiftHistory: true, status: "inactive" }));
+    await assertFails(updateDoc(doc(db, "users/serverUid"), { hasShiftHistory: true, isSupervisor: true }));
 
     // The merge, and its destructive half.
     await assertFails(deleteDoc(doc(db, "unregisteredStaff/tempOne")));
@@ -203,9 +327,71 @@ test("PROPOSED: a captain cannot approve accounts, assign roles, merge, or remov
     })));
 
     // And the tier itself.
-    await assertFails(updateDoc(doc(db, CONFIG_PATH), { managerUid: "captainUid" }));
-    await assertFails(setDoc(doc(db, CONFIG_PATH), { managerUid: "captainUid" }));
+    await assertFails(updateDoc(doc(db, CONFIG_PATH), { managerUid: "supervisorUid" }));
+    await assertFails(setDoc(doc(db, CONFIG_PATH), { managerUid: "supervisorUid" }));
     await assertFails(deleteDoc(doc(db, CONFIG_PATH)));
+});
+
+// ACCEPTANCE CRITERION: the switch is the manager's alone, and nobody may aim it
+// at themselves. Holding the captain tier must never be a way to widen it.
+test("PROPOSED: only the manager may move the Supervisor switch, and never onto themselves", async () => {
+    // A supervisor cannot hand the switch on, nor keep it from anyone - not by
+    // updating one field and not by rewriting the whole profile.
+    const supervisor = authedDb("supervisorUid");
+    await assertFails(updateDoc(doc(supervisor, "users/serverUid"), { isSupervisor: true }));
+    await assertFails(updateDoc(doc(supervisor, "users/captainUid"), { isSupervisor: true }));
+    await assertFails(updateDoc(doc(supervisor, "users/trustedServerUid"), { isSupervisor: false }));
+    await assertFails(setDoc(
+        doc(supervisor, "users/serverUid"),
+        userDoc("serverUid", "server", "active", "Server One", { isSupervisor: true }),
+    ));
+
+    // A captain with the switch off cannot turn it on for themselves.
+    const titledCaptain = authedDb("captainUid");
+    await assertFails(updateDoc(doc(titledCaptain, "users/captainUid"), { isSupervisor: true }));
+
+    // Nor can an ordinary employee, on themselves or anyone else.
+    const server = authedDb("serverUid");
+    await assertFails(updateDoc(doc(server, "users/serverUid"), { isSupervisor: true }));
+    await assertFails(updateDoc(doc(server, "users/otherServerUid"), { isSupervisor: true }));
+
+    // Nor can a pending sign-up mint it on the way in - the create rule pins the
+    // whole shape of a self-registered profile.
+    const newcomer = testEnv.authenticatedContext("newcomerUid").firestore();
+    await assertFails(setDoc(doc(newcomer, "users/newcomerUid"), {
+        uid: "newcomerUid",
+        username: "Newcomer",
+        email: "newcomer@example.com",
+        role: "unassigned",
+        status: "pending",
+        isSupervisor: true,
+    }));
+
+    // The manager may not aim it at themselves either. They need no switch:
+    // the pointer already carries every captain power.
+    const manager = authedDb("managerUid");
+    await assertFails(updateDoc(doc(manager, "users/managerUid"), { isSupervisor: true }));
+
+    // The legacy admin, who holds manager authority today, is bound by the same
+    // self-write ban.
+    const admin = authedDb("adminUid");
+    await assertFails(updateDoc(doc(admin, "users/adminUid"), { isSupervisor: true }));
+    await assertSucceeds(updateDoc(doc(admin, "users/otherServerUid"), { isSupervisor: true }));
+
+    // What the manager CAN do: switch someone else on, and switch someone else
+    // off. Both take effect immediately.
+    await assertSucceeds(updateDoc(doc(manager, "users/captainUid"), { isSupervisor: true }));
+    const switchedOn = authedDb("captainUid");
+    await assertSucceeds(getDocs(collection(switchedOn, "users")));
+    await assertSucceeds(setDoc(doc(switchedOn, "shifts/" + OPEN_DATE), validShift(OPEN_DATE, { status: "setup" })));
+
+    await assertSucceeds(updateDoc(doc(manager, "users/supervisorUid"), { isSupervisor: false }));
+    const switchedOff = authedDb("supervisorUid");
+    await assertFails(getDocs(collection(switchedOff, "users")));
+    await assertFails(setDoc(doc(switchedOff, "shifts/" + OPEN_DATE), validShift(OPEN_DATE, { status: "setup" })));
+
+    // ...and the person just switched off cannot switch themselves back on.
+    await assertFails(updateDoc(doc(switchedOff, "users/supervisorUid"), { isSupervisor: true }));
 });
 
 test("PROPOSED: an employee has no captain power, and cannot self-promote", async () => {
@@ -223,6 +409,7 @@ test("PROPOSED: an employee has no captain power, and cannot self-promote", asyn
 
     await assertFails(updateDoc(doc(db, "users/serverUid"), { role: "captain" }));
     await assertFails(updateDoc(doc(db, "users/serverUid"), { role: "admin" }));
+    await assertFails(updateDoc(doc(db, "users/serverUid"), { isSupervisor: true }));
     await assertFails(updateDoc(doc(db, "users/serverUid"), { hasShiftHistory: true }));
     await assertFails(updateDoc(doc(db, CONFIG_PATH), { managerUid: "serverUid" }));
 
@@ -234,7 +421,7 @@ test("PROPOSED: an employee has no captain power, and cannot self-promote", asyn
 test("PROPOSED: the manager holds every captain power plus the manager-only ones", async () => {
     const db = authedDb("managerUid");
 
-    // Cumulative - every captain capability.
+    // Cumulative - every captain capability, with no switch on their own profile.
     await assertSucceeds(getDocs(collection(db, "users")));
     await assertSucceeds(setDoc(doc(db, "shifts/" + OPEN_DATE), validShift()));
     await assertSucceeds(setDoc(doc(db, "payouts/" + OPEN_DATE), validPayoutMeta()));
@@ -243,9 +430,10 @@ test("PROPOSED: the manager holds every captain power plus the manager-only ones
     await assertSucceeds(setDoc(doc(db, "unregisteredStaff/tempTwo"), validTempStaff("tempTwo")));
     await assertSucceeds(setDoc(doc(db, "auditEvents/closeOperation"), validAuditEvent({ operationId: "closeOperation" })));
 
-    // Manager-only: approvals, roles, deactivation, deletion.
+    // Manager-only: approvals, roles, the Supervisor switch, deactivation, deletion.
     await assertSucceeds(updateDoc(doc(db, "users/pendingUid"), { status: "active", role: "server" }));
     await assertSucceeds(updateDoc(doc(db, "users/serverUid"), { role: "captain" }));
+    await assertSucceeds(updateDoc(doc(db, "users/serverUid"), { isSupervisor: true }));
     await assertSucceeds(updateDoc(doc(db, "users/serverUid"), { status: "inactive" }));
     await assertSucceeds(deleteDoc(doc(db, "users/otherServerUid")));
     await assertSucceeds(updateDoc(doc(db, "usernames/server one"), { uid: "serverUid", username: "Server One", email: "moved@example.com" }));
@@ -268,24 +456,33 @@ test("PROPOSED: the manager holds every captain power plus the manager-only ones
     })));
 });
 
-test("PROPOSED: exactly one manager is structural - promoting to captain grants no manager power", async () => {
+test("PROPOSED: exactly one manager is structural - neither a title nor the switch reaches it", async () => {
     const manager = authedDb("managerUid");
 
-    // The manager's own roster role grants nothing; the pointer is the tier.
+    // The manager's own job title grants nothing; the pointer is the tier.
     const managerProfile = await getDoc(doc(manager, "users/managerUid"));
     assert.equal(managerProfile.data().role, "unassigned");
+    assert.equal(managerProfile.data().isSupervisor, undefined);
 
-    // Assigning the captain role hands over captain powers and nothing more.
+    // Assigning the captain TITLE hands over pay weight and nothing else.
     await assertSucceeds(updateDoc(doc(manager, "users/serverUid"), { role: "captain" }));
-    const freshCaptain = authedDb("serverUid");
-    await assertSucceeds(getDocs(collection(freshCaptain, "users")));
-    await assertFails(updateDoc(doc(freshCaptain, "users/pendingUid"), { status: "active" }));
-    await assertFails(updateDoc(doc(freshCaptain, CONFIG_PATH), { managerUid: "serverUid" }));
+    const titledOnly = authedDb("serverUid");
+    await assertFails(getDocs(collection(titledOnly, "users")));
+    await assertFails(setDoc(doc(titledOnly, "shifts/" + OPEN_DATE), validShift()));
+
+    // Turning the switch on is what hands over captain powers - and nothing more.
+    await assertSucceeds(updateDoc(doc(manager, "users/serverUid"), { isSupervisor: true }));
+    const freshSupervisor = authedDb("serverUid");
+    await assertSucceeds(getDocs(collection(freshSupervisor, "users")));
+    await assertFails(updateDoc(doc(freshSupervisor, "users/pendingUid"), { status: "active" }));
+    await assertFails(updateDoc(doc(freshSupervisor, CONFIG_PATH), { managerUid: "serverUid" }));
 
     // Transfer is one atomic write by the sitting manager. There is no moment
     // with zero or two managers: the pointer holds exactly one uid.
     await assertSucceeds(updateDoc(doc(manager, CONFIG_PATH), { managerUid: "captainUid" }));
 
+    // The incoming manager holds the tier through the pointer alone - their own
+    // profile carries the captain title and no switch.
     const incoming = authedDb("captainUid");
     await assertSucceeds(updateDoc(doc(incoming, "users/pendingUid"), { status: "active", role: "server" }));
     await assertSucceeds(deleteDoc(doc(incoming, "unregisteredStaff/tempOne")));
@@ -293,9 +490,11 @@ test("PROPOSED: exactly one manager is structural - promoting to captain grants 
     const outgoing = authedDb("managerUid");
     await assertFails(updateDoc(doc(outgoing, "users/serverUid"), { role: "server" }));
     await assertFails(updateDoc(doc(outgoing, CONFIG_PATH), { managerUid: "managerUid" }));
-    // ...and with role "unassigned" the outgoing manager keeps nothing at all.
+    // ...and with no switch of their own the outgoing manager keeps nothing.
     await assertFails(getDocs(collection(outgoing, "users")));
     await assertFails(setDoc(doc(outgoing, "shifts/" + OPEN_DATE), validShift()));
+    // Nor can they leave themselves the tier on the way out.
+    await assertFails(updateDoc(doc(outgoing, "users/managerUid"), { isSupervisor: true }));
 });
 
 test("PROPOSED: an inactive manager has no power at all", async () => {
@@ -315,25 +514,33 @@ test("PROPOSED: an inactive manager has no power at all", async () => {
     await assertFails(updateDoc(doc(inactive, "users/pendingUid"), { status: "active" }));
     await assertFails(updateDoc(doc(inactive, CONFIG_PATH), { managerUid: "inactiveUid" }));
 
-    // An inactive captain is equally powerless.
-    await setStatus("captainUid", "inactive");
-    const inactiveCaptain = authedDb("captainUid");
-    await assertFails(getDocs(collection(inactiveCaptain, "users")));
-    await assertFails(setDoc(doc(inactiveCaptain, "shifts/" + OPEN_DATE), validShift()));
+    // A deactivated supervisor is equally powerless - the switch survives their
+    // deactivation and still grants nothing.
+    await setStatus("supervisorUid", "inactive");
+    let stillSwitchedOn;
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const profile = await getDoc(doc(context.firestore(), "users/supervisorUid"));
+        stillSwitchedOn = profile.data().isSupervisor;
+    });
+    assert.equal(stillSwitchedOn, true);
+
+    const inactiveSupervisor = authedDb("supervisorUid");
+    await assertFails(getDocs(collection(inactiveSupervisor, "users")));
+    await assertFails(setDoc(doc(inactiveSupervisor, "shifts/" + OPEN_DATE), validShift()));
 });
 
 test("PROPOSED: correcting a settled day is captain work; removing it is not, and the paths do not leak", async () => {
-    const captain = authedDb("captainUid");
+    const supervisor = authedDb("supervisorUid");
 
     // Every write in the correction batch is allowed...
-    await assertCorrectionPathAllowed(captain, "captainRecalc");
+    await assertCorrectionPathAllowed(supervisor, "supervisorRecalc");
 
     // ...and every write that is unique to the removal batch is not, so the
     // removal cannot commit even though the two share their entry deletes.
-    await assertFails(deleteDoc(doc(captain, "shifts/" + CLOSED_DATE)));
-    await assertFails(deleteDoc(doc(captain, "payouts/" + CLOSED_DATE)));
-    await assertFails(setDoc(doc(captain, "auditEvents/removalByCaptain"), validAuditEvent({
-        operationId: "removalByCaptain",
+    await assertFails(deleteDoc(doc(supervisor, "shifts/" + CLOSED_DATE)));
+    await assertFails(deleteDoc(doc(supervisor, "payouts/" + CLOSED_DATE)));
+    await assertFails(setDoc(doc(supervisor, "auditEvents/removalBySupervisor"), validAuditEvent({
+        operationId: "removalBySupervisor",
         type: "shift_removed",
     })));
 
@@ -350,16 +557,16 @@ test("PROPOSED: correcting a settled day is captain work; removing it is not, an
 });
 
 test("PROPOSED: a floor plan's worked-as role is pay weight and grants nothing", async () => {
-    const captain = authedDb("captainUid");
+    const supervisor = authedDb("supervisorUid");
 
-    // A captain may pay a server as a captain for the night - that is the whole
-    // point of the per-member "worked as" dropdown.
+    // A supervisor may pay a server as a captain for the night - that is the
+    // whole point of the per-member "worked as" dropdown.
     await assertSucceeds(setDoc(
-        doc(captain, "shifts/" + OPEN_DATE),
+        doc(supervisor, "shifts/" + OPEN_DATE),
         shiftWithWorkedRole("serverUid", "captain", OPEN_DATE),
     ));
 
-    // The server's roster role is untouched, and so is their access.
+    // The server's job title is untouched, and so is their access.
     const promotedOnPaper = authedDb("serverUid");
     const profile = await getDoc(doc(promotedOnPaper, "users/serverUid"));
     assert.equal(profile.data().role, "server");
@@ -372,8 +579,33 @@ test("PROPOSED: a floor plan's worked-as role is pay weight and grants nothing",
     await assertFails(setDoc(doc(promotedOnPaper, "unregisteredStaff/tempTwo"), validTempStaff("tempTwo")));
     await assertFails(updateDoc(doc(promotedOnPaper, "users/pendingUid"), { status: "active" }));
 
-    // Nor can a captain write themselves the tier through the floor plan.
-    await assertFails(updateDoc(doc(captain, CONFIG_PATH), { managerUid: "captainUid" }));
+    // Nor can a supervisor write themselves the tier through the floor plan.
+    await assertFails(updateDoc(doc(supervisor, CONFIG_PATH), { managerUid: "supervisorUid" }));
+});
+
+// The escalation hole the switch could have reopened: the floor plan is written
+// by whoever is editing it, so a switch that could be set THERE would let any
+// supervisor mint another. Every predicate reads the actor's own users/{uid}.
+test("PROPOSED: a Supervisor switch smuggled onto a floor-plan member grants nothing", async () => {
+    const supervisor = authedDb("supervisorUid");
+
+    await assertSucceeds(setDoc(
+        doc(supervisor, "shifts/" + OPEN_DATE),
+        shiftWithWorkedRole("serverUid", "captain", OPEN_DATE, { isSupervisor: true }),
+    ));
+
+    const smuggled = authedDb("serverUid");
+    const profile = await getDoc(doc(smuggled, "users/serverUid"));
+    assert.equal(profile.data().isSupervisor, undefined, "the roster profile is untouched");
+
+    await assertFails(getDocs(collection(smuggled, "users")));
+    await assertFails(getDoc(doc(smuggled, "shifts/" + OPEN_DATE)));
+    await assertFails(setDoc(doc(smuggled, "shifts/" + OPEN_DATE), validShift()));
+    await assertFails(setDoc(doc(smuggled, "unregisteredStaff/tempTwo"), validTempStaff("tempTwo")));
+    await assertFails(setDoc(doc(smuggled, `payouts/${OPEN_DATE}/entries/serverUid`), validPayoutEntry()));
+
+    // And a supervisor cannot promote themselves by writing the roster either.
+    await assertFails(updateDoc(doc(supervisor, "users/serverUid"), { isSupervisor: true }));
 });
 
 test("PROPOSED: the legacy admin keeps full authority alongside the manager", async () => {

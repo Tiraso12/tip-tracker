@@ -327,3 +327,60 @@ test("total excludes cash for every role, dining and bar alike", () => {
     );
     assert.equal(result.balances.overallBalance, 0);
 });
+
+// THE OTHER CONTRACT: the "Supervisor" switch is access, never money.
+//
+// Supervisor rights live in their own field (users.isSupervisor) precisely so
+// the pay maths never learns of them. The engine reads ROLE_POINTS by role and
+// matches role === "captain" exactly to build the captain override, so had the
+// switch been encoded as a role value - "captain-supervisor" and the like - a
+// captain who lost their rights would reach a floor plan worth zero points and
+// miss the override, and nothing would have said so.
+//
+// This walks a captain through both switch positions and the field being absent
+// altogether, and demands the three shifts be indistinguishable.
+test("the Supervisor switch changes no payout: a captain without it is still paid as a captain", () => {
+    const shiftWithCaptainFlag = (captainMember) => calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [
+                    { uid: "captain-1", name: "Captain One", role: "captain", ...captainMember },
+                    { uid: "server-1", name: "Server One", role: "server" },
+                    { uid: "back-1", name: "Back One", role: "back" },
+                ],
+                pools: { sales: 10000, tips: 1000, cash: 200, gratuity: 500 },
+                contracts: [],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+    });
+
+    // The three ways the flag can reach the engine if it ever rode along on a
+    // floor-plan member: off, on, and never written at all.
+    const rightsOff = shiftWithCaptainFlag({ isSupervisor: false });
+    const rightsOn = shiftWithCaptainFlag({ isSupervisor: true });
+    const noFlagAtAll = shiftWithCaptainFlag({});
+
+    const payoutsOf = (result) => {
+        const { captains, servers, backs, assistants, bar } = result.payouts.roleGrouped;
+        return [...captains, ...servers, ...backs, ...assistants, ...bar].map(
+            ({ uid, role, points, ctp, grt, cash, total }) => ({ uid, role, points, ctp, grt, cash, total }),
+        );
+    };
+
+    assert.deepEqual(payoutsOf(rightsOff), payoutsOf(rightsOn));
+    assert.deepEqual(payoutsOf(rightsOff), payoutsOf(noFlagAtAll));
+    assert.deepEqual(rightsOff.allocations, rightsOn.allocations);
+    assert.deepEqual(rightsOff.balances, rightsOn.balances);
+
+    // And spelled out on the person the switch is off for: full captain weight,
+    // and the captain override still lands on them.
+    const captain = getOnly(rightsOff.payouts.roleGrouped.captains);
+    assert.equal(captain.uid, "captain-1");
+    assert.equal(captain.points, 4);
+    assert.equal(rightsOff.allocations.captainOverrideCTP, 100);
+    assert.ok(captain.ctp > getOnly(rightsOff.payouts.roleGrouped.servers).ctp);
+    assert.equal(rightsOff.balances.overallBalance, 0);
+});

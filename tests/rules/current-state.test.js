@@ -29,6 +29,7 @@ import {
 import {
     CLOSED_DATE,
     OPEN_DATE,
+    supervisorDoc,
     userDoc,
     validAuditEvent,
     validLegacyTip,
@@ -61,6 +62,9 @@ test.beforeEach(async () => {
         // named a manager yet, which is the state this release ships in.
         await setDoc(doc(db, "users/adminUid"), userDoc("adminUid", "admin", "active", "Admin"));
         await setDoc(doc(db, "users/captainUid"), userDoc("captainUid", "captain", "active", "Captain One"));
+        // Someone already carrying the Supervisor switch. It is dormant with the
+        // rest of the tier until a manager is named.
+        await setDoc(doc(db, "users/supervisorUid"), supervisorDoc("supervisorUid", "captain", "active", "Captain Supervisor"));
         await setDoc(doc(db, "users/serverUid"), userDoc("serverUid", "server", "active", "Server One"));
         await setDoc(doc(db, "users/otherServerUid"), userDoc("otherServerUid", "server", "active", "Server Two"));
         await setDoc(doc(db, "users/pendingUid"), userDoc("pendingUid", "unassigned", "pending", "New Hire"));
@@ -113,6 +117,37 @@ test("CURRENT: a captain profile grants nothing beyond their own profile and the
     await assertFails(updateDoc(doc(db, "users/serverUid"), { role: "captain" }));
     await assertFails(updateDoc(doc(db, "users/serverUid"), { hasShiftHistory: true }));
     await assertFails(setDoc(doc(db, "auditEvents/captainOperation"), validAuditEvent({ operationId: "captainOperation" })));
+});
+
+// The tier is dormant without a manager pointer, and the Supervisor switch is
+// dormant with it: turning it on ahead of the cutover hands out nothing. That is
+// what lets the switch be modelled and enforced in its own release.
+test("CURRENT: the Supervisor switch grants nothing while no manager is named", async () => {
+    const db = authedDb("supervisorUid");
+
+    await assertSucceeds(getDoc(doc(db, "users/supervisorUid")));
+
+    await assertFails(getDocs(collection(db, "users")));
+    await assertFails(getDoc(doc(db, "users/serverUid")));
+    await assertFails(getDoc(doc(db, "shifts/" + CLOSED_DATE)));
+    await assertFails(setDoc(doc(db, "shifts/" + OPEN_DATE), validShift()));
+    await assertFails(setDoc(doc(db, `payouts/${OPEN_DATE}/entries/serverUid`), validPayoutEntry()));
+    await assertFails(setDoc(doc(db, "unregisteredStaff/tempTwo"), validTempStaff("tempTwo")));
+    await assertFails(getDocs(collection(db, "auditEvents")));
+    await assertFails(updateDoc(doc(db, "users/serverUid"), { hasShiftHistory: true }));
+
+    // Nor can they hand the switch to anyone, themselves included.
+    await assertFails(updateDoc(doc(db, "users/serverUid"), { isSupervisor: true }));
+    await assertFails(updateDoc(doc(db, "users/supervisorUid"), { isSupervisor: true }));
+
+    // Only the legacy admin can move it today, and never onto themselves.
+    const admin = authedDb("adminUid");
+    await assertSucceeds(updateDoc(doc(admin, "users/serverUid"), { isSupervisor: true }));
+    await assertFails(updateDoc(doc(admin, "users/adminUid"), { isSupervisor: true }));
+
+    // ...and the person just switched on still holds nothing, because the tier
+    // itself is dormant.
+    await assertFails(getDocs(collection(authedDb("serverUid"), "users")));
 });
 
 test("CURRENT: the admin holds every authority, and the manager pointer does not exist yet", async () => {

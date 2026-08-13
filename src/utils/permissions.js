@@ -11,16 +11,30 @@
 //             deactivates people, merges temporary profiles, removes a settled
 //             day, and hands the tier on. Does not work a section and is not
 //             paid from the pool.
-//   Captain   enters money at settle-up, builds and edits the floor plan, adds
+//   Captain   everyone the manager has given the "Supervisor" switch to. Enters
+//             money at settle-up, builds and edits the floor plan, adds
 //             temporary staff mid-setup, corrects an already-settled day, and
 //             reads the whole roster and colleagues' pay history.
 //   Employee  everyone else. Reads their own pay and nothing more.
 //
-// SAFETY RULE, do not weaken: permission is bound to the ROSTER role on
-// users/{uid} plus the manager pointer. The floor plan's per-member "worked as"
-// role is pay weight for one night and grants nothing - any floor-plan editor
-// can change that dropdown, so reading it here would let a captain promote
-// themselves. firestore.rules holds the same line on the server.
+// A JOB TITLE GRANTS NOTHING. users.role - captain, server, back, assistant,
+// bartender, runner - is the title the money is calculated from, and only that.
+// A captain with the Supervisor switch off is paid exactly as a captain and has
+// exactly an employee's access; a trusted server can hold the switch without
+// inventing a title for it.
+//
+// SAFETY RULE, do not weaken: permission is bound to the SUPERVISOR switch on
+// users/{uid} plus the manager pointer, and to nothing else.
+//   - Never fold the switch back into the role vocabulary. engine.js reads
+//     ROLE_POINTS[emp.role] and matches emp.role === "captain" exactly for the
+//     captain override, so a role value like "captain-supervisor" would reach a
+//     floor plan and pay that person zero, silently. It is a separate field for
+//     that reason and the pay maths must never learn of it.
+//   - The floor plan's per-member "worked as" role is pay weight for one night
+//     and grants nothing - any floor-plan editor can change that dropdown, so
+//     reading it here would let a supervisor promote themselves. The same goes
+//     for any other key on a floor-plan member.
+// firestore.rules holds both lines on the server.
 //
 // MIGRATION STATE: the tier model is dormant until the restaurant names a
 // manager. With no manager pointer, `role: "admin"` is still the only authority
@@ -38,8 +52,15 @@ const tierModelActive = (user) => Boolean(user?.managerUid);
 const isManager = (user) =>
     tierModelActive(user) && user.managerUid === user?.uid && isActive(user);
 
+// The Supervisor switch, set per person by the manager. Absent reads as OFF, so
+// nobody holds the tier until a manager deliberately turns it on. Strictly
+// `true`: a stray string or number in the field is not a grant.
+const isSupervisor = (user) => user?.isSupervisor === true;
+
+// The manager needs no switch of their own - the pointer already carries every
+// captain power.
 const isCaptain = (user) =>
-    isManager(user) || (tierModelActive(user) && user?.role === "captain" && isActive(user));
+    isManager(user) || (tierModelActive(user) && isSupervisor(user) && isActive(user));
 
 // Legacy authority. Today's `role: "admin"` account keeps exactly the access it
 // has now; the cutover retires it. Do not drop this before then.
@@ -55,10 +76,17 @@ export function canApproveAccounts(user) {
     return hasManagerAccess(user);
 }
 
-// Set or change a person's roster role - and with it their default point
-// weight. This is the privilege-escalation control: the roster role IS the
-// permission.
+// Set or change a person's job title - and with it their default point weight.
+// This moves money, not access.
 export function canAssignRoles(user) {
+    return hasManagerAccess(user);
+}
+
+// Turn a person's "Supervisor" switch on or off. This is the
+// privilege-escalation control: the switch IS the captain tier. firestore.rules
+// additionally refuses a self-write from anyone, the manager included, so the
+// tier can only ever be handed to someone else.
+export function canSetSupervisor(user) {
     return hasManagerAccess(user);
 }
 

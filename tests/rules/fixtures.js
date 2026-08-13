@@ -33,8 +33,10 @@ export function validShift(date = OPEN_DATE, overrides = {}) {
 
 // A floor plan that pays someone as a captain for the night. `role` here is the
 // per-member "worked as" value the money engine reads - pay weight, never a
-// permission. See the floor-plan probe in manager-tier.test.js.
-export function shiftWithWorkedRole(uid, workedRole, date = OPEN_DATE) {
+// permission. `memberOverrides` exists so a probe can smuggle extra keys onto
+// the member row and prove none of them are read for access either. See the
+// floor-plan probes in manager-tier.test.js.
+export function shiftWithWorkedRole(uid, workedRole, date = OPEN_DATE, memberOverrides = {}) {
     return validShift(date, {
         status: "setup",
         teams: [
@@ -42,7 +44,7 @@ export function shiftWithWorkedRole(uid, workedRole, date = OPEN_DATE) {
                 id: "team-1",
                 name: "Team 1",
                 members: [
-                    { uid, name: "Server One", role: workedRole, points: 4 },
+                    { uid, name: "Server One", role: workedRole, points: 4, ...memberOverrides },
                 ],
             },
         ],
@@ -123,6 +125,13 @@ export function validAuditEvent(overrides = {}) {
     };
 }
 
-export function userDoc(uid, role, status, username = uid) {
-    return { uid, username, email: `${uid}@example.com`, role, status };
+export function userDoc(uid, role, status, username = uid, overrides = {}) {
+    return { uid, username, email: `${uid}@example.com`, role, status, ...overrides };
+}
+
+// Someone the manager has given the "Supervisor" switch to. `role` stays their
+// job title and is only what they are paid as - the switch is what carries the
+// captain tier, and it is a separate field so the pay maths never sees it.
+export function supervisorDoc(uid, role, status, username = uid) {
+    return userDoc(uid, role, status, username, { isSupervisor: true });
 }

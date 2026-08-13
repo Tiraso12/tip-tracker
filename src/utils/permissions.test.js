@@ -13,6 +13,7 @@ import {
     canReadColleaguePay,
     canReadRoster,
     canRemoveSettledDay,
+    canSetSupervisor,
     canSettleUp,
     canTransferManagerTier,
 } from "./permissions.js";
@@ -51,6 +52,7 @@ const MANAGER_CAPABILITIES = {
     canDeactivateAccounts,
     canMergeTempStaff,
     canRemoveSettledDay,
+    canSetSupervisor,
     canTransferManagerTier,
 };
 
@@ -84,45 +86,106 @@ test("with no manager named, the legacy admin is still the only authority", () =
     assertTier({ uid: "newUid", role: "unassigned", status: "pending", managerUid: null }, NOTHING, "pending");
     assertTier(null, NOTHING, "signed out");
     assertTier(undefined, NOTHING, "loading");
+
+    // The switch is dormant with the rest of the tier: turning it on before the
+    // restaurant names a manager grants nothing at all.
+    assertTier(
+        { uid: "supervisorUid", role: "captain", status: "active", isSupervisor: true, managerUid: null },
+        NOTHING,
+        "supervisor before the cutover",
+    );
 });
 
-test("an inactive account holds nothing, whatever its role", () => {
+test("an inactive account holds nothing, whatever its role or switch", () => {
     assertTier({ uid: "adminUid", role: "admin", status: "inactive", managerUid: null }, NOTHING, "inactive admin");
-    assertTier({ uid: "captainUid", role: "captain", status: "inactive", managerUid: "managerUid" }, NOTHING, "inactive captain");
+    assertTier(
+        { uid: "supervisorUid", role: "captain", status: "inactive", isSupervisor: true, managerUid: "managerUid" },
+        NOTHING,
+        "inactive supervisor",
+    );
     assertTier({ uid: "managerUid", role: "unassigned", status: "inactive", managerUid: "managerUid" }, NOTHING, "inactive manager");
     assertTier({ uid: "adminUid", role: "admin", status: "profile_error", managerUid: null }, NOTHING, "unreadable profile");
 });
 
 test("the manager tier comes from the pointer, never from a role value", () => {
-    // The manager does not work a section, so their roster role carries no pay
+    // The manager does not work a section, so their job title carries no pay
     // weight at all - and it is not what makes them the manager.
     assertTier({ uid: "managerUid", role: "unassigned", status: "active", managerUid: "managerUid" }, EVERYTHING, "manager");
 
-    // Same person, pointer aimed elsewhere: captain by roster role, nothing more.
-    assertTier({ uid: "captainUid", role: "captain", status: "active", managerUid: "managerUid" }, CAPTAIN_ONLY, "captain");
+    // The manager holds every captain power without a switch of their own.
+    assertTier(
+        { uid: "managerUid", role: "unassigned", status: "active", isSupervisor: false, managerUid: "managerUid" },
+        EVERYTHING,
+        "manager with the switch explicitly off",
+    );
 
     // A roster role of "manager" would be meaningless - the pointer is the tier.
     assertTier({ uid: "pretenderUid", role: "manager", status: "active", managerUid: "managerUid" }, NOTHING, "self-styled manager");
 });
 
-test("a captain gains the workspace but none of the manager-only capabilities", () => {
-    const captain = { uid: "captainUid", role: "captain", status: "active", managerUid: "managerUid" };
+// THE CORE OF THIS MODEL: the job title says what someone is paid, the switch
+// says what they may do, and neither answers for the other.
+test("the captain tier comes from the Supervisor switch, never from the job title", () => {
+    const active = { status: "active", managerUid: "managerUid" };
 
-    assert.equal(canSettleUp(captain), true);
-    assert.equal(canBuildFloorPlan(captain), true);
-    assert.equal(canAddTempStaff(captain), true);
-    assert.equal(canCorrectSettledDay(captain), true);
-    assert.equal(canReadRoster(captain), true);
-    assert.equal(canReadColleaguePay(captain), true);
+    // A captain on the floor, paid as a captain, who may not edit shifts.
+    assertTier({ uid: "captainUid", role: "captain", ...active }, NOTHING, "captain, switch off");
+    assertTier({ uid: "captainUid", role: "captain", isSupervisor: false, ...active }, NOTHING, "captain, switch explicitly off");
 
-    assert.equal(canApproveAccounts(captain), false);
-    assert.equal(canAssignRoles(captain), false);
-    assert.equal(canMergeTempStaff(captain), false);
-    assert.equal(canRemoveSettledDay(captain), false);
-    assert.equal(canTransferManagerTier(captain), false);
+    // The same title with the switch on.
+    assertTier({ uid: "supervisorUid", role: "captain", isSupervisor: true, ...active }, CAPTAIN_ONLY, "captain, switch on");
+
+    // And a trusted server holding it, with no new title invented for them.
+    assertTier({ uid: "trustedUid", role: "server", isSupervisor: true, ...active }, CAPTAIN_ONLY, "server, switch on");
+
+    // Every other title reads the same way, so no title is a back door.
+    for (const role of ["server", "back", "assistant", "bartender", "runner", "unassigned"]) {
+        assertTier({ uid: "personUid", role, ...active }, NOTHING, `${role}, switch off`);
+        assertTier({ uid: "personUid", role, isSupervisor: true, ...active }, CAPTAIN_ONLY, `${role}, switch on`);
+    }
+
+    // Only a real `true` is a grant - a stray value in the field is not one.
+    for (const notTrue of ["true", "yes", 1, {}, [], "captain"]) {
+        assertTier(
+            { uid: "captainUid", role: "captain", isSupervisor: notTrue, ...active },
+            NOTHING,
+            `switch set to ${JSON.stringify(notTrue)}`,
+        );
+    }
+});
+
+test("a supervisor gains the workspace but none of the manager-only capabilities", () => {
+    const supervisor = { uid: "supervisorUid", role: "captain", status: "active", isSupervisor: true, managerUid: "managerUid" };
+
+    assert.equal(canSettleUp(supervisor), true);
+    assert.equal(canBuildFloorPlan(supervisor), true);
+    assert.equal(canAddTempStaff(supervisor), true);
+    assert.equal(canCorrectSettledDay(supervisor), true);
+    assert.equal(canReadRoster(supervisor), true);
+    assert.equal(canReadColleaguePay(supervisor), true);
+
+    assert.equal(canApproveAccounts(supervisor), false);
+    assert.equal(canAssignRoles(supervisor), false);
+    assert.equal(canMergeTempStaff(supervisor), false);
+    assert.equal(canRemoveSettledDay(supervisor), false);
+    assert.equal(canTransferManagerTier(supervisor), false);
+
+    // Above all, a supervisor cannot hand the switch on - not to a colleague and
+    // not to themselves. It is the manager's alone.
+    assert.equal(canSetSupervisor(supervisor), false);
 
     // Correcting a settled day and removing one are deliberately different acts.
-    assert.notEqual(canCorrectSettledDay(captain), canRemoveSettledDay(captain));
+    assert.notEqual(canCorrectSettledDay(supervisor), canRemoveSettledDay(supervisor));
+});
+
+test("nobody but manager authority may move the Supervisor switch", () => {
+    assert.equal(canSetSupervisor({ uid: "managerUid", role: "unassigned", status: "active", managerUid: "managerUid" }), true);
+    assert.equal(canSetSupervisor({ uid: "adminUid", role: "admin", status: "active", managerUid: null }), true);
+
+    assert.equal(canSetSupervisor({ uid: "supervisorUid", role: "captain", status: "active", isSupervisor: true, managerUid: "managerUid" }), false);
+    assert.equal(canSetSupervisor({ uid: "captainUid", role: "captain", status: "active", managerUid: "managerUid" }), false);
+    assert.equal(canSetSupervisor({ uid: "serverUid", role: "server", status: "active", managerUid: "managerUid" }), false);
+    assert.equal(canSetSupervisor(null), false);
 });
 
 test("the floor plan's worked-as role grants nothing", () => {
@@ -140,6 +203,22 @@ test("the floor plan's worked-as role grants nothing", () => {
     };
 
     assertTier(paidAsCaptainTonight, NOTHING, "server working captain");
+});
+
+test("the Supervisor switch is read from the profile, not from anything a shift carries", () => {
+    // A floor-plan member row is written by whoever is editing the plan, so a
+    // switch smuggled onto one must count for nothing. The capability reads
+    // users/{uid}.isSupervisor and firestore.rules reads the same document.
+    const smuggled = {
+        uid: "serverUid",
+        role: "server",
+        status: "active",
+        managerUid: "managerUid",
+        member: { uid: "serverUid", role: "captain", points: 4, isSupervisor: true },
+        workedRole: "captain",
+    };
+
+    assertTier(smuggled, NOTHING, "switch smuggled onto a floor-plan member");
 });
 
 test("the legacy admin keeps full authority after a manager is named", () => {
