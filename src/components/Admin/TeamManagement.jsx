@@ -8,9 +8,11 @@ import {
     canAssignRoles,
     canDeactivateAccounts,
     canMergeTempStaff,
+    canOfferSupervisor,
     canReadColleaguePay,
     canSetSupervisor,
     isPaidFromPool,
+    isStrandedSupervisor,
 } from "../../utils/permissions";
 import { ASSIGNABLE_ROLES, roleLabel, roleShortLabel } from "../../utils/roleLabels";
 import { firstNameFor, fullNameFor, tempStaffRosterNameFor } from "../../utils/userNames";
@@ -87,16 +89,25 @@ function SearchIcon() {
     );
 }
 
+function StarIcon() {
+    return (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 3.1l2.6 5.8 6.3.7-4.7 4.2 1.3 6.1-5.5-3.1-5.5 3.1 1.3-6.1L3.1 9.6l6.3-.7z" />
+        </svg>
+    );
+}
+
 function RosterRow({ person, onOpen }) {
     const status = personStatus(person);
+    const supervisor = person.isSupervisor === true;
 
     return (
         <button
             type="button"
             onClick={onOpen}
             data-testid={`roster-row-${person.uid}`}
-            className="group flex min-h-16 w-full items-center gap-3 px-4 text-left transition-colors hover:bg-[var(--color-surface-muted)]/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]/30 sm:px-5"
-            aria-label={`Open ${rosterName(person)}, ${roleLabel(person.role)}, ${statusLabel(status)}`}
+            className="group flex min-h-16 w-full items-center gap-2 px-4 text-left transition-colors hover:bg-[var(--color-surface-muted)]/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]/30 sm:gap-3 sm:px-5"
+            aria-label={`Open ${rosterName(person)}, ${roleLabel(person.role)}, ${statusLabel(status)}${supervisor ? ", Supervisor" : ""}`}
         >
             <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-[var(--color-ink)]">
@@ -104,10 +115,25 @@ function RosterRow({ person, onOpen }) {
                 </span>
                 <span className="mt-0.5 block truncate text-xs text-[var(--color-ink-muted)]">
                     {roleShortLabel(person.role)}
-                    {person.isSupervisor === true ? " · Supervisor" : ""}
+                    {supervisor ? " · Supervisor" : ""}
                 </span>
             </span>
-            <Badge tone={statusTone(status)}>{statusLabel(status)}</Badge>
+            {/* The supervisor cue rides BESIDE the status pill, deliberately as a
+                star and not a second worded pill: two full-size pills on one
+                phone row stop being scannable, and status is the one the eye
+                needs first. The subtitle keeps the word, so the star is never an
+                unexplained glyph, and the row's aria-label says it outright. */}
+            {supervisor ? (
+                <Badge
+                    tone="accent"
+                    className="h-6 w-6 shrink-0 justify-center !px-0"
+                    data-testid={`roster-supervisor-${person.uid}`}
+                    title="Supervisor"
+                >
+                    <StarIcon />
+                </Badge>
+            ) : null}
+            <Badge tone={statusTone(status)} className="shrink-0">{statusLabel(status)}</Badge>
             <span className="text-[var(--color-ink-muted)] transition-colors group-hover:text-[var(--color-ink-soft)]">
                 <ChevronIcon />
             </span>
@@ -246,10 +272,21 @@ function ManagementActions({
         const action = hadRole
             ? `Change ${name}'s job title from ${roleLabel(person.role)} to ${roleLabel(roleDraft)}?`
             : `Assign ${name} the job title ${roleLabel(roleDraft)}?`;
+        // Rights must not outlive the title that qualifies them. Moving somebody
+        // off Captain while their Supervisor switch is on takes the switch with
+        // it, said in the confirmation and written in the SAME update - a second
+        // write could fail on its own and leave a non-captain holding the tier.
+        const losesSupervisor = person.isSupervisor === true && roleDraft !== "captain";
         const confirmed = window.confirm(
-            `${action}\n\nThis changes their default point weight for future shifts. Saved floor plans and past pay do not change.`
+            `${action}\n\nThis changes their default point weight for future shifts. Saved floor plans and past pay do not change.` +
+            (losesSupervisor
+                ? "\n\nTheir Supervisor switch will also be turned off - only a Captain can hold it. They will lose roster and shift-management access."
+                : "")
         );
-        if (confirmed) updateUser(person.uid, { role: roleDraft });
+        if (!confirmed) return;
+        updateUser(person.uid, losesSupervisor
+            ? { role: roleDraft, isSupervisor: false }
+            : { role: roleDraft });
     };
 
     const confirmSupervisorChange = () => {
@@ -330,7 +367,20 @@ function ManagementActions({
         );
     }
 
-    const hasAnyAction = canAssign || canDeactivate || canApprove || canManageSupervisor;
+    // Who the switch may be OFFERED to is one named rule in permissions.js, asked
+    // here once. `stranded` is the escape hatch that keeps the rule safe: the
+    // switch is on for somebody the rule would not offer it to, so the control
+    // still renders - with its off action - and nobody is left holding rights the
+    // manager can no longer reach.
+    const supervisorOn = person.isSupervisor === true;
+    const stranded = isStrandedSupervisor(person);
+    const isSelf = person.uid === viewerUid;
+    const showSupervisor = canManageSupervisor && !isSelf && (canOfferSupervisor(person) || stranded);
+    const strandedNote = person.role !== "captain"
+        ? "On for someone whose job title is not Captain. It can only be turned off."
+        : "On for an account that is not active. It can only be turned off.";
+
+    const hasAnyAction = canAssign || canDeactivate || canApprove || showSupervisor;
     if (!hasAnyAction) return null;
 
     return (
@@ -365,19 +415,24 @@ function ManagementActions({
                 </div>
             ) : null}
 
-            {canManageSupervisor && person.status === "active" && person.uid !== viewerUid ? (
-                <div className="flex flex-col gap-3 border-b border-[var(--color-line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            {showSupervisor ? (
+                <div className="flex flex-col gap-3 border-b border-[var(--color-line)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6" data-testid="supervisor-switch">
                     <div>
                         <p className="text-sm font-medium text-[var(--color-ink)]">Supervisor</p>
                         <p className="mt-0.5 text-xs text-[var(--color-ink-muted)]">Shift and roster access. Separate from job title and pay.</p>
+                        {stranded ? (
+                            <p className="mt-1.5 text-xs text-[var(--color-warning)]" data-testid="supervisor-stranded-note">
+                                {strandedNote}
+                            </p>
+                        ) : null}
                     </div>
                     <Button
-                        variant={person.isSupervisor === true ? "secondary" : "primary"}
+                        variant={supervisorOn ? "secondary" : "primary"}
                         className="min-h-11 self-start sm:self-auto"
                         onClick={confirmSupervisorChange}
                         disabled={busy}
                     >
-                        Turn {person.isSupervisor === true ? "off" : "on"}
+                        Turn {supervisorOn ? "off" : "on"}
                     </Button>
                 </div>
             ) : null}

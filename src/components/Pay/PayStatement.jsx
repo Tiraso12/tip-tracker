@@ -29,8 +29,9 @@ import { Card } from "../ui";
 // It is a PAY STUB and not a dashboard - the guard the shape was held to is
 // "would an employee call this their pay stub". Hence: every day in the range
 // listed, worked or not; CTP, GRT and Total in the payout table's own words;
-// cash always on its own line because it is handed over separately; the pay
-// period and the date the advice lands. And hence no charts, no trend, no
+// cash on its own line for the WEEK, because it is handed over weekly and
+// separately and never belongs to a total; the pay period and the date the
+// advice lands. And hence no charts, no trend, no
 // average, no best day, no pool maths, and no comparison to anyone else.
 
 function InfoIcon() {
@@ -88,13 +89,13 @@ function ShiftRow({ row }) {
     );
 }
 
-function MoneyRow({ label, value, strong = false, muted = false }) {
+function MoneyRow({ label, value, strong = false }) {
     return (
         <div className="flex items-baseline justify-between gap-3 px-5 py-2 sm:px-6 border-b border-[var(--color-line)] last:border-0">
             <span
                 className={
                     "text-xs " +
-                    (strong ? "font-medium text-[var(--color-ink)]" : muted ? "text-[var(--color-ink-muted)]" : "text-[var(--color-ink-soft)]")
+                    (strong ? "font-medium text-[var(--color-ink)]" : "text-[var(--color-ink-soft)]")
                 }
             >
                 {label}
@@ -224,7 +225,10 @@ function PayStatement({ person, startDate, endDate, eyebrow, heading, voice = "o
                 <MoneyRow label="CTP" value={fmtMoney(periodTotals.ctp)} />
                 <MoneyRow label="GRT" value={fmtMoney(periodTotals.grt)} />
                 <MoneyRow label="Total (CTP+GRT)" value={fmtMoney(periodTotals.total)} strong />
-                <MoneyRow label="Cash · paid separately" value={fmtMoney(periodTotals.cash)} muted />
+                {/* No cash line here on purpose. Cash is handed over WEEKLY, so a
+                    figure summed across the two-week period is money that never
+                    lands with this period's advice. The week's cash is on the top
+                    card, where it is the amount somebody was actually handed. */}
                 <MoneyRow label="Advice" value={formatMonthDay(adviceDate)} />
             </Card>
 

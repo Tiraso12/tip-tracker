@@ -90,6 +90,29 @@ export function canSetSupervisor(user) {
     return hasManagerAccess(user);
 }
 
+// WHO the switch may be turned ON for - the subject, where canSetSupervisor
+// asks about the actor. The restaurant's rule: only somebody whose JOB TITLE is
+// captain is offered the switch, and only while their account is active.
+//
+// This is an OFFER rule and not a grant rule. It reads users.role, which every
+// line above refuses to do, and it is allowed to precisely because it decides
+// nothing about rights: `isCaptain` and every capability still answer from the
+// isSupervisor field plus the manager pointer alone, and the pay maths in
+// engine.js still owns role. Turning the switch OFF is deliberately not gated
+// on this - see isStrandedSupervisor - so a title change can never strand
+// somebody holding rights nobody can take back.
+export function canOfferSupervisor(person) {
+    return person?.role === "captain" && isActive(person);
+}
+
+// The switch is ON for somebody the rule above would no longer offer it to:
+// existing data from before the rule, or a title changed out from under it. The
+// manager must always be able to turn that off, so this is the one case where
+// the control renders with its off action alone.
+export function isStrandedSupervisor(person) {
+    return isSupervisor(person) && !canOfferSupervisor(person);
+}
+
 // Deactivate or reactivate an employee.
 export function canDeactivateAccounts(user) {
     return hasManagerAccess(user);
