@@ -498,6 +498,17 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // Day data is only shown for the date it was loaded for.
     const dayDataIsCurrent = dayDataDate === selectedDate;
 
+    // The "saved by" line, or nothing. A recorded uid whose name has not landed
+    // yet is still an unanswered question, so the whole line waits: the nameless
+    // form says the record HAS no saver, which is a different night, and showing
+    // it for a frame both misstates the record and reflows the header under it.
+    const daySavedByLine = (() => {
+        if (!dayDataIsCurrent || !daySavedBy?.at) return null;
+        const named = daySaver?.uid === daySavedBy.uid;
+        if (daySavedBy.uid && !named) return null;
+        return { name: named ? daySaver.name : null, at: daySavedBy.at };
+    })();
+
     // The desktop <h1> mirrors where the day actually is, instead of always
     // reading "Pay out" (which contradicted a fresh/setup day). The date now
     // lives once in the app-bar Bar Date pill, so there is no date band here.
@@ -655,12 +666,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                 lineup={dayDataIsCurrent ? dayLineup : null}
                                 status={dayDataIsCurrent ? dayShiftStatus : null}
                                 orphanedEntries={dayDataIsCurrent ? dayOrphanedEntries : []}
-                                savedBy={dayDataIsCurrent && daySavedBy?.at
-                                    ? {
-                                        name: daySaver?.uid === daySavedBy.uid ? daySaver.name : null,
-                                        at: daySavedBy.at,
-                                    }
-                                    : null}
+                                savedBy={daySavedByLine}
                                 loading={dayLoading || !dayDataIsCurrent}
                                 savedNotice={shiftSaved}
                                 onBuildFloor={() => enterEditor("floor")}
