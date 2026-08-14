@@ -13,7 +13,7 @@ import {
     canSetSupervisor,
     isPaidFromPool,
 } from "../../utils/permissions";
-import { ASSIGNABLE_ROLES, roleLabel, roleShortLabel } from "../../utils/roleLabels";
+import { ASSIGNABLE_ROLES, roleLabel, roleSeniorityRank, roleShortLabel } from "../../utils/roleLabels";
 import { firstNameFor, fullNameFor, tempStaffRosterNameFor } from "../../utils/userNames";
 import {
     formatTempStaffMergeCollisionMessage,
@@ -33,8 +33,6 @@ const STATUS_FILTERS = [
     { value: "inactive", label: "Inactive" },
     { value: "temp", label: "Temp" },
 ];
-
-const STATUS_ORDER = { pending: 0, temp: 1, active: 2, inactive: 3 };
 
 function personName(person) {
     return person?.isTemp
@@ -471,10 +469,21 @@ function PersonView({
     const weekEnd = weekDates[6];
     return (
         <div className="space-y-4" data-testid="person-view">
-            <Button variant="ghost" className="min-h-11 !px-2" onClick={onBack} aria-label="Back to team roster">
-                <BackIcon />
-                Team roster
-            </Button>
+            {/* The only way out of a person's page, so it may not be a control you
+                have to scroll back up to reach - a profile with a pay statement on
+                it is several screens long. It pins directly under the h-14 app bar
+                exactly as the Day Rail does, at the same z-10, which keeps the
+                app bar > floating actions > sticky rail order and adds no new
+                navigation shape. The negative margins and matching padding let the
+                page content scroll under a full-bleed band rather than past a
+                floating word. The bottom-right corner is deliberately untouched:
+                it belongs to FloatingActions. */}
+            <div className="sticky top-14 z-10 -mx-4 border-b border-[var(--color-line)] bg-[var(--color-bg)] px-4 py-2 sm:-mx-8 sm:px-8">
+                <Button variant="ghost" className="min-h-11 !px-2" onClick={onBack} aria-label="Back to team roster">
+                    <BackIcon />
+                    Team roster
+                </Button>
+            </div>
 
             <IdentityCard person={person} mode="manage" managerUid={userManagerUid} />
 
@@ -550,9 +559,15 @@ function TeamManagement({ allEmployees, refreshEmployees }) {
         const realPeople = allEmployees
             .filter((person) => isPaidFromPool(person, user?.managerUid))
             .map((person) => ({ ...person, isTemp: false }));
+        // Sorted ONCE, here, where the roster is derived - the status filters and the
+        // search narrow this list and never re-sort it, so no view can read in a
+        // different order than another. Seniority first (captain down to runner, from
+        // the canonical ASSIGNABLE_ROLES order), then name, which is the only stable
+        // tie-break a reader can predict. Temporary profiles carry a role and sort by
+        // it like anyone else; status is a badge and a filter, not an ordering.
         return [...realPeople, ...unregisteredStaff].sort((left, right) => {
-            const statusDifference = STATUS_ORDER[personStatus(left)] - STATUS_ORDER[personStatus(right)];
-            return statusDifference || rosterName(left).localeCompare(rosterName(right));
+            const seniorityDifference = roleSeniorityRank(left.role) - roleSeniorityRank(right.role);
+            return seniorityDifference || rosterName(left).localeCompare(rosterName(right));
         });
     }, [allEmployees, unregisteredStaff, user?.managerUid]);
 

@@ -67,3 +67,16 @@ export const ASSIGNABLE_ROLES = ["captain", "server", "back", "assistant", "bart
 // The roles a member can work on a given night's floor plan. Bar and runners are
 // assigned to their own sections of the plan rather than picked per member.
 export const FLOOR_PLAN_ROLES = ["captain", "server", "back", "assistant"];
+
+// How senior a role reads, derived from ASSIGNABLE_ROLES so the roster's order and
+// the job-title picker's order are the SAME list - a second hand-written role order
+// would drift from this one. Captain is 0, runner is last.
+//
+// Anything that is not an assignable role - no role yet, a legacy `admin`, or a
+// value this build has never heard of - ranks after runner rather than at an
+// arbitrary spot, so those people stay visible in one predictable trailing group
+// instead of scattering through the list or dropping out of it.
+export function roleSeniorityRank(role) {
+    const rank = ASSIGNABLE_ROLES.indexOf(role);
+    return rank === -1 ? ASSIGNABLE_ROLES.length : rank;
+}
