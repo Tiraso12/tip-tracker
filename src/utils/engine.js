@@ -72,6 +72,13 @@ export function calculateShift(inputs) {
     const barSales = Math.max(0, n(config.barTeam.pools?.sales) || n(config.barSales));
     const barCTP = Math.max(0, n(config.barTeam.pools?.tips));
     const barGRT = Math.max(0, n(config.barTeam.pools?.gratuity));
+    // The bar's total food sales. Recorded, never spent: it is what the Runners Fee is
+    // derived FROM at Settle up (3%, prefill only - see RUNNERS_FEE_FOOD_SALES_RATE),
+    // and the engine deliberately does not know that rate. The fee reaches the engine
+    // as the amount below, so no rate change and no missing food-sales figure can move
+    // a night's money - which is what leaves every shift settled before this field
+    // existed identical to the cent.
+    const barFoodSales = Math.max(0, n(config.barTeam.pools?.foodSales));
     const barToTeamTransfer = Math.max(0, n(config.barTeam.pools?.runners));
     const hasBarTeam = config.barTeam.members.length > 0;
     // The same question on the dining side, asked here so section 2 can skip the
@@ -412,6 +419,7 @@ export function calculateShift(inputs) {
             contractSales: r2(contractSales),
             regularSalesBase: r2(regularSalesBase),
             barSales: r2(barSales),
+            barFoodSales: r2(barFoodSales),
             baseTeamCTP: r2(baseTeamCTP),
             baseTeamCash: r2(baseTeamCash),
             ctpTotal: r2(ctpTotal),

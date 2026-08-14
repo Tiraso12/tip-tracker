@@ -524,6 +524,106 @@ test("a no-captain contract night can still drive the dining CTP pool negative",
     assert.deepEqual(settleGate(result).messages, []);
 });
 
+// THE BAR'S RUNNERS FEE, AND WHY A NEGATIVE CTP IS THE SYSTEM WORKING.
+//
+// The fee IS 3% of the bar's total food sales, but the engine is deliberately not told
+// that. Food sales prefills the AMOUNT at Settle up (`RUNNERS_FEE_FOOD_SALES_RATE`,
+// applied in shiftEditorUtils) because the rate varies at a manager's discretion and
+// they express that by editing the amount. What reaches the engine is the amount, so
+// the figure below is recorded and spent on nothing.
+//
+// That is also what makes every shift settled before this field existed safe: their
+// `pools.foodSales` is absent, and an absent food sales figure cannot move a cent.
+test("bar food sales is recorded, and spends nothing", () => {
+    const shift = (barPools) => calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [
+                    { uid: "captain-1", name: "Captain One", role: "captain" },
+                    { uid: "server-1", name: "Server One", role: "server" },
+                ],
+                pools: { sales: 10000, tips: 1000, cash: 200, gratuity: 300 },
+                contracts: [],
+            },
+        ],
+        barTeam: {
+            members: [{ uid: "bar-1", name: "Bar One", role: "bartender", points: 1 }],
+            pools: barPools,
+        },
+        runners: [],
+    });
+
+    // The same night twice: once as an already-settled shift is stored (no food sales
+    // key at all), once with the figure the fee was derived from. Identical to the cent.
+    const beforeTheField = shift({ sales: 2000, tips: 200, gratuity: 0, runners: 300 });
+    const withFoodSales = shift({ sales: 2000, tips: 200, gratuity: 0, runners: 300, foodSales: 10000 });
+
+    assert.deepEqual(withFoodSales.payouts.roleGrouped, beforeTheField.payouts.roleGrouped);
+    assert.deepEqual(withFoodSales.allocations, beforeTheField.allocations);
+    assert.deepEqual(withFoodSales.adjustedPools, beforeTheField.adjustedPools);
+    assert.deepEqual(withFoodSales.balances, beforeTheField.balances);
+
+    // Recorded on the shift's own summary, so the saved night carries what the fee
+    // was derived from - and reads 0 on a night from before the field existed.
+    assert.equal(withFoodSales.derivedValues.barFoodSales, 10000);
+    assert.equal(beforeTheField.derivedValues.barFoodSales, 0);
+
+    // And the fee itself still does the one thing it has always done: move CTP off
+    // the bar pool and onto the dining pool. Neither side changed size.
+    assert.equal(withFoodSales.balances.overallBalance, 0);
+    assert.deepEqual(settleGate(withFoodSales).messages, []);
+});
+
+// THE CAPTAIN'S OWN SCENARIO, pinned so nobody "fixes" it.
+//
+// On a contract-only night every dollar arrives as gratuity and there is no charged tip
+// to draw from, but the runners' pay still comes out of CTP - so the bar's CTP goes
+// negative and the bartender's night is recorded as a negative amount. That is CORRECT.
+// It balances out at the end of the week, where the CTP total subtracts the negative
+// night from the positive ones.
+//
+// This test exists to make a clamp or a guard fail loudly. Do NOT add one: an earlier
+// investigation proposed rejecting negative payouts and the captain declined it, with
+// this exact night as the reason. What the shift must do is BALANCE and SETTLE.
+test("a contract-only night pays the bar's Runners Fee out of CTP and records a negative", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [{ uid: "server-1", name: "Server One", role: "server" }],
+                pools: { sales: 10000, tips: 0, cash: 0, gratuity: 0 },
+                contracts: [{ gratuity: 2600 }],
+            },
+        ],
+        barTeam: {
+            members: [{ uid: "bar-1", name: "Bar One", role: "bartender", points: 1 }],
+            // $10,000 of bar food sales, so the fee prefilled at $300 - and no charged
+            // tip behind it, because the whole night is a contract.
+            pools: { sales: 0, tips: 0, gratuity: 0, foodSales: 10000, runners: 300 },
+        },
+        runners: [],
+    });
+
+    // The fee left the bar's CTP with nothing to leave from.
+    assert.equal(result.adjustedPools.adjustedBarCTPPool, -300);
+    assert.match(result.validations.join("\n"), /Bar CTP pool is negative/);
+
+    const bartender = getOnly(result.payouts.roleGrouped.bar);
+    assert.equal(bartender.ctp, -300);
+    // The bar's 1% of contract sales still lands on the bar's GRT side, so the night
+    // records this bartender at -$200: a real amount, netted against the week.
+    assert.equal(bartender.grt, 100);
+    assert.equal(bartender.total, -200);
+
+    // ...and the same $300 is on the dining side, which is the whole point of the fee.
+    assert.equal(getOnly(result.payouts.roleGrouped.servers).ctp, 300);
+
+    // The two things that must never break: the night balances, and it can be saved.
+    assert.equal(result.balances.overallBalance, 0);
+    assert.deepEqual(settleGate(result).messages, []);
+});
+
 // THE OTHER CONTRACT: the "Supervisor" switch is access, never money.
 //
 // Supervisor rights live in their own field (users.isSupervisor) precisely so

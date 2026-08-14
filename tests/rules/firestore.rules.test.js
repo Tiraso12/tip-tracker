@@ -353,6 +353,14 @@ test("an admin can manage users, shifts, payout ledger entries, and temporary st
     await assertSucceeds(getDoc(doc(db, "users/employeeUid")));
     await assertSucceeds(updateDoc(doc(db, "users/employeeUid"), { status: "inactive" }));
     await assertSucceeds(setDoc(doc(db, "shifts/2026-05-30"), validShift()));
+    // A new money field inside barTeam.pools - here the bar's food sales, which the
+    // Runners Fee is derived from. `validShift` checks that barTeam is a map and does
+    // NOT enumerate pool keys, so a new one is allowed; this pins that, because an
+    // unexpected key would refuse the WHOLE atomic closeout batch and settle-up would
+    // fail with nothing on screen naming the field.
+    await assertSucceeds(setDoc(doc(db, "shifts/2026-05-30"), validShift("2026-05-30", {
+        barTeam: { members: [], pools: { sales: 2000, tips: 200, foodSales: 10000, runners: 300 } },
+    })));
     await assertSucceeds(setDoc(doc(db, "users/employeeUid/tips/2026-05-30"), validLegacyTip()));
     await assertSucceeds(setDoc(doc(db, "payouts/2026-05-30"), { date: "2026-05-30", ledgerVersion: 1 }));
     await assertSucceeds(setDoc(doc(db, "payouts/2026-05-30/entries/employeeUid"), validPayoutEntry()));

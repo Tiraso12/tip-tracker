@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { generateShiftReport } from "../../utils/pdfExport";
 import { Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
 import { rolePluralLabel, roleShortLabel } from "../../utils/roleLabels";
+import NegativeNightNotice from "./NegativeNightNotice";
 
 const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 // singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
@@ -65,6 +66,13 @@ const ROLE_GROUPS = [
     { key: "bar", role: "bartender" },
     { key: "runners", role: "runner", isRunner: true },
 ].map(group => ({ ...group, label: rolePluralLabel(group.role) }));
+
+// Every payout on a saved night, flattened out of the engine's role buckets. Only for
+// reading the night back as a whole - the table below still renders group by group.
+const allPayoutRows = (summary) => {
+    const roleGrouped = summary?.payouts?.roleGrouped || {};
+    return ROLE_GROUPS.flatMap(({ key }) => roleGrouped[key] || []);
+};
 
 function AuditSummary({ summary }) {
     const [isOpen, setIsOpen] = useState(false);
@@ -394,6 +402,15 @@ function DayPayoutPanel({ date, summary, status, savedBy = null, loading }) {
                         competed for the word "reconciliation" with the captain's real one -
                         comparing the app against the restaurant's spreadsheet, which lives in
                         the pre-save Review spot check. */}
+
+                    {/* A saved night that records someone at a negative amount says so
+                        in plain words, above the table where the minus sign appears.
+                        It sits ABOVE the Warnings block on purpose: the engine's own
+                        "Bar CTP pool is negative" lands in that block in danger red,
+                        and read alone it frames a correct night as a fault. This is the
+                        explanation that makes it read as what it is - see the notice
+                        itself for why a negative is right and how it nets out weekly. */}
+                    <NegativeNightNotice payoutRows={allPayoutRows(summary)} />
 
                     {/* Validations */}
                     {summary.validations && summary.validations.length > 0 ? (

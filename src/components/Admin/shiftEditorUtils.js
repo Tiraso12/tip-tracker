@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is unit-tested under `node --test`, which does
 // not resolve extensionless specifiers the way Vite does (engine.js does the same).
-import { ROLE_POINTS } from "../../utils/constants.js";
+import { ROLE_POINTS, RUNNERS_FEE_FOOD_SALES_RATE } from "../../utils/constants.js";
 
 export const toMoney = (value) => Number(value) || 0;
 export const hasNegative = (value) => Number(value) < 0;
@@ -91,9 +91,92 @@ export function getBarSummary(barTeam) {
         tips,
         gratuity,
         covers: toMoney(pools.covers),
+        foodSales: toMoney(pools.foodSales),
         runnerTransfer: toMoney(pools.runners),
         payoutPool: tips + gratuity,
     };
+}
+
+// ---- The bar's Runners Fee and the food sales it comes from ----
+//
+// The fee IS 3% of the bar's total food sales, but the AMOUNT is the field the
+// captain's managers type into: the rate varies at their discretion and they express
+// that by adjusting the amount. So food sales PREFILLS the fee and never governs it,
+// and everything below is that one relationship, kept pure and out of the component.
+//
+// There is no stored "was this edited" flag, deliberately. Overridden is derived by
+// comparing the two numbers that are already saved, which settles the awkward case by
+// itself: a shift from before food sales existed has no figure to derive from, so it
+// reads as neither derived nor overridden and stays quiet rather than being marked
+// "edited" for having been typed under the old model.
+
+const feeRounded = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+const isBlank = (value) => value === "" || value === null || value === undefined;
+
+export const deriveRunnersFee = (foodSales) =>
+    feeRounded(toMoney(foodSales) * RUNNERS_FEE_FOOD_SALES_RATE);
+
+// A bar with no food sales figure has nothing to derive a fee from - the pair is
+// simply not in play, which is exactly the state every shift settled before this
+// field existed is in.
+export const hasBarFoodSales = (pools = {}) => !isBlank(pools.foodSales) && toMoney(pools.foodSales) > 0;
+
+// Is the fee still the derived 3%, to the cent? Blank food sales makes this false
+// rather than throwing the question away: there is no computed value to sit at.
+export function isRunnersFeeDerived(pools = {}) {
+    if (!hasBarFoodSales(pools)) return false;
+    return Math.abs(toMoney(pools.runners) - deriveRunnersFee(pools.foodSales)) < 0.005;
+}
+
+// The one signal the captain asked for: the fee was set by hand. Quiet in the normal
+// case (a fee sitting at the computed 3%) and quiet with no food sales figure at all.
+export function isRunnersFeeOverridden(pools = {}) {
+    if (!hasBarFoodSales(pools)) return false;
+    return !isRunnersFeeDerived(pools);
+}
+
+// Food sales changed - re-derive the fee, but only while the fee is TRACKING the
+// derivation. A fee that already disagrees with 3% of the old figure is somebody's
+// deliberate amount, so it is left exactly as typed; that is what keeps a re-opened
+// historical shift honest, because entering food sales against a fee that was typed
+// blind under the old model must not silently move that night's money.
+export function applyBarFoodSalesEdit(pools = {}, nextFoodSales) {
+    const tracking = isBlank(pools.runners) || isRunnersFeeDerived(pools)
+        // No prior food sales figure: only a blank/zero fee is tracking, since any
+        // real amount was entered by hand rather than derived.
+        || (!hasBarFoodSales(pools) && toMoney(pools.runners) === 0);
+
+    if (!tracking) return { ...pools, foodSales: nextFoodSales };
+
+    // Clearing food sales clears the fee with it - the two move as a pair while the
+    // fee is derived, and leaving a stale 3% of a number no longer on screen behind
+    // would read as a hand-entered amount.
+    const nextRunners = isBlank(nextFoodSales) ? "" : String(deriveRunnersFee(nextFoodSales));
+
+    return { ...pools, foodSales: nextFoodSales, runners: nextRunners };
+}
+
+// Everyone this night records at a negative amount, for the screen that has to say so.
+//
+// A negative is CORRECT and must never be blocked: the bar's Runners Fee comes out of
+// CTP, so a night whose money all arrives as gratuity (a contract with no charged tip)
+// leaves the CTP side negative. It resolves across the week, where the CTP total nets
+// the negative night against the positive ones. What is owed is honesty about it, so
+// this names the people rather than the pool.
+//
+// The test is the night's total (CTP + GRT), which is what the person is recorded at.
+// A negative CTP covered by that night's gratuity leaves them paid, and saying "you
+// are negative" over a positive take-home would be the false alarm.
+export function selectNegativePayouts(payoutRows = []) {
+    return payoutRows
+        .filter(payout => getPayoutNonCashTotal(payout) < 0)
+        .map(payout => ({
+            uid: payout.uid,
+            name: payout.name || "Unknown",
+            role: payout.role,
+            total: getPayoutNonCashTotal(payout),
+        }));
 }
 
 export function validateShiftInputs({ teams, barTeam, runners }) {
@@ -127,9 +210,18 @@ export function validateShiftInputs({ teams, barTeam, runners }) {
         });
     });
 
+    // Paired with the captain's own words for each field, not the storage key: the
+    // fee's key is `runners` and the food sales key is `foodSales`, neither of which
+    // reads as English in "Bar ___ cannot be negative."
     const barPools = barTeam.pools || {};
-    ["sales", "tips", "gratuity", "runners"].forEach((field) => {
-        if (hasNegative(barPools[field])) errors.push(`Bar ${field} cannot be negative.`);
+    [
+        ["sales", "sales"],
+        ["tips", "tips"],
+        ["gratuity", "gratuity"],
+        ["foodSales", "food sales"],
+        ["runners", "runners fee"],
+    ].forEach(([field, label]) => {
+        if (hasNegative(barPools[field])) errors.push(`Bar ${label} cannot be negative.`);
         enteredMoney += toMoney(barPools[field]);
     });
 

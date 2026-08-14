@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
+import NegativeNightNotice from "./NegativeNightNotice";
 import DayRail from "./DayRail";
 import FloatingActions from "./FloatingActions";
 import ScrollRail from "./ScrollRail";
@@ -16,6 +17,7 @@ import { getHistoryFlagUpdate, getShiftParticipantUids } from "../../utils/userH
 import { useAuth } from "../../context/AuthContext";
 import { usePendingActions } from "../../context/PendingActionsContext";
 import {
+    applyBarFoodSalesEdit,
     buildPayoutReview,
     fmtAmount,
     fmtMoney,
@@ -24,6 +26,8 @@ import {
     getTeamSummary,
     ignoreMissingUserDoc,
     isNegativeMoney,
+    isRunnersFeeDerived,
+    isRunnersFeeOverridden,
     mapPayoutsForFirebase,
     selectSpotCheckSubject,
     toMoney,
@@ -47,13 +51,24 @@ const NUMERIC_INPUT =
     "appearance-none [-moz-appearance:textfield] " +
     "[&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
 
-function PoolField({ label, value, onChange, money = true }) {
+// `badge` rides on the label line and `note` sits under the input. Both exist for one
+// field - the bar's Runners Fee, which is derived from food sales and says so - so they
+// are deliberately plain slots rather than a derivation-aware field: nothing else on a
+// settle card should grow chrome because that one field needed it.
+function PoolField({ label, value, onChange, money = true, badge = null, note = null }) {
     const id = `pool-field-${label.replace(/\s+/g, "-").toLowerCase()}`;
     return (
         <div className="flex flex-col gap-1.5">
-            <label htmlFor={id} className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
-                {label}
-            </label>
+            {/* Fixed-height label line. A badge is taller than the label text, and these
+                fields sit side by side in a grid row - left to grow, the one field
+                carrying a badge would push its input a few pixels below its neighbour's
+                and break the row the whole card is read across. */}
+            <div className="flex h-4 items-center gap-1.5 min-w-0">
+                <label htmlFor={id} className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
+                    {label}
+                </label>
+                {badge}
+            </div>
             <div className="relative flex items-center">
                 {money ? (
                     <span className="absolute left-3 text-[13px] text-[var(--color-ink-muted)] pointer-events-none">$</span>
@@ -71,6 +86,9 @@ function PoolField({ label, value, onChange, money = true }) {
                     aria-label={label}
                 />
             </div>
+            {note ? (
+                <span className="text-[10.5px] leading-snug text-[var(--color-ink-muted)]">{note}</span>
+            ) : null}
         </div>
     );
 }
@@ -251,15 +269,59 @@ function TeamPoolFields({
     );
 }
 
+// The one signal the captain asked for on the Runners Fee: this amount was set by
+// hand, not derived. Nothing more - no history, no who-and-when, no diff against the
+// computed figure. A fee sitting at 3% of food sales is the norm and stays silent,
+// because marking every ordinary shift would be noise rather than information.
+function EditedBadge() {
+    return (
+        <span
+            className="inline-flex h-[15px] items-center rounded-full bg-[var(--color-warning-soft)] px-1.5 text-[9.5px] font-semibold uppercase leading-none tracking-[0.06em] text-[var(--color-warning)]"
+            title="Set by hand - this is not 3% of the food sales entered"
+        >
+            Edited
+        </span>
+    );
+}
+
 // Money inputs for the bar pool. Rendered inside the single entry panel.
-function BarPoolFields({ barTeam, onBarPoolChange }) {
+//
+// Food Sales and Runners Fee are a PAIR and are laid out as one: the fee is 3% of the
+// bar's food sales, prefilled from the field beside it. Only the fee is money that
+// moves - it comes off the bar's CTP and lands on the dining pool, exactly as it did
+// when it was typed blind (engine.js §6). Food sales is context that funds nothing,
+// which is why the engine records it and spends none of it.
+function BarPoolFields({ barTeam, onBarPoolChange, onBarFoodSalesChange }) {
+    const pools = barTeam.pools || {};
+    const overridden = isRunnersFeeOverridden(pools);
+    const derived = isRunnersFeeDerived(pools);
+
     return (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-            <PoolField label="Bar Sales" value={barTeam.pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
-            <PoolField label="Tips (CTP)" value={barTeam.pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
-            <PoolField label="Gratuity" value={barTeam.pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
-            <PoolField label="Covers" money={false} value={barTeam.pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />
-            <PoolField label="Runners Fee" value={barTeam.pools.runners} onChange={(value) => onBarPoolChange("runners", value)} />
+            <PoolField label="Bar Sales" value={pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
+            <PoolField label="Tips (CTP)" value={pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
+            <PoolField label="Gratuity" value={pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
+            <PoolField label="Covers" money={false} value={pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />
+            <PoolField
+                label="Food Sales"
+                value={pools.foodSales}
+                onChange={onBarFoodSalesChange}
+                note="The bar's total food sales. The Runners Fee is 3% of it."
+            />
+            <PoolField
+                label="Runners Fee"
+                value={pools.runners}
+                onChange={(value) => onBarPoolChange("runners", value)}
+                badge={overridden ? <EditedBadge /> : null}
+                // The amount is the field, so the note never argues with what is typed:
+                // it says where the number came from while it is still the derived 3%,
+                // and steps back once someone has set their own rate.
+                note={derived
+                    ? "3% of food sales. Edit the amount to use a different rate."
+                    : overridden
+                        ? "Set by hand - not 3% of the food sales entered."
+                        : "Enter food sales above to fill this at 3%."}
+            />
         </div>
     );
 }
@@ -713,6 +775,11 @@ function CalculatedPayoutReview({
     return (
         <div className="space-y-2.5">
             {subject ? <SpotCheckCard subject={subject} /> : null}
+
+            {/* Directly under the person the screen is about, and deliberately NOT up
+                with the blockers above: a negative payout is a true state of the night,
+                not a reason the shift will not save. It never withholds the save. */}
+            <NegativeNightNotice payoutRows={payoutRows} />
 
             {/* Every number typed at Settle up, all groups on one screen. Settle up is a
                 one-group-at-a-time switcher, so scanning for a typo there means tapping
@@ -1200,7 +1267,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         });
         const barPool = poolSummary.bar.payoutPool;
         const barHasPeople = barTeam.members.length > 0;
-        const barHasOtherInput = toMoney(barTeam.pools?.sales) > 0 || toMoney(barTeam.pools?.covers) > 0;
+        const barHasOtherInput = toMoney(barTeam.pools?.sales) > 0
+            || toMoney(barTeam.pools?.covers) > 0
+            || toMoney(barTeam.pools?.foodSales) > 0;
         const runnerPool = poolSummary.totalRunnerPay;
         return [
             ...teamGroups,
@@ -1276,6 +1345,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     moneyEntry("CTP", barTeam.pools?.tips),
                     moneyEntry("GRT", barTeam.pools?.gratuity),
                     moneyEntry("Sales", barTeam.pools?.sales),
+                    // Food sales funds nothing - it is what the fee below is derived
+                    // from - but it belongs in a row whose whole job is "every number
+                    // you typed, on one screen": a fee that looks wrong is checked
+                    // against the figure it came from, and hiding that figure would
+                    // send the check to the wrong place.
+                    moneyEntry("Food sales", barTeam.pools?.foodSales),
                     // The bar's "Runners Fee" field (`pools.runners`). Despite the name
                     // this is NOT runner pay - that is the flat per-runner amount, which
                     // leaves the pool entirely and lives in Shift totals. This is a MOVE
@@ -1434,6 +1509,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
 
     const updateBarPool = useCallback((field, value) => {
         setBarTeam(prev => ({ ...prev, pools: { ...prev.pools, [field]: value } }));
+    }, []);
+
+    // Food sales has one behaviour no other pool field has: it PREFILLS the Runners
+    // Fee at 3%, and only while the fee is still tracking that derivation. The rule
+    // lives in `applyBarFoodSalesEdit` so it can be tested without a browser; what
+    // matters here is that entering food sales on a shift settled under the old model
+    // leaves that night's typed fee alone rather than silently moving its money.
+    const updateBarFoodSales = useCallback((value) => {
+        setBarTeam(prev => ({ ...prev, pools: applyBarFoodSalesEdit(prev.pools || {}, value) }));
     }, []);
 
     const updateRunnerPayout = (uid, value) => {
@@ -2090,7 +2174,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                         </>
                                     ) : activeGroup.kind === "bar" ? (
                                         <>
-                                            <BarPoolFields barTeam={barTeam} onBarPoolChange={updateBarPool} />
+                                            <BarPoolFields
+                                                barTeam={barTeam}
+                                                onBarPoolChange={updateBarPool}
+                                                onBarFoodSalesChange={updateBarFoodSales}
+                                            />
                                             <PointSplitDisclosure
                                                 title="Bar Team"
                                                 members={barTeam.members}

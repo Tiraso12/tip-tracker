@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    applyBarFoodSalesEdit,
+    deriveRunnersFee,
     fmtAmount,
     getPayoutNonCashTotal,
     getTeamSummary,
     isNegativeMoney,
+    isRunnersFeeOverridden,
+    selectNegativePayouts,
     selectSpotCheckSubject,
+    validateShiftInputs,
 } from "./shiftEditorUtils.js";
 
 test("team display pool excludes cash while keeping cash separate", () => {
@@ -104,4 +109,107 @@ test("a runner payout resolves to its flat pay as a single figure", () => {
 
     assert.equal(getPayoutNonCashTotal(runnerPayout), 85);
     assert.equal(selectSpotCheckSubject([runnerPayout]).payout.role, "runner");
+});
+
+// ---- The bar's Runners Fee, derived from the bar's food sales ----
+
+test("the fee prefills at 3% of bar food sales, to the cent", () => {
+    assert.equal(deriveRunnersFee(10000), 300);
+    assert.equal(deriveRunnersFee("10000"), 300);
+    assert.equal(deriveRunnersFee(1234.56), 37.04);
+    assert.equal(deriveRunnersFee(""), 0);
+});
+
+test("entering food sales fills an untouched fee and keeps following it", () => {
+    const first = applyBarFoodSalesEdit({ tips: "200", runners: "" }, "10000");
+    assert.equal(first.runners, "300");
+    assert.equal(first.foodSales, "10000");
+    // Other bar money is carried through untouched.
+    assert.equal(first.tips, "200");
+
+    // Still tracking, so a corrected food sales figure re-derives the fee.
+    assert.equal(applyBarFoodSalesEdit(first, "12000").runners, "360");
+
+    // Clearing food sales clears the fee with it - they move as a pair while derived.
+    assert.equal(applyBarFoodSalesEdit(first, "").runners, "");
+});
+
+// A hand-set amount is somebody's decision - the rate is not always 3% - so nothing
+// about a later food sales edit may overwrite it.
+test("a fee set by hand survives every later food sales edit", () => {
+    const overridden = { foodSales: "10000", runners: "400" };
+
+    assert.equal(applyBarFoodSalesEdit(overridden, "12000").runners, "400");
+    assert.equal(applyBarFoodSalesEdit(overridden, "").runners, "400");
+});
+
+// THE HISTORICAL CASE. Every shift settled before this field existed stores a fee that
+// was typed blind, with no food sales figure behind it. Entering one now must not
+// re-derive that night's fee: it would move settled money on a number nobody checked.
+test("entering food sales on a shift from before the field leaves its typed fee alone", () => {
+    const storedUnderTheOldModel = { tips: "200", runners: "500" };
+
+    const edited = applyBarFoodSalesEdit(storedUnderTheOldModel, "10000");
+
+    assert.equal(edited.runners, "500");
+    assert.equal(edited.foodSales, "10000");
+});
+
+// The marker says "somebody set this by hand", and says nothing the rest of the time.
+// The quiet case that matters most is the historical one: a fee with no food sales
+// figure behind it has no computed value to disagree with, and marking every shift
+// settled before the field existed as "edited" would be noise, not information.
+test("the edited marker is quiet on a derived fee and on a shift with no food sales", () => {
+    assert.equal(isRunnersFeeOverridden({ foodSales: "10000", runners: "300" }), false);
+    assert.equal(isRunnersFeeOverridden({ runners: "500" }), false);
+    assert.equal(isRunnersFeeOverridden({ foodSales: "", runners: "500" }), false);
+    assert.equal(isRunnersFeeOverridden({}), false);
+
+    assert.equal(isRunnersFeeOverridden({ foodSales: "10000", runners: "400" }), true);
+    // Down to the cent, both ways.
+    assert.equal(isRunnersFeeOverridden({ foodSales: "10000", runners: "299.99" }), true);
+});
+
+test("bar food sales is validated as money, in the captain's words", () => {
+    const errors = validateShiftInputs({
+        teams: [],
+        barTeam: { members: [{ uid: "bar-1" }], pools: { foodSales: "-1", runners: "-2" } },
+        runners: [],
+    });
+
+    assert.ok(errors.includes("Bar food sales cannot be negative."));
+    assert.ok(errors.includes("Bar runners fee cannot be negative."));
+});
+
+// ---- A night that records someone at a negative amount ----
+//
+// A negative is CORRECT - the bar's fee comes out of CTP, so a contract-only night
+// leaves the CTP side below zero and the week nets it out. Nothing may block it; the
+// screen just has to say so. This picks out who to name.
+test("a negative night names whoever it records at a negative amount", () => {
+    const negatives = selectNegativePayouts([
+        { uid: "bar-1", name: "Bar One", role: "bartender", tips: -300, gratuity: 100 },
+        { uid: "server-1", name: "Server One", role: "server", tips: 300, gratuity: 1800 },
+    ]);
+
+    assert.deepEqual(negatives, [
+        { uid: "bar-1", name: "Bar One", role: "bartender", total: -200 },
+    ]);
+});
+
+test("a negative CTP covered by the same night's gratuity is not a negative night", () => {
+    // Take-home is positive, so saying "you are negative" here would be a false alarm.
+    assert.deepEqual(
+        selectNegativePayouts([{ uid: "bar-1", name: "Bar One", tips: -300, gratuity: 500 }]),
+        [],
+    );
+});
+
+test("cash never decides whether a night is negative", () => {
+    // Cash is paid and reported separately and is never folded into a total, so it can
+    // neither create a negative night nor cover one up.
+    assert.deepEqual(
+        selectNegativePayouts([{ uid: "server-1", name: "Server One", tips: -50, gratuity: 0, cash: 200 }]),
+        [{ uid: "server-1", name: "Server One", role: undefined, total: -50 }],
+    );
 });
