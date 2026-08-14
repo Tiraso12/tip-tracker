@@ -41,23 +41,50 @@ async function commitWrites(writes) {
     }
 }
 
+function describeFields(fields) {
+    return Object.entries(fields)
+        .map(([field, value]) => `${field}=${JSON.stringify(value)}`)
+        .join(", ");
+}
+
+// Somebody reads this and decides whether to let the script write to real user
+// records, so lead with the three numbers that decision turns on and name every
+// profile the backfill cannot fix on its own.
 function report(plan, mode) {
-    console.log(JSON.stringify({
-        projectId,
-        emulator: usingEmulator,
-        mode,
-        ...plan.counts,
-        changedUserIds: plan.writes.map((write) => write.id),
-        skippedUserIds: plan.skipped,
-        invalidUsers: plan.invalid,
-    }, null, 2));
+    const target = usingEmulator ? `${projectId} (emulator)` : `${projectId} (LIVE)`;
+    console.log(`\nUser profile name backfill - ${mode} against ${target}`);
+    console.log(`  scanned:            ${plan.counts.scanned}`);
+    console.log(`  will change:        ${plan.counts.changed}`);
+    console.log(`  already valid:      ${plan.counts.skipped}`);
+    console.log(`  cannot fix here:    ${plan.counts.invalid}`);
+
+    if (plan.writes.length > 0) {
+        console.log(`\nWill change (${plan.writes.length}):`);
+        plan.writes.forEach((write) => {
+            console.log(`  ${write.id}  ->  ${describeFields(write.data)}`);
+        });
+    }
+
+    if (plan.invalid.length > 0) {
+        console.log(`\nCannot fix automatically (${plan.invalid.length}) - these need a person:`);
+        plan.invalid.forEach((entry) => {
+            console.log(`  ${entry.id}  ->  ${entry.reason}`);
+        });
+    }
+
+    console.log("");
 }
 
 const plan = planUserProfileNameBackfill(await loadUsers());
 report(plan, apply ? "apply" : "dry-run");
 
+// Stop on the whole run, not just the unfixable profiles. Writing the fixable
+// ones would report success while the rules would still refuse every closeout
+// batch the remaining profiles take part in, and the operator would have to run
+// this again anyway. One clear human fix, then one clean run.
 if (plan.invalid.length > 0) {
-    console.error("Backfill stopped because one or more users have no legacy username to copy.");
+    console.error(`Backfill stopped: ${plan.invalid.length} profile(s) cannot be fixed automatically.`);
+    console.error("Nothing was written. Give each of the profiles listed above a first name, then re-run.");
     process.exit(1);
 }
 
