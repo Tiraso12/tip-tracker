@@ -3,6 +3,15 @@ import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
+// Account self-service: the identity surface every tier meets, and what changing
+// your own name, password or login handle does to the rest of the app.
+//
+// Both halves of the app share one identity card, so this drives all four kinds
+// of account at phone and desktop width to prove none of them meets a lesser
+// version of it. The name change is the load-bearing case: it has to follow the
+// person onto open floor plans while leaving settled history frozen under the
+// name that was paid.
+
 const PROJECT_ID = "demo-tip-tracker-test";
 const PASSWORD = "Password123!";
 const NEW_PASSWORD = "NewPassword456!";

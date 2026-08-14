@@ -1,3 +1,12 @@
+// What a person may write to their OWN profile, and nothing wider.
+//
+// Self-service is field-scoped: names and the login handle, never role, status
+// or the Supervisor switch, and never on somebody else's document. The two
+// multi-document cases are here for the same reason - a name change restamps the
+// actor on open floor plans but never on settled history, and claiming a handle
+// releases the old mapping in the same batch, so a collision leaves neither
+// orphaned.
+
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";

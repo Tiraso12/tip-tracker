@@ -1,6 +1,6 @@
 # Tip Tracker
 
-A full-stack shift and tip distribution management system built for restaurant operations. Managers configure teams, enter shift financials, and the app automatically calculates individual payouts — pooling dining-room tips house-wide by points, handling contract gratuity, captain overrides, bar allocations, and runners — with every cent accounted for.
+A full-stack shift and tip distribution management system built for restaurant operations. Whoever is running the floor that night builds the teams and enters the shift's money, and the app calculates individual payouts — pooling dining-room tips house-wide by points, handling contract gratuity, captain overrides, bar allocations, and runners — with every cent accounted for.
 
 **Live app:** https://tip-tracker-44de1.web.app
 
@@ -15,17 +15,17 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 ## Features
 
 **Shift Management**
-- Drag-and-drop team builder — assign employees to teams, bar, or runners before the shift
+- Team builder - drag and drop on a desktop, tap-to-assign on a phone - putting employees on teams, the bar, or runners before the shift
 - Per-team sales, tips, gratuity, and cash entry — dining-room tips/gratuity/cash pool together house-wide and split by points across all dining employees, not per team
-- Contract shift support with automated 26% gratuity tracking
-- Captain override bonus (1% of sales), split across all active captains
+- Contract shift support - the gratuity is what gets entered, and contract sales are derived from it at the fixed 26%
+- Captain override bonus - 1% of regular sales on the charged-tip side, 1% of contract sales on the gratuity side, split evenly across the captains on the floor
 - Runner flat-rate payouts ($85 default) deducted from the dining room pool
 - Bar-to-team transfer support for flexible nightly configurations
 
 **Calculation Engine**
 - Pure JavaScript engine with zero UI dependencies — fully unit tested
 - Point-based distribution by role (Captain: 4pts, Server: 4pts, Back: 2.5pts, Assistant: 2pts)
-- Pre-distribution allocations: bar (1%), door (0.5%), PE coordinator (2%), house (3%)
+- Pre-distribution allocations, at their own rate on each side of the money: off charged tips, bar 1% and door 0.5% of regular sales; off gratuity, bar 1%, door 2%, PE coordinator 2% and house 3% of contract sales
 - Rounding reconciliation — micro-adjustments ensure totals match exactly with no floating-point drift
 - Double-entry balance check on every calculation — warns if the shift doesn't balance
 
@@ -41,7 +41,9 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 - Tiered access - manager, captain (the per-person Supervisor switch), employee - with an approval flow for new sign-ups
 - Team roster - searchable, with job titles, approvals, deactivation, temporary-profile merges, and the Supervisor switch
 - Day Rail - pick any day and step through Floor plan → Settle up → Review
-- Real-time Firestore sync — data updates instantly across sessions
+- Live where it has to be - the app bar's pending-approvals count and a person's pay statement
+  subscribe to Firestore; the day's workspace loads on request and refetches after a save, so a
+  night costs a bounded read rather than a standing listener on the whole roster
 
 ---
 
@@ -49,6 +51,8 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 
 - [Managing Temporary Staff Profiles](docs/MANAGING-TEMPORARY-STAFF.md) - adding staff who
   have no account yet, and when to merge them into a real account
+- [Naming the manager](docs/MANAGER-CHANGEOVER.md) - the one console write that makes the
+  manager and captain tiers live, and how to reverse every part of it
 
 ---
 
@@ -85,12 +89,13 @@ src/
 │   ├── engine.js                    # Core calculation engine (pure JS)
 │   ├── permissions.js               # Every capability, named once
 │   ├── payoutLedger.js              # Payout totals and reconciliation
+│   ├── dayFlow.js                   # Which stage a date is at on the rail
 │   ├── pdfExport.js                 # All PDF generation logic
 │   └── constants.js                 # Role point weights and flat rates
 ├── services/
 │   └── dataService.js               # Firestore read/write/subscribe layer
 └── context/
-    └── AuthContext.jsx              # Auth state and user role management
+    └── AuthContext.jsx              # Auth state, the profile, and the manager pointer
 ```
 
 ---
@@ -128,17 +133,17 @@ loop and `npm run test:all` before pushing.
 
 ---
 
-## How the Calculation Engine Works
+## Why the Calculation Engine Is Shaped This Way
 
-The engine (`src/utils/engine.js`) is a pure function — it takes a normalized shift config and returns a complete payout result with no side effects.
+The engine (`src/utils/engine.js`) is a pure function — it takes a normalized shift config and returns a complete payout result with no side effects. Its numbered sections are the mechanics and they are the authority on the arithmetic. What follows is the restaurant policy behind them, which the code cannot show.
 
-1. **Derive totals** from per-team pool inputs (sales, tips, gratuity, cash), combined into house-wide dining-room totals
-2. **Pre-distribute** — calculate bar allocation (1%), door (0.5%), captain override pool (1%), house/coordinator cuts for contract sales
-3. **Adjust pools** — apply bar-to-team transfers, deduct runner payouts from dining room CTP
-4. **Distribute by points** — dining-room pools are split by one house-wide point value across all dining employees (not per team); each employee's share = `(their points / total dining-room points) * adjusted pool`
-5. **Captain override** — split evenly across all active captains and merged into their payout
-6. **Reconcile** — correct any floating-point drift so pool totals match exactly
-7. **Balance check** — verify `total available == total distributed + external allocations`
+- **The dining room is one pool, not one per team.** Money is entered per team because that is how a night is counted at the pass, but a single house-wide point value pays every dining employee. Splitting per team would pay two servers differently for the same night's work, so this is deliberate policy and not a bug to "fix".
+- **The bar is a separate pool with its own point value.** The bar allocation moves money from the dining pools to the bar pools: it never leaves the staff, so it is a subtraction on the dining ledger and an addition on the bar one, and never a deduction from the two combined. Nobody in `barTeam` means no allocation at all, because a bartender working a section as a captain must not carve out a bar pool that has no one in it.
+- **Cash is never inside a total.** A payout total is charged tip plus gratuity, for every role. Cash is real money the employee is paid, but it is handed over separately and weekly, so folding it into a total would describe a payment that never happened that way.
+- **Contract gratuity is the input; contract sales are inferred.** The 26% is fixed by the contract, so the shift is entered as the gratuity that was actually charged and the engine works the sales back out of it. The number typed in is the one printed on the contract, and nobody has to re-derive it under time pressure.
+- **Runner pay leaves the pool entirely**, off the top of dining charged tips, unlike the bar allocation above. On a pure contract night that can drive dining charged tips negative; that is expected and informational, not an error.
+- **Rounding is reconciled against the pool, not per person.** Every payout is rounded to the cent and the last one absorbs the remainder, so the amounts on screen add up to exactly the money that existed.
+- **Every shift is balanced double-entry** and says so when it does not. Money that silently fails to balance is money someone is short at the end of the night.
 
 ---
 

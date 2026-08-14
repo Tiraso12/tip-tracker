@@ -113,6 +113,12 @@ export function calculateShift(inputs) {
     const totalRunnerPay = r2(sumProp(runnerPayouts, 'payoutAmount'));
 
     // 2. PRE-DISTRIBUTIONS
+    // Two bases, never one: everything on the CTP side is a rate on regularSalesBase
+    // (bar 1%, door 0.5%, captain override 1%), and everything on the GRT side is a
+    // rate on contractSales (bar 1%, door 2%, PE coordinator 2%, house 3%, captain
+    // override 1%). The same name carries a different rate on each side - "door" is
+    // 0.5% here and 2% below - so quoting one rate per allocation is always wrong.
+    //
     // Bar allocations only apply when a bar team with members is active. When bartenders
     // work a contract shift as captains in a regular team they are not in barTeam, so
     // hasBarTeam = false and these allocations are skipped to avoid stranded pool money.
@@ -225,6 +231,13 @@ export function calculateShift(inputs) {
 
 
     // 9. CAPTAIN OVERRIDE
+    // Known quirk, deliberately not patched over: the override is carved out of the
+    // pools above whether or not anyone on the floor is a captain. With no captain,
+    // splitCTP/splitGRT stay 0, so that money is distributed to nobody - it shows up
+    // as a non-zero "Cap Ov CTP"/"Cap Ov GRT" pool balance AND trips the balance
+    // warning in section 11, which is the shift telling the truth about stranded
+    // money rather than a bug in the check. Any fix belongs here, at the carve-out,
+    // not in the balance check that reports it.
     const captainOverrideCTPPool = captainOverrideCTP;
     const captainOverrideGRTPool = captainOverrideGRT;
 

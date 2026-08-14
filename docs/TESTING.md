@@ -57,7 +57,7 @@ Run Firestore security rules tests:
 npm run test:rules
 ```
 
-Run the admin closeout browser tests:
+Run the browser tests:
 
 ```bash
 npm run test:e2e
@@ -99,19 +99,18 @@ the auth REST calls read `FIREBASE_AUTH_EMULATOR_HOST`.
 
 ## What The Tests Cover
 
-Each suite states its own scope; read the file rather than a list here, which only goes stale.
+Every suite states its own scope in a header comment at the top of the file. Read that rather than a
+list here, which only goes stale. Where they live:
 
-Firestore rules (`tests/rules/`), one emulator, one `projectId` per file:
+- `src/**/*.test.js` - unit tests next to the code they cover. No emulator, no browser.
+- `tests/rules/` - what `firestore.rules` grants and refuses, against the Firestore emulator.
+- `tests/e2e/` - Playwright driving the real UI against the Auth and Firestore emulators.
 
-- `firestore.rules.test.js` - logged-out boundaries, own-profile and own-tips access, write denial, self-registration defaults, username mapping
-- `current-state.test.js` - production today: `role: "admin"` is the only live authority while no manager pointer exists
-- `manager-tier.test.js` - both authorities live at once once a manager is named
-- `profile-self-service.test.js` - the field-scoped writes a person may make to their own profile
+Two constraints no single file can show you:
 
-Playwright (`tests/e2e/`), each driving the real UI against the emulators:
-
-- `admin-closeout.spec.js` - the day's Floor plan → Settle up → Review flow, the money on Review, and editing a settled shift
-- `admin-pending-approvals.spec.js` - the approval flow and the app-bar count
-- `admin-temp-merge.spec.js` - merging a temporary profile, including the per-date collision block
-- `manager-tier.spec.js` - what each tier meets on screen, the Supervisor switch, and "THE COUPLING" between the app's two halves
-- `profile-account.spec.js` - account self-service and name changes
+- The rules suites run in parallel against **one** emulator, and `clearFirestore()` is scoped to a
+  project. Every suite file therefore needs its own `projectId`, or two suites wipe each other's
+  fixtures mid-run and fail in ways that look like rules bugs.
+- The tier suites come in pairs by design: one runs with no `restaurant/config` document, to pin what
+  production grants today, and its counterpart seeds the pointer to prove the tiers. Both authorities
+  are live at once on purpose, so neither half can be dropped while the changeover is unfinished.

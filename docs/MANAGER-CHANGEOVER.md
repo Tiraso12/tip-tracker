@@ -88,7 +88,10 @@ Note the `uid` and `username` of every document returned, active or not.
   clause is eventually dropped, and each one is a conversation to have before that release, not after.
   The changeover itself is still safe, but do not run it without knowing who is on that list.
 - **The intended manager is not on the list** → continue anyway; the pointer does not require it. Just
-  be certain their profile has `status: "active"`, or the tier will be dead on arrival.
+  be certain their profile has `status: "active"`, or the tier will be dead on arrival. Note that the
+  existing `role: "admin"` account keeps every power it has today, so in this case it is not only the
+  manager who can settle up that night. The switch list above still matters: a captain with the switch
+  off cannot.
 
 Also note the **uid** of the person becoming the manager. It is the document id of their `users`
 document, and it is the only value the next step needs.

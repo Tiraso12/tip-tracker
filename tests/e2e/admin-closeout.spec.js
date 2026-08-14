@@ -3,6 +3,14 @@ import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 
+// The night itself, driven through the real UI: Floor plan -> Settle up -> Review,
+// the money Review shows and what it refuses to show while something is missing,
+// the payout ledger a save writes, and correcting or removing a day afterwards.
+// The mobile blocks below are part of the same job rather than decoration - the
+// floor is built and settled on a phone at 390px, so the in-place editor, the
+// leave guard on a half-finished edit, and the 320px bar are money-losing paths
+// when they break, not cosmetics.
+
 const PROJECT_ID = "demo-tip-tracker-test";
 const ADMIN_EMAIL = "admin@example.com";
 const ADMIN_PASSWORD = "Password123!";

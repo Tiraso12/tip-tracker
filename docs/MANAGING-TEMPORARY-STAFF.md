@@ -31,7 +31,17 @@ them is a night that can permanently block the merge.
 5. Tap **Merge profile** and confirm.
 
 The merge moves their saved shifts and tip history onto the real account and removes the
-temporary profile. You can then keep assigning them to shifts under their real account.
+temporary profile. Nights that are still open - a floor plan built but not settled up - are
+switched over to the real account too, because the temporary profile is about to stop
+existing and a night that still named it would pay nobody when you settled it.
+
+Read what the app tells you when it finishes. Usually it lists the dates that moved and you
+are done. Once in a while it says **Merge incomplete**: the temporary profile was removed but
+one or more floor plans still name it. Those dates are listed, and you have to open each one
+and put the real account on the floor **before you settle up that night**. It is a minute of
+work; skipping it means that night's payout goes to a profile that is gone.
+
+You can then keep assigning them to shifts under their real account.
 
 ## What can block the merge
 

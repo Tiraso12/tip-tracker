@@ -3,6 +3,15 @@ import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 
+// Merging a temporary staff profile into a real account, end to end.
+//
+// The merge DELETES the temporary profile, so every case here is about what must
+// have moved before it disappears: payout history into an empty account and into
+// an account that already has unrelated dates, and an open floor plan that still
+// names the temp profile, which would otherwise settle money onto a profile that
+// no longer exists. The last case is the per-date collision - all or nothing, and
+// it must leave existing payroll untouched.
+
 const PROJECT_ID = "demo-tip-tracker-test";
 const ADMIN_EMAIL = "admin-temp-merge@example.com";
 const ADMIN_PASSWORD = "Password123!";

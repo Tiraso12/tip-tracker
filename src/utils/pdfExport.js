@@ -1,3 +1,10 @@
+// Every PDF the app can produce. Only generateShiftReport has a screen behind it
+// today - DayPayoutPanel's shift report. generateTeamSheetPDF,
+// generateWeeklyReport and generateMonthlyReport are intact but unreachable: the
+// admin Reports panel that called them was removed. They are kept rather than
+// deleted because it was the entry point that went away, not the layouts, which
+// are the expensive part: re-wiring one is a button, not a rewrite.
+
 import { ASSIGNABLE_ROLES, rolePluralLabel, roleShortLabel } from './roleLabels';
 
 const PRIMARY_COLOR = [26, 61, 46]; // #1a3d2e — forest green accent (matches v0.7.0 UI theme)

@@ -1,3 +1,11 @@
+// The baseline boundaries in firestore.rules, independent of the tier model.
+//
+// Logged-out reads, an employee's own profile and own payout ledger entries, the
+// writes an employee must never make, the safe defaults forced onto a
+// self-registered profile, the public username mapping, and the shapes admin
+// money writes have to match. The tier suites (current-state, manager-tier) sit
+// on top of this; nothing here needs a restaurant/config document.
+
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
