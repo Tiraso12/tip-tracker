@@ -142,14 +142,24 @@ const RailPill = memo(function RailPill({ group, selected, onSelect }) {
 // The single fixed-height entry panel. Its chrome (head + padded body) is identical for
 // every group, so the panel is the same height for two teams or six - the whole point of
 // the switcher. Body content is supplied by the caller per selected group.
+//
+// On a phone the panel FILLS the screen down to the floating action's clearance and its
+// BODY is what scrolls; the page behind it does not. The money fields used to run off the
+// bottom of a shrink-wrapped panel, so reaching Cash or Covers meant scrolling the whole
+// page and pushing the group switcher - the control that says which team's money you are
+// typing - off the top. The head stays pinned for that reason: the group name and its pool
+// must never leave the screen while its figures are being entered.
 function CloseoutEntryPanel({ group, children }) {
     return (
-        <div className="border border-[var(--color-line-strong)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)]">
+        <div className="border border-[var(--color-line-strong)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.05)] max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:flex-none">
                 <div className="flex flex-col gap-0.5 min-w-0">
-                    <span className="font-display text-[17px] font-medium tracking-tight text-[var(--color-ink)] truncate">
-                        {group.name}
-                    </span>
+                    {/* The selected switcher pill directly above already names the group,
+                        so printing it again here said the same word twice on one screen.
+                        It stays in the accessibility tree because it was the panel's only
+                        identification, and which pill is selected is not something a
+                        screen reader user landing inside the panel already knows. */}
+                    <span className="sr-only">{group.name}</span>
                     <span className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-ink-muted)]">
                         {group.sub}
                     </span>
@@ -177,7 +187,7 @@ function CloseoutEntryPanel({ group, children }) {
                     ) : null}
                 </div>
             </div>
-            <div className="p-4 max-[560px]:p-3.5">
+            <div className="p-4 max-[560px]:p-3.5 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:overscroll-contain">
                 {children}
             </div>
         </div>
@@ -964,40 +974,12 @@ function CalculatedPayoutReview({
 }
 
 
-// The quiet successor to the full-width "Calculate Payouts →" primary on a locked
-// Settle up. Nothing here calculates - payouts follow the data now - so it is a
-// secondary row that carries the running take-home and doubles as a jump to Review.
-// When the money is not complete enough to compute, it says that plainly instead of
-// showing a placeholder figure that would read as a real total.
-// The label here was the captain's second report: it read "Take-home", which sounded
-// like one pooled figure when it is in fact dining + bar + runners, three separate
-// pools. It says "Paid out" now - a true description of an all-in figure - and the
-// per-pool breakdown lives on Review where there is room to show the separation.
-function SettleReviewLink({ ready, staffTotal, onClick }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-[var(--color-line-strong)] bg-[var(--color-surface)] px-4 py-3 min-h-[44px] text-left transition-colors hover:border-[var(--color-accent)]"
-        >
-            <span className="text-[13px] font-semibold text-[var(--color-accent)]">
-                Review payouts <span aria-hidden="true">→</span>
-            </span>
-            {ready ? (
-                <span className="inline-flex items-baseline gap-1.5 shrink-0">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
-                        Paid out
-                    </span>
-                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
-                        {fmtMoney(staffTotal)}
-                    </strong>
-                </span>
-            ) : (
-                <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">Not ready yet</span>
-            )}
-        </button>
-    );
-}
+// A locked Settle up once ended in a full-width "Review payouts →" row, itself the
+// successor to a "Calculate Payouts →" primary. Both are gone. Nothing here calculates -
+// payouts follow the data now - and the Day Rail directly above already reaches Review
+// from any step, so the row spent a whole row of a phone screen on a second way to do
+// what the rail does. The running "Paid out" figure it also carried went with it: the
+// per-pool breakdown was always on Review, which is one tap away.
 
 // Review when the inputs cannot produce a complete calculation. Showing the reasons is
 // the whole job: the alternative - a confident total built from half the money - is the
@@ -1257,7 +1239,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 id: team.teamId,
                 kind: "dining",
                 name: `Team ${index + 1}`,
-                sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"} · dining`,
+                // No "· dining" tag: a numbered Team IS the dining room, so the word only
+                // restated the pill you just tapped. The bar group keeps its tag - there
+                // the pool really is a different one, and that distinction earns a word.
+                sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"}`,
                 poolLabel: "Pool",
                 pool,
                 hasPeople,
@@ -1298,6 +1283,16 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
 
     const activeGroup = closeoutGroups.find(group => group.id === activeGroupId) || closeoutGroups[0];
     const groupStatusSummary = summarizeGroupStatuses(closeoutGroups);
+    // The count that sits beside the Pool figure counts only the groups that figure is
+    // made of. `payoutPool` is dining CTP + GRT + bar CTP + bar GRT; runner pay is not in
+    // it and never was - it is a deduction off the top, which is why the Runners pill is
+    // labelled "Pay" and not "Pool". Counting Runners there put a group in the headline
+    // that contributes nothing to the money printed next to it, so "5 groups · Pool $X"
+    // described five groups with four groups' money. This changes the COUNT only; the
+    // figure itself is untouched.
+    const poolGroupSummary = summarizeGroupStatuses(
+        closeoutGroups.filter(group => group.kind !== "runners"),
+    );
 
     // Review's rung 2: every group's money exactly as it was typed at Settle up, all on
     // one screen. Settle up itself shows one group at a time, so this is the only place
@@ -1952,14 +1947,37 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         hasFloorStaff: hasAssignedStaff,
     });
 
-    // Floor and Review both fill the phone screen rather than shrink-wrapping their
-    // content. On Review that is what puts the floating save button INSIDE the card
-    // instead of leaving it hovering over the page below a short panel. Content still
-    // packs snug at the top - the panel grows, the rows do not spread out.
-    const isFullHeightStep = effectiveStep === "floor" || effectiveStep === "review";
+    // Every step fills the phone screen rather than shrink-wrapping its content. On
+    // Review that is what puts the floating save button INSIDE the card instead of
+    // leaving it hovering over the page below a short panel; on Settle up it is what
+    // lets the entry panel take the leftover height and scroll its own body. Content
+    // still packs snug at the top - the panel grows, the rows do not spread out.
+    const isFullHeightStep = effectiveStep === "floor"
+        || effectiveStep === "settle"
+        || effectiveStep === "review";
+
+    // The two money steps go one further than the floor plan: their height is FIXED to
+    // the viewport, not merely floored at it. A min-height alone leaves the column free
+    // to grow past the screen, so the page scrolls again and the inner `min-h-0` chain
+    // never gets a constrained height to shrink against - an inner box only becomes the
+    // scroller once something above it stops growing. What scrolls differs by step:
+    // Settle up scrolls the entry panel's BODY so the group's name and pool stay pinned,
+    // Review scrolls its whole column, because there the day rail and the editing strip
+    // are the only things worth keeping on screen. The floor plan keeps the min-height:
+    // it is meant to grow with a long roster.
+    //
+    // The height gate is not decoration. Everything above the entry panel - app bar, day
+    // rail, editing strip, pool summary, group switcher, panel head - is fixed chrome that
+    // costs roughly 400px before a single money field is drawn, and the floating action
+    // takes its clearance off the bottom. Below ~700px of viewport that leaves the panel
+    // body too short to show a field at all, so a short phone keeps the old behaviour and
+    // scrolls the page instead of squeezing the money into a slot.
+    const isViewportBoundStep = effectiveStep === "settle" || effectiveStep === "review";
 
     return (
-        <div className={"space-y-3 sm:space-y-4" + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]" : "")}>
+        <div className={"space-y-3 sm:space-y-4"
+            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]" : "")
+            + (isViewportBoundStep ? " [@media(max-width:560px)_and_(min-height:700px)]:h-[calc(100dvh-6rem)]" : "")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
                 shown; earlier/reachable steps are one tap away (order never forced). */}
             <DayRail steps={railSteps} onStepClick={goToStep} />
@@ -2008,12 +2026,18 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     cue (matching the workspace's accent frame) so it is clear you are in
                     the editing layer, not the read-only floor view. */}
                 {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
-                    <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
+                    <div className="sm:hidden flex items-center gap-2 px-3 py-1 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
                         {/* The raw ISO date used to sit at the right of this strip,
                             because the day was otherwise invisible on a phone. The app
                             bar now carries it, pinned and readable, so this strip is
-                            back to saying only what it is for: this shift is paid out. */}
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-warning)]">
+                            back to saying only what it is for: this shift is paid out.
+
+                            Sized down to a marker rather than a banner: it has to be
+                            unmissable before a re-save, not loud, and every pixel it
+                            spends comes straight off the money below it. It keeps the
+                            warning colour and the dot, which is what makes it read at
+                            this size - do not also shrink those. */}
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-warning)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
                             Closed shift · Paid out
                         </span>
@@ -2102,8 +2126,18 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                saved with the same bottom-right FAB as the floor plan. The bottom
                                padding is that FAB's clearance, so the last money row (the Contracts
                                disclosure) can always be scrolled clear of it - and it is not
-                               phone-only, because the FAB is `fixed` at every width. */
-                            <section className="space-y-4 pb-24">
+                               phone-only, because the FAB is `fixed` at every width.
+
+                               On a phone the section is a column that fills the screen: the summary
+                               line, the group switcher and the Review payouts row are flex-none, and
+                               the entry panel between them takes every remaining pixel and scrolls
+                               its own body. The column still stops short of the very bottom so the
+                               floating action has a band of its own - nothing here is ever under it,
+                               and so nothing here has to be scrolled out from under it - but the
+                               clearance is sized to the pill rather than to a scrolling page. The
+                               96px a scrolling page needed left a dead white band below the panel;
+                               the panel takes that height back. */
+                            <section className="space-y-4 pb-24 max-[560px]:pb-14 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
                                 {/* Team switcher: a compact horizontal strip above one fixed-height entry
                                     panel. Tapping a pill focuses that group; the strip scrolls sideways on
                                     phone so page height stays constant no matter how large the roster is.
@@ -2112,7 +2146,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                 <div className="flex items-center justify-between gap-3">
                                     <span className="inline-flex items-baseline gap-2">
                                         <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                            {groupStatusSummary.total} {groupStatusSummary.total === 1 ? "group" : "groups"} · Pool
+                                            {poolGroupSummary.total} {poolGroupSummary.total === 1 ? "group" : "groups"} · Pool
                                         </span>
                                         <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
                                             {fmtMoney(poolSummary.payoutPool)}
@@ -2152,7 +2186,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                     disabled fieldset switches every input/stepper off at once; Edit
                                     flips it back on in place. The group switcher above stays outside
                                     the fieldset so you can still page through each group while locked. */}
-                                <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0">
+                                <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
                                 <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
                                     {activeGroup.kind === "dining" ? (
                                         <>
@@ -2222,21 +2256,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                         busy={isSaving}
                                     />
                                 ) : (
-                                    <>
-                                        {/* The old full-width accent "Calculate Payouts →" primary lived
-                                            here. It no longer earns that weight: payouts recalculate from
-                                            the live inputs, so this button only NAVIGATES - and the rail
-                                            directly above already navigates to Review from any step. What
-                                            it keeps is worth one quiet row: the running take-home, so the
-                                            headline number is visible from the money screen without a
-                                            trip to Review. Secondary (outline) so the floating ✎ Edit
-                                            stays the only accent action on a locked Settle up. */}
-                                        <SettleReviewLink
-                                            ready={liveReview.ready}
-                                            staffTotal={liveReview.staffTotal}
-                                            onClick={() => setStep("review")}
-                                        />
-                                        <FloatingActions>
+                                    /* Nothing sits under the entry panel on a locked Settle up. The
+                                       full-width row that used to (see the note above
+                                       `ReviewNotReady`) only led to Review, which the rail above
+                                       already does, so the panel gets that height and the floating
+                                       ✎ Edit is the one action on the screen. */
+                                    <FloatingActions>
                                             <button
                                                 type="button"
                                                 onClick={handleEditSettle}
@@ -2245,7 +2270,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                                 ✎ Edit
                                             </button>
                                         </FloatingActions>
-                                    </>
                                 )}
                             </section>
                         ) : (
@@ -2257,8 +2281,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                "Fix on the Floor plan" jumps inside the rows below already do
                                that, from the place that explains why you would go. The bottom
                                padding is the floating save button's clearance, exactly as
-                               Settle up does it. */
-                            <section className="space-y-4 pb-24 sm:mx-auto sm:max-w-lg max-[560px]:flex-1">
+                               Settle up does it.
+
+                               On a phone this column IS the scroller: it takes the height
+                               left under the day rail and the editing strip and scrolls
+                               inside itself, so the rail stays reachable while the numbers
+                               are read. The bottom padding rides inside that scroll, which
+                               is what still lets the last row clear the floating save. */
+                            <section className="space-y-4 pb-24 sm:mx-auto sm:max-w-lg max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:overscroll-contain">
                                 {/* Why this shift cannot be saved, above the numbers it is about.
                                     Both blocks sit at the top of Review deliberately: a reason
                                     below the fold is the same dead end as no reason at all. */}
