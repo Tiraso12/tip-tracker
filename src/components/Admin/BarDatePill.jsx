@@ -82,21 +82,22 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
         );
     }
 
-    // Open the OS date picker on tap. showPicker() must run inside the tap
-    // gesture; fall back to focus+click for browsers without it.
+    // Open the OS date picker inside the tap gesture. WebKit exposes
+    // showPicker() but can return without presenting a date picker, while the
+    // input's native click does present it. Dispatch that click first, then
+    // retain showPicker() for engines that require the explicit picker API.
     const openPicker = () => {
         const el = inputRef.current;
         if (!el) return;
+        el.focus();
+        el.click();
         if (typeof el.showPicker === "function") {
             try {
                 el.showPicker();
-                return;
             } catch {
-                // fall through to the focus/click fallback
+                // The native click has already attempted to present the picker.
             }
         }
-        el.focus();
-        el.click();
     };
 
     return (

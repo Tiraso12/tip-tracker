@@ -885,6 +885,27 @@ test.describe("mobile floor polish", () => {
 test.describe("app bar at 320px", () => {
     test.use({ viewport: { width: 320, height: 568 } });
 
+    test("the date pill dispatches the native input click before showPicker", async ({ page }) => {
+        await login(page);
+
+        const input = page.locator('header input[type="date"]');
+        await input.evaluate((el) => {
+            window.__barDatePickerCalls = [];
+            el.focus = () => window.__barDatePickerCalls.push("focus");
+            el.click = () => window.__barDatePickerCalls.push("click");
+            el.showPicker = () => window.__barDatePickerCalls.push("showPicker");
+        });
+
+        await page.getByRole("button", { name: /^Shift date:/ }).click();
+
+        // Playwright does not run iOS Safari and cannot prove that its native
+        // picker appeared. This pins the activation order proven in the real
+        // simulator: WebKit's exposed showPicker() can silently do nothing, so
+        // the native input click must happen first.
+        await expect.poll(() => page.evaluate(() => window.__barDatePickerCalls))
+            .toEqual(["focus", "click", "showPicker"]);
+    });
+
     test("the editor shows the day being edited, as a label the bar cannot change mid-edit", async ({ page }) => {
         const date = "2026-05-24";
         await login(page);
