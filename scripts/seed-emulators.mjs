@@ -516,7 +516,7 @@ const seedUsers = await seedAuthUsers();
 await seedFirestore(seedUsers);
 
 console.log(`Seeded ${PROJECT_ID} emulators. Password for every account: ${PASSWORD}`);
-console.log(`  admin@example.com       legacy admin - the ONLY login that opens the workspace today`);
+console.log(`  admin@example.com       legacy admin - in PRODUCTION, the ONLY login that opens the workspace`);
 console.log(`  manager@example.com     manager tier via the pointer, no job title`);
 console.log(`  supervisor@example.com  captain tier: Supervisor ON`);
 console.log(`  captain@example.com     captain's title, Supervisor OFF`);
