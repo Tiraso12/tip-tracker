@@ -271,7 +271,44 @@ function PayoutTable({ summary }) {
     );
 }
 
-function DayPayoutPanel({ date, summary, status, loading }) {
+// Who last saved a settled day, and when. Both halves come off the shift doc -
+// `updatedBy` resolved to a name upstream, `updatedAt` - and neither is inferred:
+// this says "saved", not "settled", because `updatedAt` moves every time the day
+// is corrected and only the record of the LAST save is kept.
+//
+// Two ordinary states, and neither is dressed as a problem. A night saved before
+// these fields were recorded has no saver to name, so the line reads as the time
+// alone; a night with no timestamp at all shows nothing rather than an apology
+// for it. The people who reach this screen are the ones who ran the night, so
+// this is a quiet fact at the top of it, not a banner.
+function SavedByLine({ savedBy }) {
+    if (!savedBy?.at) return null;
+
+    const savedAt = new Date(savedBy.at);
+    if (Number.isNaN(savedAt.getTime())) return null;
+
+    // The full date, not just the clock: a correction can be saved days after
+    // the night it belongs to, and the heading above is the night's date.
+    const when = savedAt.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    });
+
+    return (
+        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+            {savedBy.name ? `Saved by ${savedBy.name} · ` : "Saved "}
+            {/* A long name at 320px wraps this line, and the break must not land
+                inside the timestamp - "8:00" on one line and "AM" on the next is
+                not a time. Held together, the wrap falls at the separator. */}
+            <span className="whitespace-nowrap">{when}</span>
+        </p>
+    );
+}
+
+function DayPayoutPanel({ date, summary, status, savedBy = null, loading }) {
     const displayDate = (() => {
         const [y, m, d] = date.split("-");
         return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
@@ -284,14 +321,20 @@ function DayPayoutPanel({ date, summary, status, loading }) {
 
     return (
         <Card className="!p-0">
-            <header className="flex items-center justify-between gap-3 px-6 py-5 border-b border-[var(--color-line)]">
-                <h3 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                    {displayDate}
-                </h3>
+            <header className="flex items-start justify-between gap-3 px-6 py-5 border-b border-[var(--color-line)] max-[560px]:px-4">
+                <div className="min-w-0">
+                    <h3 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
+                        {displayDate}
+                    </h3>
+                    {/* Only on a settled day: before the money is saved there is
+                        nothing to have saved, and the empty states below say so. */}
+                    {summary ? <SavedByLine savedBy={savedBy} /> : null}
+                </div>
                 {summary ? (
                     <Button
                         variant="secondary"
                         size="sm"
+                        className="shrink-0"
                         onClick={() => generateShiftReport(date, summary)}
                     >
                         Export PDF

@@ -13,6 +13,7 @@ import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 import { removeShiftAtomically } from "../../utils/closeoutPersistence";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
+import { fullNameFor } from "../../utils/userNames";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -121,9 +122,22 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // the orphaned-payouts stage; it is what the landing lists as "this is the
     // payroll data removing this would delete".
     const [dayOrphanedEntries, setDayOrphanedEntries] = useState([]);
+    // Who last saved this date, straight off the shift doc: `{ uid, at }`, either
+    // of which can be null on a night saved before those fields were recorded.
+    // The uid is turned into a name by the effect below.
+    const [daySavedBy, setDaySavedBy] = useState(null);
+    // `{ uid, name }`, never a bare name. The uid it was resolved FROM travels
+    // with it so the render that has already switched to a new day - the state
+    // updates land in separate renders - can never pair that day's timestamp
+    // with the previous day's saver. A name is only ever shown against its own
+    // uid; a mismatch shows no name, which is the honest state for one frame.
+    const [daySaver, setDaySaver] = useState(null);
     const [dayDataDate, setDayDataDate] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
     const dayFetchIdRef = useRef(0);
+    // uid -> display name, for the "saved by" line. Browsing a week of days is
+    // usually the same one or two people, so this keeps it to one read each.
+    const saverNameCacheRef = useRef(new Map());
     // Desktop sidebar only: rail-width (icons) vs full-width (icons + labels).
     const [navCollapsed, setNavCollapsed] = useState(true);
     const [removingShift, setRemovingShift] = useState(false);
@@ -217,6 +231,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                 });
                 setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
                 setDayOrphanedEntries([]);
+                setDaySavedBy({ uid: d.updatedBy || null, at: d.updatedAt || null });
             } else {
                 // The date has no shift (or Remove just deleted it): held-over
                 // content must not stand.
@@ -230,6 +245,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                 // the null status and the untouched blank-day landing.
                 setDayShiftStatus(payoutEntries.length > 0 ? ORPHANED_PAYOUTS_STATUS : null);
                 setDayOrphanedEntries(payoutEntries.length > 0 ? payoutEntries : []);
+                setDaySavedBy(null);
             }
         } catch (e) {
             console.error("Failed to fetch day payouts:", e);
@@ -238,6 +254,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             setDayLineup(null);
             setDayShiftStatus(null);
             setDayOrphanedEntries([]);
+            setDaySavedBy(null);
         } finally {
             // A superseded fetch leaves the newer one's state alone.
             if (fetchId === dayFetchIdRef.current) {
@@ -252,6 +269,43 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         setShiftSaved(false);
         fetchDayPayouts(selectedDate);
     }, [selectedDate, fetchDayPayouts]);
+
+    // `shifts/{date}.updatedBy` is a uid, and a uid is not an answer to "who
+    // saved this?" - so it is resolved to a name here, in one document read, and
+    // only when the field is set. Deliberately NOT part of fetchDayPayouts: the
+    // day's money must not wait on a name, so the line fills in behind it. A
+    // uid with no readable profile behind it (a deleted account) resolves to
+    // null and the panel simply drops the "by" half of the line.
+    const savedByUid = daySavedBy?.uid || null;
+    useEffect(() => {
+        if (!savedByUid) {
+            setDaySaver(null);
+            return undefined;
+        }
+
+        const cache = saverNameCacheRef.current;
+        if (cache.has(savedByUid)) {
+            setDaySaver({ uid: savedByUid, name: cache.get(savedByUid) });
+            return undefined;
+        }
+
+        let cancelled = false;
+        getDoc(doc(db, "users", savedByUid))
+            .then((snapshot) => {
+                const data = snapshot.exists() ? snapshot.data() : null;
+                const name = data ? (fullNameFor(data, null) || data.username || null) : null;
+                cache.set(savedByUid, name);
+                if (!cancelled) setDaySaver({ uid: savedByUid, name });
+            })
+            .catch((e) => {
+                // A name is the nicety here, not the record: the date and the
+                // money stand without it, so this never breaks the day.
+                console.error("Failed to resolve who saved the shift:", e);
+                if (!cancelled) setDaySaver({ uid: savedByUid, name: null });
+            });
+
+        return () => { cancelled = true; };
+    }, [savedByUid]);
 
     useEffect(() => {
         if (!shiftSaved) return undefined;
@@ -601,6 +655,12 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                 lineup={dayDataIsCurrent ? dayLineup : null}
                                 status={dayDataIsCurrent ? dayShiftStatus : null}
                                 orphanedEntries={dayDataIsCurrent ? dayOrphanedEntries : []}
+                                savedBy={dayDataIsCurrent && daySavedBy?.at
+                                    ? {
+                                        name: daySaver?.uid === daySavedBy.uid ? daySaver.name : null,
+                                        at: daySavedBy.at,
+                                    }
+                                    : null}
                                 loading={dayLoading || !dayDataIsCurrent}
                                 savedNotice={shiftSaved}
                                 onBuildFloor={() => enterEditor("floor")}
