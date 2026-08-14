@@ -12,7 +12,6 @@ import {
     canReadColleaguePay,
     canSetSupervisor,
     isPaidFromPool,
-    isStrandedSupervisor,
 } from "../../utils/permissions";
 import { ASSIGNABLE_ROLES, roleLabel, roleShortLabel } from "../../utils/roleLabels";
 import { firstNameFor, fullNameFor, tempStaffRosterNameFor } from "../../utils/userNames";
@@ -368,17 +367,10 @@ function ManagementActions({
     }
 
     // Who the switch may be OFFERED to is one named rule in permissions.js, asked
-    // here once. `stranded` is the escape hatch that keeps the rule safe: the
-    // switch is on for somebody the rule would not offer it to, so the control
-    // still renders - with its off action - and nobody is left holding rights the
-    // manager can no longer reach.
+    // here once and never re-derived from the job title in the markup.
     const supervisorOn = person.isSupervisor === true;
-    const stranded = isStrandedSupervisor(person);
     const isSelf = person.uid === viewerUid;
-    const showSupervisor = canManageSupervisor && !isSelf && (canOfferSupervisor(person) || stranded);
-    const strandedNote = person.role !== "captain"
-        ? "On for someone whose job title is not Captain. It can only be turned off."
-        : "On for an account that is not active. It can only be turned off.";
+    const showSupervisor = canManageSupervisor && !isSelf && canOfferSupervisor(person);
 
     const hasAnyAction = canAssign || canDeactivate || canApprove || showSupervisor;
     if (!hasAnyAction) return null;
@@ -420,11 +412,6 @@ function ManagementActions({
                     <div>
                         <p className="text-sm font-medium text-[var(--color-ink)]">Supervisor</p>
                         <p className="mt-0.5 text-xs text-[var(--color-ink-muted)]">Shift and roster access. Separate from job title and pay.</p>
-                        {stranded ? (
-                            <p className="mt-1.5 text-xs text-[var(--color-warning)]" data-testid="supervisor-stranded-note">
-                                {strandedNote}
-                            </p>
-                        ) : null}
                     </div>
                     <Button
                         variant={supervisorOn ? "secondary" : "primary"}

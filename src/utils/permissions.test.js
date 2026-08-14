@@ -19,7 +19,6 @@ import {
     canTransferManagerTier,
     hasOwnPayRecord,
     isPaidFromPool,
-    isStrandedSupervisor,
     tierLabel,
 } from "./permissions.js";
 
@@ -224,32 +223,13 @@ test("offering the switch is about the subject, setting it is about the actor", 
     assert.equal(canSetSupervisor(captain), false);
 });
 
-test("the switch on someone the rule would not offer it to is always reachable to turn OFF", () => {
-    // Existing data from before the rule, and a title changed out from under a
-    // live switch. Neither may strand somebody holding rights.
-    assert.equal(isStrandedSupervisor({ uid: "trustedUid", role: "server", status: "active", isSupervisor: true }), true);
-    assert.equal(isStrandedSupervisor({ uid: "captainUid", role: "captain", status: "inactive", isSupervisor: true }), true);
-
-    // The ordinary cases are not stranded: the switch is off, or it is on for
-    // exactly the person the rule would offer it to.
-    assert.equal(isStrandedSupervisor({ uid: "captainUid", role: "captain", status: "active", isSupervisor: true }), false);
-    assert.equal(isStrandedSupervisor({ uid: "serverUid", role: "server", status: "active" }), false);
-    assert.equal(isStrandedSupervisor({ uid: "serverUid", role: "server", status: "active", isSupervisor: false }), false);
-    assert.equal(isStrandedSupervisor(null), false);
-
-    // A stray value in the field was never a grant, so it is nothing to rescue.
-    for (const notTrue of ["true", 1, {}]) {
-        assert.equal(isStrandedSupervisor({ uid: "serverUid", role: "server", status: "active", isSupervisor: notTrue }), false);
-    }
-});
-
 test("the offer rule moves no rights at all", () => {
     // The whole point of gating the OFFER: a captain title still grants nothing,
     // and a non-captain holding the switch still holds the tier until it is
     // turned off. Both are the tier model, untouched.
     const active = { status: "active", managerUid: "managerUid" };
     assertTier({ uid: "captainUid", role: "captain", ...active }, NOTHING, "offered but switch off");
-    assertTier({ uid: "trustedUid", role: "server", isSupervisor: true, ...active }, CAPTAIN_ONLY, "stranded supervisor");
+    assertTier({ uid: "trustedUid", role: "server", isSupervisor: true, ...active }, CAPTAIN_ONLY, "switch on without the title");
 });
 
 test("the floor plan's worked-as role grants nothing", () => {

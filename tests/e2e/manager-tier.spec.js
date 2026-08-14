@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 // What each tier actually meets on screen once a manager is named. The rules
 // suites prove what the server allows and refuses; this suite is about the app.
@@ -438,6 +438,49 @@ test("today's admin is unchanged with no manager named at all", async ({ page })
     await expect(removeShift(page)).toBeVisible();
     await expect(payStatement(page)).toHaveCount(0);
     expect(await accountMenuItems(page)).toEqual(["Your account", "Team", "Log Out"]);
+});
+
+// The Supervisor control is offered to an active captain-titled person and to
+// nobody else, and it is safe to be that narrow only because the state it does
+// not render cannot be created: moving somebody off the captain title clears
+// their switch in the SAME write as the role change. A second, separate write
+// could fail on its own and leave a non-captain holding the tier, so the two
+// fields must land together. That is what the read-back below pins.
+test("the Supervisor switch is offered to captains only, and a title change clears it in the same write", async ({ page }) => {
+    await seedRestaurant();
+    await login(page, "manager");
+    await openTeamFromWorkspace(page);
+
+    // A server is never offered it, whatever else the manager may do to them.
+    await page.getByRole("button", { name: /Open Server One/ }).click();
+    await expect(page.getByTestId("management-actions")).toBeVisible();
+    await expect(page.getByTestId("supervisor-switch")).toHaveCount(0);
+    await page.getByRole("button", { name: "Back to team roster" }).click();
+
+    // A captain holding the switch is, and the only action is turning it off.
+    await page.getByRole("button", { name: /Open Captain Supervisor/ }).click();
+    await expect(page.getByTestId("supervisor-switch")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Turn off" })).toBeVisible();
+
+    // Move them off the captain title. The confirmation says the switch goes
+    // with it, because rights must not outlive the title that qualifies them.
+    await page.getByLabel("Job title").selectOption("server");
+    page.once("dialog", async (dialog) => {
+        expect(dialog.message()).toContain("Change Captain Supervisor's job title from Captain to Server?");
+        expect(dialog.message()).toContain("Their Supervisor switch will also be turned off");
+        await dialog.accept();
+    });
+    await page.getByRole("button", { name: "Save job title" }).click();
+
+    // Both fields, from one confirmed action - and the control is gone with the
+    // title, leaving nothing stranded to turn off.
+    await expect(page.getByTestId("person-identity")).toContainText("Server");
+    await expect(page.getByTestId("supervisor-switch")).toHaveCount(0);
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const profile = await getDoc(doc(context.firestore(), `users/${uids.supervisor}`));
+        expect(profile.data().role).toBe("server");
+        expect(profile.data().isSupervisor).toBe(false);
+    });
 });
 
 test("Supervisor off is an ordinary employee, whatever the job title says", async ({ page }) => {

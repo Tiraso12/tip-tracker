@@ -98,19 +98,18 @@ export function canSetSupervisor(user) {
 // line above refuses to do, and it is allowed to precisely because it decides
 // nothing about rights: `isCaptain` and every capability still answer from the
 // isSupervisor field plus the manager pointer alone, and the pay maths in
-// engine.js still owns role. Turning the switch OFF is deliberately not gated
-// on this - see isStrandedSupervisor - so a title change can never strand
-// somebody holding rights nobody can take back.
+// engine.js still owns role.
+//
+// This is the whole gate on the on-screen control - both directions - and it
+// strands nobody, because the two states it hides cannot hold live rights:
+//   - A non-captain supervisor cannot be created. Turning the switch on is
+//     gated here, and moving somebody off the captain title clears
+//     isSupervisor in the SAME write as the role change (TeamManagement.jsx).
+//   - A deactivated person holds nothing: isCaptain requires isActive, so the
+//     field is inert while an account is inactive, and reactivating restores
+//     the ordinary captain state where the control appears again.
 export function canOfferSupervisor(person) {
     return person?.role === "captain" && isActive(person);
-}
-
-// The switch is ON for somebody the rule above would no longer offer it to:
-// existing data from before the rule, or a title changed out from under it. The
-// manager must always be able to turn that off, so this is the one case where
-// the control renders with its off action alone.
-export function isStrandedSupervisor(person) {
-    return isSupervisor(person) && !canOfferSupervisor(person);
 }
 
 // Deactivate or reactivate an employee.
