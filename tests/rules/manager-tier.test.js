@@ -83,6 +83,12 @@ test.beforeEach(async () => {
         await setDoc(doc(db, "users/serverUid"), userDoc("serverUid", "server", "active", "Server One"));
         await setDoc(doc(db, "users/otherServerUid"), userDoc("otherServerUid", "server", "active", "Server Two"));
         await setDoc(doc(db, "users/pendingUid"), userDoc("pendingUid", "unassigned", "pending", "New Hire"));
+        // A legacy profile from before firstName was required: complete in every
+        // other way, but with nothing in the name field. See the settle-up test
+        // near the bottom of this file for what that costs.
+        await setDoc(doc(db, "users/namelessUid"), userDoc("namelessUid", "server", "active", "Server Legacy", {
+            firstName: "",
+        }));
         await setDoc(doc(db, "users/inactiveUid"), userDoc("inactiveUid", "unassigned", "inactive", "Former Manager"));
 
         await setDoc(doc(db, "shifts/" + CLOSED_DATE), validShift(CLOSED_DATE));
@@ -704,4 +710,45 @@ test("PROPOSED: the cutover state - the pointer names today's admin - takes noth
     await assertFails(updateDoc(doc(switchedOn, "users/inactiveUid"), { status: "active" }));
     await assertFails(updateDoc(doc(switchedOn, "users/serverUid"), { role: "captain" }));
     await assertFails(deleteDoc(doc(switchedOn, "shifts/" + OPEN_DATE)));
+});
+
+// The deploy-order hazard `validUserProfile()` carries, pinned so a future edit to
+// these rules cannot quietly re-arm it.
+//
+// The closeout batch stamps history flags on EVERY participant's user document, and
+// Firestore validates the merged result - so a legacy profile with no first name
+// makes every shift that person worked unsaveable, and because the batch is atomic
+// it takes the whole night down with it. Nothing in the failure names the person,
+// which is why ShiftEditorPanel now works out who it was and says so.
+//
+// The fix is operational, not a rules change: run
+// `npm run backfill:user-profile-names -- --apply` against a project BEFORE these
+// rules reach it.
+test("PROPOSED: a profile with no first name refuses the settle-up history flags", async () => {
+    const db = authedDb("supervisorUid");
+
+    // Same write, same actor, same shift - the only difference is whose profile.
+    await assertSucceeds(updateDoc(doc(db, "users/serverUid"), {
+        hasShiftHistory: true,
+        hasTipHistory: true,
+    }));
+    await assertFails(updateDoc(doc(db, "users/namelessUid"), {
+        hasShiftHistory: true,
+        hasTipHistory: true,
+    }));
+
+    // Not the captain tier and not the flags: the manager is refused identically,
+    // so no actor can settle a night that has this person on the floor.
+    await assertFails(updateDoc(doc(authedDb("managerUid"), "users/namelessUid"), {
+        hasShiftHistory: true,
+    }));
+
+    // Giving them a first name is what unblocks it - manager work, in Team management.
+    await assertSucceeds(updateDoc(doc(authedDb("managerUid"), "users/namelessUid"), {
+        firstName: "Legacy",
+    }));
+    await assertSucceeds(updateDoc(doc(db, "users/namelessUid"), {
+        hasShiftHistory: true,
+        hasTipHistory: true,
+    }));
 });

@@ -32,6 +32,9 @@ import {
 } from "./shiftEditorUtils";
 import { roleLabel } from "../../utils/roleLabels";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
+import { describeShiftBalance } from "../../utils/shiftBalance";
+import { describeSaveFailure, findNamelessParticipants } from "../../utils/saveFailure";
+import { getExternalFeeTotal } from "../../utils/payoutLedger";
 
 const NUMERIC_INPUT =
     // Money/number entry. On phones the field is a full 44px tap target and 16px
@@ -577,26 +580,38 @@ function FixJump({ label, onClick }) {
 }
 
 // One row of the Shift totals ledger. Label left, figure right, both on the same
-// baseline so the column of money reads straight down at a glance.
+// baseline so the column of money reads straight down at a glance. `tone="warn"`
+// is for a row that should stop a captain committing - it carries the warning
+// colour on BOTH the label and the figure, because a ledger scanned down its money
+// column would otherwise never register a colour change on the label alone.
 function LedgerRow({ label, sub, value, tone = "plain", testId }) {
+    const isTotal = tone === "total";
+    const isWarn = tone === "warn";
     return (
-        <div className={"flex items-baseline justify-between gap-3 " + (tone === "total" ? "pt-2" : "")}>
+        <div className={"flex items-baseline justify-between gap-3 " + (isTotal ? "pt-2" : "")}>
             <span className="min-w-0">
-                <span className={tone === "total"
+                <span className={isTotal
                     ? "text-[12px] font-semibold text-[var(--color-ink)]"
-                    : "text-[12px] text-[var(--color-ink-soft)]"}>
+                    : isWarn
+                        ? "text-[12px] font-semibold text-[var(--color-warning)]"
+                        : "text-[12px] text-[var(--color-ink-soft)]"}>
                     {label}
                 </span>
                 {sub ? (
-                    <span className="block text-[10.5px] leading-tight text-[var(--color-ink-muted)]">{sub}</span>
+                    <span className={"block text-[10.5px] leading-tight "
+                        + (isWarn ? "text-[var(--color-warning)]" : "text-[var(--color-ink-muted)]")}>
+                        {sub}
+                    </span>
                 ) : null}
             </span>
             <strong
                 data-testid={testId}
                 className={"shrink-0 font-mono tabular-nums "
-                    + (tone === "total"
+                    + (isTotal
                         ? "text-[15px] font-semibold text-[var(--color-ink)]"
-                        : "text-[12.5px] font-normal text-[var(--color-ink-soft)]")}>
+                        : isWarn
+                            ? "text-[12.5px] font-semibold text-[var(--color-warning)]"
+                            : "text-[12.5px] font-normal text-[var(--color-ink-soft)]")}>
                 {value}
             </strong>
         </div>
@@ -609,6 +624,7 @@ function CalculatedPayoutReview({
     barPoolEntered = 0,
     runnersFeeTransfer = 0,
     availableCash = 0,
+    balanceBlocked = false,
     warnings = [],
     moneyGroups = [],
     floorGroups = [],
@@ -637,20 +653,36 @@ function CalculatedPayoutReview({
         .reduce((sum, payout) => sum + getPayoutNonCashTotal(payout), 0);
     const diningTake = staffTotal - barTake - runnerTake;
 
-    // The pool and the staff take-home read as two competing "totals"; the gap is the
-    // house/door cut the engine holds back from the pool.
+    // The pool and the staff take-home read as two competing "totals"; the gap between
+    // them is a RESIDUAL, and it is not all house/door.
     //
-    // Deliberately NOT clamped at zero. This is a residual, so clamping a negative to
-    // $0.00 would print an equation that does not add up (pool − 0 ≠ take-home) - the
-    // exact "confident wrong number" this footer exists to catch. An over-distributed
-    // shift shows a negative house/door, which is the truth and is worth seeing.
+    // It used to be printed whole as "− House / door · leaves staff", which made that
+    // one row absorb any stranded money and state it as the house's cut - on the shift
+    // that exposed this the real door cut was $50 and the row read $150, quietly folding
+    // in $100 that went nowhere. Because the row was derived by subtraction the ledger
+    // always added up, so a real discrepancy could never surface here. What the house
+    // actually took and what reached nobody are two different facts, so they get two rows.
     //
-    // House/door is entirely DINING-side: every component (door CTP off regular sales,
-    // door GRT / PE coordinator / house off contract sales) is computed from team sales
+    // The genuine cut is the engine's own external-fee allocations (door CTP off
+    // regular sales, door GRT / PE coordinator / house off contract sales) - the same
+    // figure `reconcilePayoutLedger` strips out to find staff money. Everything left
+    // over after subtracting it is unaccounted for, and equals the shift's
+    // `overallBalance` less any stranded CASH (cash is on its own side of the books and
+    // never enters this non-cash pool ledger) - verified on the no-captain, empty-bar,
+    // cash-with-nobody and fully-balanced shifts.
+    //
+    // Deliberately NOT clamped at zero. Clamping a negative to $0.00 would print an
+    // equation that does not add up - the exact "confident wrong number" this footer
+    // exists to catch. An over-distributed shift shows a negative, which is the truth.
+    //
+    // House/door is entirely DINING-side: every component is computed from team sales
     // and subtracted from the dining pools only - `rawBarCTPPool` never sees it
     // (engine.js §2 PRE-DISTRIBUTIONS / §4 TEAM POOLS). So it belongs on the dining
     // side of any split ledger, never against the combined pool.
-    const houseDoor = (Number(poolAvailable) || 0) - staffTotal;
+    const houseDoorResidual = (Number(poolAvailable) || 0) - staffTotal;
+    const houseDoorCut = getExternalFeeTotal(result);
+    const unaccountedFor = houseDoorResidual - houseDoorCut;
+    const hasUnaccountedMoney = Math.abs(unaccountedFor) >= 0.005;
     // The bar's cut of the dining room's money: 1% of regular sales off the dining CTP
     // pool and 1% of contract sales off the dining GRT pool, both added straight onto
     // the bar pools. A real transfer BETWEEN the two sides, so it is a subtraction on
@@ -669,8 +701,11 @@ function CalculatedPayoutReview({
     const overallBalance = Number(result.balances?.overallBalance) || 0;
     const balanced = Math.abs(overallBalance) <= 0.05;
     // One row open at a time: the spot-check card is the point of the screen and must
-    // not be pushed off the top by two expanded blocks at once.
-    const [openRow, setOpenRow] = useState(null);
+    // not be pushed off the top by two expanded blocks at once. When the shift cannot
+    // be saved, Shift totals IS the point of the screen - the notice above says why and
+    // this is where the balance check lives - so it starts open rather than making the
+    // captain hunt for the number the notice just named.
+    const [openRow, setOpenRow] = useState(balanceBlocked ? "totals" : null);
     const subject = selectSpotCheckSubject(payoutRows);
     const floorHeadcount = floorGroups.reduce((sum, group) => sum + group.members.length, 0);
     const toggle = (row) => setOpenRow(current => (current === row ? null : row));
@@ -785,7 +820,16 @@ function CalculatedPayoutReview({
                             Dining room
                         </span>
                         <LedgerRow label="Pool entered" value={fmtMoney(diningPoolEntered)} />
-                        <LedgerRow label="− House / door" sub="leaves staff" value={fmtMoney(houseDoor)} />
+                        <LedgerRow label="− House / door" sub="leaves staff" value={fmtMoney(houseDoorCut)} testId="totals-house-door" />
+                        {hasUnaccountedMoney ? (
+                            <LedgerRow
+                                label="− Unaccounted for"
+                                sub={unaccountedFor > 0 ? "reaches nobody" : "paid out beyond the pool"}
+                                value={fmtMoney(unaccountedFor)}
+                                tone="warn"
+                                testId="totals-unaccounted"
+                            />
+                        ) : null}
                         <LedgerRow label="− Runners" sub="paid off the top" value={fmtMoney(runnerTake)} />
                         <LedgerRow label="− To the bar" sub="bar allocation" value={fmtMoney(barAllocation)} />
                         <LedgerRow label="+ Runners fee" sub="from the bar" value={fmtMoney(feeTransfer)} />
@@ -926,6 +970,83 @@ function ReviewNotReady({ blockers = [], hasFloorStaff = false, onFixMoney, onFi
     );
 }
 
+// Review when the numbers are complete but the shift cannot be saved: it does not
+// balance, and the write path throws on exactly that. This is the sibling of
+// `ReviewNotReady` for the one blocker that survives a complete calculation, and it
+// is paired with a disabled Confirm & Save - the button used to stay enabled on a
+// shift that could never save, so the only feedback was "Failed to save." on the
+// press, forever.
+//
+// It names the money rather than the invariant. `describeShiftBalance` reads the
+// engine's own per-pool residuals, so "Bar CTP $500.00 left over" is the shift's own
+// arithmetic, not a guess at it. The full balance check still lives in Shift totals
+// below, which opens by default in this state - the reason and the warning belong
+// together, so neither replaces the other.
+function SaveBlocked({ balance, onFixMoney, onFixFloor }) {
+    return (
+        <div role="alert" className="space-y-3">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] px-4 py-4">
+                <div className="flex items-baseline gap-2">
+                    <span aria-hidden="true" className="text-[var(--color-warning)]">⚠</span>
+                    <div className="space-y-1.5">
+                        <strong className="block text-sm text-[var(--color-ink)]">
+                            {balance.headline}
+                        </strong>
+                        <p className="text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
+                            {balance.body}
+                        </p>
+                        {balance.leftovers.length > 0 ? (
+                            <ul className="space-y-1.5 pt-0.5">
+                                {balance.leftovers.map(leftover => (
+                                    <li key={leftover.key} className="text-[12.5px] leading-snug text-[var(--color-ink)]">
+                                        <span className="font-semibold">{leftover.label}</span>
+                                        {" "}
+                                        <span className="font-mono tabular-nums">{fmtMoney(leftover.amount)}</span>
+                                        {" left over."}
+                                        {leftover.hint ? (
+                                            <span className="block text-[var(--color-ink-soft)]">{leftover.hint}</span>
+                                        ) : null}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+            <FixJump label="Fix in Settle up" onClick={onFixMoney} />
+            <FixJump label="Fix on the Floor plan" onClick={onFixFloor} />
+        </div>
+    );
+}
+
+// A save that was attempted and refused. Distinct from `SaveBlocked`, which is known
+// before the press; this is what came back from the write. `describeSaveFailure`
+// turns the machine error into an instruction, and the fallback branch still carries
+// the raw text so an unanticipated error is not swallowed into four words.
+function SaveFailed({ failure }) {
+    return (
+        <div role="alert" className="rounded-[var(--radius-md)] border border-[var(--color-danger)]/25 bg-[var(--color-danger-soft)] px-4 py-4">
+            <div className="flex items-baseline gap-2">
+                <span aria-hidden="true" className="text-[var(--color-danger)]">✕</span>
+                <div className="space-y-1.5">
+                    <strong className="block text-sm text-[var(--color-ink)]">{failure.headline}</strong>
+                    <p className="text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">{failure.body}</p>
+                    {failure.names?.length > 0 ? (
+                        <ul className="list-disc pl-4 text-[12.5px] leading-relaxed text-[var(--color-ink)] space-y-0.5">
+                            {failure.names.map(name => <li key={name}>{name}</li>)}
+                        </ul>
+                    ) : null}
+                    {failure.detail ? (
+                        <p className="font-mono text-[11px] leading-snug text-[var(--color-ink-soft)] break-words">
+                            {failure.detail}
+                        </p>
+                    ) : null}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // The floating action pair pinned to the bottom-right corner, shared by the Floor
 // plan and Settle up editors so both screens enter/exit edit identically. Cancel is
 // a neutral pill that never competes with the accent primary; each is its own 44px+
@@ -990,6 +1111,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     const [runners, setRunners] = useState([]);
     const [saveStatus, setSaveStatus] = useState("");
     const [validationMessages, setValidationMessages] = useState([]);
+    // What came back from a refused Confirm & Save, in captain-facing wording. Its own
+    // state rather than `validationMessages`, which Review deliberately suppresses -
+    // that suppression is why the failure reason used to reach nobody.
+    const [saveFailure, setSaveFailure] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [hasLoadedShift, setHasLoadedShift] = useState(false);
@@ -1238,6 +1363,21 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
             ...buildPayoutReview(result, mappedPayouts),
         };
     }, [hasLoadedShift, teams, barTeam, runners]);
+
+    // The one rule that blocks a save on a complete calculation. Derived on every
+    // render alongside `liveReview` so Review can withhold the save BEFORE the press
+    // instead of reporting it afterwards - `saveClosedShiftAtomically` re-runs the
+    // same check and throws, so anything this reports blocked would have failed.
+    const balanceReport = useMemo(() => (
+        liveReview.ready ? describeShiftBalance({ result: liveReview.result, teams, barTeam }) : null
+    ), [barTeam, liveReview, teams]);
+    const saveBlocked = Boolean(balanceReport && !balanceReport.balanced);
+
+    // A failure describes the shift as it was when it was refused. Any edit to the
+    // roster or the money makes that description stale, so it goes.
+    useEffect(() => {
+        setSaveFailure(null);
+    }, [teams, barTeam, runners]);
 
     const hasAssignedStaff = useMemo(() => (
         teams.some(team => team.members.length > 0) || barTeam.members.length > 0 || runners.length > 0
@@ -1634,18 +1774,23 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         if (isSaving) return;
         setValidationMessages([]);
         setSaveStatus("");
+        setSaveFailure(null);
         setSettleEditable(false);
         setStep("review");
     };
 
     const handleConfirmSave = async () => {
-        if (isSaving || !liveReview.ready) return;
+        // `saveBlocked` mirrors the reconciliation the write path re-runs and throws on,
+        // so this is the same refusal made before anything is attempted rather than
+        // after. The button is disabled in that state; this is the belt to its braces.
+        if (isSaving || !liveReview.ready || saveBlocked) return;
 
         const mappedPayoutsForFirebase = liveReview.mappedPayouts;
         const result = liveReview.result;
 
         setIsSaving(true);
         setSaveStatus("Saving…");
+        setSaveFailure(null);
         // Spans the write and the day refetch that onClose kicks off, so the
         // workspace progress bar reads as one wait rather than two.
         const endPendingAction = beginPendingAction();
@@ -1672,8 +1817,27 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
             onClose({ saved: true });
         } catch (e) {
             console.error(e);
-            setSaveStatus("Failed to save.");
-            setValidationMessages(["The shift could not be saved. Please try again."]);
+            // Deliberately no status line: it used to read "Failed to save." and that
+            // was the ENTIRE on-screen explanation. The alert below now carries the
+            // reason, and a four-word line above it would only say it worse twice.
+            setSaveStatus("");
+            // Who on this shift has no first name on their profile. firestore.rules
+            // `validUserProfile()` requires one, and the closeout batch updates every
+            // participant's user document, so a single nameless profile refuses the
+            // whole batch - previously with nothing on screen naming the person or the
+            // reason. Computed from data the editor already holds, only when a save has
+            // actually failed.
+            setSaveFailure(describeSaveFailure(e, {
+                namelessParticipants: findNamelessParticipants({
+                    participantUids: getShiftParticipantUids({
+                        teams,
+                        barTeam,
+                        runners,
+                        payouts: mappedPayoutsForFirebase,
+                    }).filter(uid => realEmployeeUids.has(uid)),
+                    employees: allEmployees || [],
+                }),
+            }));
             setIsSaving(false);
         } finally {
             endPendingAction();
@@ -2007,6 +2171,19 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                padding is the floating save button's clearance, exactly as
                                Settle up does it. */
                             <section className="space-y-4 pb-24 sm:mx-auto sm:max-w-lg max-[560px]:flex-1">
+                                {/* Why this shift cannot be saved, above the numbers it is about.
+                                    Both blocks sit at the top of Review deliberately: a reason
+                                    below the fold is the same dead end as no reason at all. */}
+                                {saveFailure ? <SaveFailed failure={saveFailure} /> : null}
+
+                                {liveReview.ready && saveBlocked ? (
+                                    <SaveBlocked
+                                        balance={balanceReport}
+                                        onFixMoney={() => setStep("settle")}
+                                        onFixFloor={() => setStep("floor")}
+                                    />
+                                ) : null}
+
                                 {liveReview.ready ? (
                                     <CalculatedPayoutReview
                                         review={liveReview}
@@ -2014,6 +2191,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                         barPoolEntered={poolSummary.bar.payoutPool}
                                         runnersFeeTransfer={poolSummary.runnerTransfer}
                                         availableCash={poolSummary.totalCash}
+                                        balanceBlocked={saveBlocked}
                                         warnings={liveReview.warnings}
                                         moneyGroups={reviewMoneyGroups}
                                         floorGroups={reviewFloorGroups}
@@ -2053,14 +2231,24 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                     It is only rendered when there is a complete calculation to
                                     commit - an incomplete Review offers the fix jumps instead,
                                     so there is never a save button over numbers that do not
-                                    exist yet. */}
+                                    exist yet.
+
+                                    Disabled, not withheld, when the shift does not balance. The
+                                    button used to stay enabled on a shift the write path could
+                                    never accept, so it invited pressing forever; removing it
+                                    outright would leave the captain wondering where the save
+                                    went. A greyed button beside the SaveBlocked notice above
+                                    says both things at once - it is there, and this is why it
+                                    will not go. A disabled button is never unexplained: the
+                                    notice renders under exactly the same condition. */}
                                 {liveReview.ready ? (
                                     <FloatingActions>
                                         <button
                                             type="button"
                                             onClick={handleConfirmSave}
-                                            disabled={isSaving}
-                                            className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
+                                            disabled={isSaving || saveBlocked}
+                                            title={saveBlocked ? balanceReport.headline : undefined}
+                                            className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60 disabled:active:scale-100"
                                         >
                                             {isSaving ? (
                                                 <>

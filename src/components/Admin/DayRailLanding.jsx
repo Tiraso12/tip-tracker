@@ -252,11 +252,18 @@ function OrphanedPayouts({ entries, onBuildFloor, onRemoveShift, removingShift }
                     <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
                         Leftover payouts, no shift
                     </h2>
+                    {/* The Remove danger zone below is manager-only - it renders only when
+                        `onRemoveShift` is passed - so the instruction to use it is gated on
+                        the same prop. A Captain was being told to remove the payouts below
+                        while the control was not on their screen at all; they get the half
+                        of the sentence they can actually act on. */}
                     <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
                         This date has payout records for {people} {plural(people, "person", "people")} but no
                         shift behind them - usually left by a data import or a save that did not finish.
-                        There is no shift here to review or edit. Remove the leftover payouts below, or
-                        build the floor plan to record this day properly.
+                        There is no shift here to review or edit.{" "}
+                        {onRemoveShift
+                            ? "Remove the leftover payouts below, or build the floor plan to record this day properly."
+                            : "Build the floor plan to record this day properly, or ask the manager to remove the leftover payouts."}
                     </p>
                 </header>
 

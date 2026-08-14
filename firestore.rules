@@ -193,6 +193,14 @@ service cloud.firestore {
         (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
     }
 
+    // DEPLOY ORDER HAZARD - read before shipping this rule to production.
+    // The `firstName.size() > 0` requirement below applies on UPDATE too, and
+    // Firestore validates the MERGED document. The closeout batch updates every
+    // participant's user doc (`closeoutPersistence.js` history flags), so a single
+    // legacy profile with no first name refuses the whole batch and makes EVERY
+    // shift that person worked unsaveable. Run
+    // `npm run backfill:user-profile-names -- --apply` against the target project
+    // BEFORE these rules reach it. Same family of hazard as docs/MANAGER-CHANGEOVER.md.
     function validUserProfile(uid) {
       return request.resource.data.keys().hasOnly([
           "uid",

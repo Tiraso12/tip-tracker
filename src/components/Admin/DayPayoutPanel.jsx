@@ -95,7 +95,14 @@ function AuditSummary({ summary }) {
                 />
                 <StatLine label="House" value={fmt(summary.allocations?.houseAllocation || 0)} />
                 <StatLine label="Coordinator" value={fmt(summary.allocations?.peCoordinatorGRT || 0)} />
-                <StatLine label="Runners Fee" value={fmt(summary.allocations?.totalRunnerPay || 0)} />
+                {/* "Runner Pay", NOT "Runners Fee". `totalRunnerPay` is the flat amount
+                    paid to each runner, taken off the top of the dining pool. The bar's
+                    "Runners Fee" at Settle up is a different number entirely - a transfer
+                    of CTP from the bar pool to the dining pool - and this row carried the
+                    same words, so the audit trail showed one name against two figures
+                    with no cue they differ. The Settle up label is unchanged; only this
+                    one moves, because pay to runners is what this unambiguously is. */}
+                <StatLine label="Runner Pay" value={fmt(summary.allocations?.totalRunnerPay || 0)} />
             </StatColumn>
 
             <StatColumn label="Balances">
