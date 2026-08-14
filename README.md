@@ -54,6 +54,8 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
   have no account yet, and when to merge them into a real account
 - [Naming the manager](docs/MANAGER-CHANGEOVER.md) - the one console write that makes the
   manager and captain tiers live, and how to reverse every part of it
+- [Before you deploy the Firestore rules](docs/DEPLOYING.md) - the profile name backfill that has
+  to run first, and what breaks at settle up if it does not
 
 ---
 
