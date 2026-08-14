@@ -18,7 +18,7 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 - Team builder - drag and drop on a desktop, tap-to-assign on a phone - putting employees on teams, the bar, or runners before the shift
 - Per-team sales, tips, gratuity, and cash entry — dining-room tips/gratuity/cash pool together house-wide and split by points across all dining employees, not per team
 - Contract shift support - the gratuity is what gets entered, and contract sales are derived from it at the fixed 26%
-- Captain override bonus - 1% of regular sales on the charged-tip side, 1% of contract sales on the gratuity side, split evenly across the captains on the floor
+- Captain override bonus - 1% of regular sales on the charged-tip side, 1% of contract sales on the gratuity side, split evenly across the captains on the floor; on a night nobody works as Captain it is not taken at all and the money stays in the pool the team splits
 - Runner flat-rate payouts ($85 default) deducted from the dining room pool
 - Bar-to-team transfer support for flexible nightly configurations
 

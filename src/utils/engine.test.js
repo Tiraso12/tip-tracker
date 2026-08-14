@@ -2,12 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateShift } from "./engine.js";
 import { RUNNER_FLAT_RATE } from "./constants.js";
+import { buildPayoutLedgerEntry, reconcilePayoutLedger } from "./payoutLedger.js";
+import { mapPayoutsForFirebase } from "../components/Admin/shiftEditorUtils.js";
 
 const r2 = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 const getOnly = (items) => {
     assert.equal(items.length, 1);
     return items[0];
+};
+
+// The save gate, run exactly the way Confirm & Save runs it: the engine result is
+// mapped to the Firebase payout map, each payout becomes a ledger entry, and
+// reconcilePayoutLedger passes judgement. `saveClosedShiftAtomically` throws before
+// writing anything when this is not ok, so a shift that fails here cannot be settled.
+const settleGate = (result) => {
+    const entries = Object.entries(mapPayoutsForFirebase(result)).map(([uid, payout]) =>
+        buildPayoutLedgerEntry({ date: "2026-08-14", uid, payout, operationId: "test-op" }),
+    );
+
+    return reconcilePayoutLedger({ summary: result, entries });
 };
 
 test("calculates a balanced role-point shift with bar CTP allocation", () => {
@@ -176,7 +190,7 @@ test("balances contract gratuity, bar pools, runner payout, and bar transfer", (
     );
 });
 
-test("skips bar allocations when no bar team exists, leaving only captain override stranded", () => {
+test("skips bar allocations when no bar team exists", () => {
     // With no bar team, barCTPAllocation and barGRTAllocation must be 0 so no money
     // is carved out for a bar that isn't working the shift.
     const result = calculateShift({
@@ -195,9 +209,7 @@ test("skips bar allocations when no bar team exists, leaving only captain overri
     assert.equal(result.allocations.barCTPAllocation, 0);
     assert.equal(result.allocations.barGRTAllocation, 0);
     assert.equal(result.balances.poolBalances["Bar CTP"], 0);
-    // captainOverrideCTP is still carved out (100) but no captain to receive it — known limitation
-    assert.equal(result.balances.poolBalances["Cap Ov CTP"], 100);
-    assert.equal(result.balances.overallBalance, 100);
+    assert.equal(result.balances.overallBalance, 0);
 });
 
 test("pure contract/buyout shift: no regular sales, no bar team, runners paid from GRT", () => {
@@ -326,6 +338,190 @@ test("total excludes cash for every role, dining and bar alike", () => {
         result.adjustedPools.adjustedTeamCashPool,
     );
     assert.equal(result.balances.overallBalance, 0);
+});
+
+// THE CAPTAIN OVERRIDE, on a night nobody works as Captain.
+//
+// The 1% is not taken at all: it stays in the dining pools the team splits rather
+// than going to the house. Before this it was carved out regardless, paid to nobody,
+// and the resulting imbalance made the shift impossible to settle - the ledger
+// reconciliation throws, so a one-server night could not be closed at all. These
+// three tests pin the money AND the settle gate, because the balance was only ever
+// half the failure.
+test("no captain on the floor: the CTP override is not taken and the whole pool is paid out", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [{ uid: "server-1", name: "Server One", role: "server" }],
+                pools: { sales: 10000, tips: 1000, cash: 0, gratuity: 0 },
+                contracts: [],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+    });
+
+    assert.equal(result.allocations.captainOverrideCTP, 0);
+    assert.equal(result.balances.poolBalances["Cap Ov CTP"], 0);
+    assert.deepEqual(result.validations, []);
+    assert.equal(result.balances.overallBalance, 0);
+
+    // $1,000 of tips, less the 0.5% door on $10,000. Nothing else leaves.
+    const server = getOnly(result.payouts.roleGrouped.servers);
+    assert.equal(result.allocations.doorCTPAllocation, 50);
+    assert.equal(server.ctp, 950);
+    assert.equal(server.total, 950);
+
+    assert.deepEqual(settleGate(result).messages, []);
+});
+
+test("no captain on a contract night: the GRT override is not taken either", () => {
+    // 2600 of contract gratuity implies 10000 of contract sales at the fixed 26%.
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [
+                    { uid: "server-1", name: "Server One", role: "server" },
+                    { uid: "back-1", name: "Back One", role: "back" },
+                ],
+                pools: { sales: 0, tips: 0, cash: 0, gratuity: 0 },
+                contracts: [{ gratuity: 2600 }],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+    });
+
+    assert.equal(result.allocations.captainOverrideGRT, 0);
+    assert.equal(result.balances.poolBalances["Cap Ov GRT"], 0);
+    assert.equal(result.balances.overallBalance, 0);
+
+    // The house-side allocations are untouched: door 2%, PE coordinator 2%, house 3%
+    // of contract sales still come off, and only the captain's 1% stays with staff.
+    assert.equal(result.allocations.doorGRTAllocation, 200);
+    assert.equal(result.allocations.peCoordinatorGRT, 200);
+    assert.equal(result.allocations.houseAllocation, 300);
+    assert.equal(result.adjustedPools.adjustedTeamGRTPool, 1900);
+
+    const server = getOnly(result.payouts.roleGrouped.servers);
+    const back = getOnly(result.payouts.roleGrouped.backs);
+    assert.equal(r2(server.grt + back.grt), 1900);
+
+    assert.deepEqual(settleGate(result).messages, []);
+});
+
+// The other half of the same guarantee: skipping the carve-out must not move a
+// single cent on a night that DOES have a captain. Every figure below is the value
+// this shift produced before the skip existed.
+test("with a captain on the floor: both overrides are taken and every payout is unchanged", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [
+                    { uid: "captain-1", name: "Captain One", role: "captain" },
+                    { uid: "server-1", name: "Server One", role: "server" },
+                    { uid: "back-1", name: "Back One", role: "back" },
+                ],
+                pools: { sales: 10000, tips: 1000, cash: 200, gratuity: 300 },
+                contracts: [{ gratuity: 1300 }],
+            },
+        ],
+        barTeam: {
+            members: [{ uid: "bar-1", name: "Bar One", role: "bartender", points: 1 }],
+            pools: { sales: 2000, tips: 200, gratuity: 50, runners: 25 },
+        },
+        runners: [{ uid: "runner-1", name: "Runner One", role: "runner", payoutAmount: 85 }],
+    });
+
+    // Regular sales base is 5000 (10000 less the 5000 implied by 1300 of contract
+    // gratuity), so the CTP override is 50; contract sales are 5000, so the GRT
+    // override is 50 as well.
+    assert.deepEqual(result.allocations, {
+        barCTPAllocation: 50,
+        doorCTPAllocation: 25,
+        captainOverrideCTP: 50,
+        barGRTAllocation: 50,
+        doorGRTAllocation: 100,
+        peCoordinatorGRT: 100,
+        captainOverrideGRT: 50,
+        houseAllocation: 150,
+        totalRunnerPay: 85,
+    });
+
+    assert.deepEqual(result.validations, []);
+    assert.equal(result.balances.overallBalance, 0);
+    assert.equal(result.balances.totalAvailable, 3050);
+    assert.equal(result.balances.totalDistributed, 3050);
+
+    const captain = getOnly(result.payouts.roleGrouped.captains);
+    const server = getOnly(result.payouts.roleGrouped.servers);
+    const back = getOnly(result.payouts.roleGrouped.backs);
+    const bartender = getOnly(result.payouts.roleGrouped.bar);
+    const runner = getOnly(result.payouts.roleGrouped.runners);
+
+    assert.deepEqual(
+        [captain.ctp, captain.grt, captain.cash, captain.total],
+        [360.48, 488.1, 76.19, 848.58],
+    );
+    assert.deepEqual(
+        [server.ctp, server.grt, server.cash, server.total],
+        [310.48, 438.1, 76.19, 748.58],
+    );
+    assert.deepEqual(
+        [back.ctp, back.grt, back.cash, back.total],
+        [194.04, 273.8, 47.62, 467.84],
+    );
+    assert.deepEqual(
+        [bartender.ctp, bartender.grt, bartender.cash, bartender.total],
+        [225, 100, 0, 325],
+    );
+    assert.equal(runner.payoutAmount, 85);
+
+    // The captain is paid the whole override on both sides: $50 of CTP and $50 of
+    // GRT above the server, who carries the same 4 points.
+    assert.equal(r2(captain.ctp - server.ctp), 50);
+    assert.equal(r2(captain.grt - server.grt), 50);
+
+    assert.deepEqual(result.balances.poolBalances, {
+        "Dining Room CTP": 0,
+        "Team CASH": 0,
+        "Team GRT": 0,
+        "Bar CTP": 0,
+        "Bar GRT": 0,
+        "Cap Ov CTP": 0,
+        "Cap Ov GRT": 0,
+    });
+
+    assert.deepEqual(settleGate(result).messages, []);
+});
+
+// Skipping the carve-out must not have quietly become a floor under the pools. A
+// contract-only night pays its runners out of CTP that has no charged tip behind it,
+// so the dining CTP pool goes negative and that is the system working - it nets out
+// across the week against the positive nights. It must still be reachable, and the
+// shift must still settle.
+test("a no-captain contract night can still drive the dining CTP pool negative", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [{ uid: "server-1", name: "Server One", role: "server" }],
+                pools: { sales: 0, tips: 0, cash: 0, gratuity: 0 },
+                contracts: [{ gratuity: 2600 }],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [{ uid: "runner-1", name: "Runner One", role: "runner", payoutAmount: 102 }],
+    });
+
+    assert.match(result.validations.join("\n"), /Dining Room CTP pool is negative/);
+    assert.ok(result.adjustedPools.adjustedTeamCTPPool < 0);
+    assert.ok(getOnly(result.payouts.roleGrouped.servers).ctp < 0);
+    assert.equal(result.balances.overallBalance, 0);
+    assert.deepEqual(settleGate(result).messages, []);
 });
 
 // THE OTHER CONTRACT: the "Supervisor" switch is access, never money.

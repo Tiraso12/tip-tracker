@@ -74,6 +74,13 @@ export function calculateShift(inputs) {
     const barGRT = Math.max(0, n(config.barTeam.pools?.gratuity));
     const barToTeamTransfer = Math.max(0, n(config.barTeam.pools?.runners));
     const hasBarTeam = config.barTeam.members.length > 0;
+    // The same question on the dining side, asked here so section 2 can skip the
+    // captain override when nobody works the role. `role` is the job worked that
+    // night, matched exactly the way section 9 builds activeCaptains - the two must
+    // agree, or money is carved out for a captain the payout loop never finds.
+    const hasCaptainOnFloor = config.teams.some((t) =>
+        (t.members || []).some((m) => m.role === 'captain')
+    );
 
     // If new format is active, firmly ignore global inputs to prevent ghost totals
     const baseTeamCTP = totalTeamCTP;
@@ -119,13 +126,23 @@ export function calculateShift(inputs) {
     // override 1%). The same name carries a different rate on each side - "door" is
     // 0.5% here and 2% below - so quoting one rate per allocation is always wrong.
     //
+    // Two allocations are conditional on who is actually on the floor, for the same
+    // reason: money carved out for a role nobody works is paid to nobody, and the
+    // shift then cannot be settled at all (section 11's balance check is enforced as
+    // a hard throw by reconcilePayoutLedger on save).
+    //
     // Bar allocations only apply when a bar team with members is active. When bartenders
     // work a contract shift as captains in a regular team they are not in barTeam, so
     // hasBarTeam = false and these allocations are skipped to avoid stranded pool money.
+    //
+    // The captain override is skipped the same way when no one works as Captain. The
+    // 1% then simply stays in the dining pools the team splits - staff keep it, it does
+    // not go to the house. That is the captain's ruling, made 2026-08-14; a one-server
+    // night was unclosable before it.
     const barCTPAllocation = hasBarTeam ? r2(regularSalesBase * 0.01) : 0;
     const doorCTPAllocation = r2(regularSalesBase * 0.005);
-    const captainOverrideCTP = r2(regularSalesBase * 0.01);
-    const captainOverrideGRT = r2(contractSales * 0.01);
+    const captainOverrideCTP = hasCaptainOnFloor ? r2(regularSalesBase * 0.01) : 0;
+    const captainOverrideGRT = hasCaptainOnFloor ? r2(contractSales * 0.01) : 0;
     const barGRTAllocation = hasBarTeam ? r2(contractSales * 0.01) : 0;
     const doorGRTAllocation = r2(contractSales * 0.02);
     const peCoordinatorGRT = r2(contractSales * 0.02);
@@ -231,13 +248,19 @@ export function calculateShift(inputs) {
 
 
     // 9. CAPTAIN OVERRIDE
-    // Known quirk, deliberately not patched over: the override is carved out of the
-    // pools above whether or not anyone on the floor is a captain. With no captain,
-    // splitCTP/splitGRT stay 0, so that money is distributed to nobody - it shows up
-    // as a non-zero "Cap Ov CTP"/"Cap Ov GRT" pool balance AND trips the balance
-    // warning in section 11, which is the shift telling the truth about stranded
-    // money rather than a bug in the check. Any fix belongs here, at the carve-out,
-    // not in the balance check that reports it.
+    // The split below is only ever reached with a captain on the floor, because
+    // section 2 carves nothing out without one (hasCaptainOnFloor). Both sides of
+    // the pair therefore stay 0 on a no-captain night: nothing deducted, nothing to
+    // hand out, "Cap Ov CTP"/"Cap Ov GRT" balance at 0 and the shift settles.
+    //
+    // This used to be carved out unconditionally and the resulting stranded money was
+    // defended as the shift telling the truth. That held while it was only a warning;
+    // it stopped holding when reconcilePayoutLedger began throwing on the same
+    // condition, which made a night with no captain impossible to close.
+    //
+    // The captainCount guard below is kept even so - it is the divide-by-zero guard,
+    // and it keeps this block correct on its own terms rather than only by what
+    // section 2 happens to do.
     const captainOverrideCTPPool = captainOverrideCTP;
     const captainOverrideGRTPool = captainOverrideGRT;
 
