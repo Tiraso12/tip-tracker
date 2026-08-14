@@ -10,8 +10,10 @@ import {
     isNegativeMoney,
     isRunnersFeeOverridden,
     selectNegativePayouts,
+    selectNegativePools,
     selectSpotCheckSubject,
     validateShiftInputs,
+    withoutNegativePoolWarnings,
 } from "./shiftEditorUtils.js";
 
 test("team display pool excludes cash while keeping cash separate", () => {
@@ -211,5 +213,51 @@ test("cash never decides whether a night is negative", () => {
     assert.deepEqual(
         selectNegativePayouts([{ uid: "server-1", name: "Server One", tips: -50, gratuity: 0, cash: 200 }]),
         [{ uid: "server-1", name: "Server One", role: undefined, total: -50 }],
+    );
+});
+
+// The pool side of the negative-night notice. It exists because a negative POOL and a
+// negative PERSON are different conditions: the notice used to look only at people, and
+// the engine's red "…CTP pool is negative" was the only cue on a night where the pool
+// went under but every share still landed positive. Removing that red line is only safe
+// while this keeps finding those nights.
+test("a negative CTP pool is reported even when nobody is recorded at a negative", () => {
+    assert.deepEqual(
+        selectNegativePools({ adjustedBarCTPPool: -700, adjustedTeamCTPPool: 1200 }),
+        [{ key: "adjustedBarCTPPool", label: "Bar CTP", total: -700 }],
+    );
+});
+
+test("both CTP pools can be negative at once and both are named", () => {
+    assert.deepEqual(
+        selectNegativePools({ adjustedBarCTPPool: -12.5, adjustedTeamCTPPool: -3 }),
+        [
+            { key: "adjustedBarCTPPool", label: "Bar CTP", total: -12.5 },
+            { key: "adjustedTeamCTPPool", label: "Dining Room CTP", total: -3 },
+        ],
+    );
+});
+
+test("a missing adjusted pool is not a negative one", () => {
+    // Ledger docs written before `adjustedPools` existed have no figure to judge, and an
+    // absent key must read as "nothing to say" rather than as a zero.
+    assert.deepEqual(selectNegativePools({}), []);
+    assert.deepEqual(selectNegativePools(undefined), []);
+    assert.deepEqual(selectNegativePools({ adjustedBarCTPPool: 0 }), []);
+});
+
+test("only the negative-pool warnings are dropped from a warnings list", () => {
+    // The negative RUNNER PAYOUT warning is a different condition and stays in red.
+    assert.deepEqual(
+        withoutNegativePoolWarnings([
+            "Warning: Bar CTP pool is negative.",
+            "Warning: Runner Runner One has a negative payout amount.",
+            "Warning: Dining Room CTP pool is negative.",
+            "Warning: Positive bar pools exist but there are no bar points assigned.",
+        ]),
+        [
+            "Warning: Runner Runner One has a negative payout amount.",
+            "Warning: Positive bar pools exist but there are no bar points assigned.",
+        ],
     );
 });

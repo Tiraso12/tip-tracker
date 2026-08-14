@@ -33,6 +33,7 @@ import {
     toMoney,
     validateShiftInputs,
     validateTeamSetup,
+    withoutNegativePoolWarnings,
 } from "./shiftEditorUtils";
 import { roleLabel } from "../../utils/roleLabels";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
@@ -705,6 +706,9 @@ function CalculatedPayoutReview({
     onFixFloor,
 }) {
     const { result, payoutRows, staffTotal } = review;
+    // See `withoutNegativePoolWarnings`: display-only, and the count beside "Shift totals"
+    // has to be filtered with the list or the row promises a warning that is not inside.
+    const visibleWarnings = withoutNegativePoolWarnings(warnings);
 
     // ---- The three genuinely separate destinations the engine pays into. ----
     // Split straight off `payoutRows` (the same rows the spot-check card reads), so
@@ -788,8 +792,11 @@ function CalculatedPayoutReview({
 
             {/* Directly under the person the screen is about, and deliberately NOT up
                 with the blockers above: a negative payout is a true state of the night,
-                not a reason the shift will not save. It never withholds the save. */}
-            <NegativeNightNotice payoutRows={payoutRows} />
+                not a reason the shift will not save. It never withholds the save.
+                It reports the negative POOLS as well as the negative people, which is
+                what let the engine's "…CTP pool is negative" strings come out of the
+                red warnings row below. */}
+            <NegativeNightNotice payoutRows={payoutRows} adjustedPools={result?.adjustedPools} />
 
             {/* Every number typed at Settle up, all groups on one screen. Settle up is a
                 one-group-at-a-time switcher, so scanning for a typo there means tapping
@@ -873,11 +880,11 @@ function CalculatedPayoutReview({
                 a floor-sounding label over any combined figure. */}
             <ReviewDisclosure
                 title="Shift totals"
-                meta={warnings.length > 0
+                meta={visibleWarnings.length > 0
                     ? (
                         <span className="inline-flex items-center gap-1.5 text-[var(--color-warning)]">
                             <span aria-hidden="true">⚠</span>
-                            {warnings.length} {warnings.length === 1 ? "warning" : "warnings"}
+                            {visibleWarnings.length} {visibleWarnings.length === 1 ? "warning" : "warnings"}
                         </span>
                     )
                     : <>paid out <span className="font-mono tabular-nums">{fmtMoney(staffTotal)}</span></>}
@@ -956,10 +963,13 @@ function CalculatedPayoutReview({
 
                     {/* The engine's own warnings. The numbers are complete (or this screen
                         would be showing ReviewNotReady instead), but these are the things
-                        that should stop a captain from committing. */}
-                    {warnings.length > 0 ? (
+                        that should stop a captain from committing - which is exactly why
+                        the two negative-CTP-pool lines are not among them: they describe a
+                        night that is correct and saveable, and the notice above says so in
+                        neutral words. Nothing else is filtered. */}
+                    {visibleWarnings.length > 0 ? (
                         <ul className="rounded-[var(--radius-sm)] border border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)] px-3 py-2.5 space-y-1 text-[11.5px] leading-snug text-[var(--color-ink)]">
-                            {warnings.map((warning, index) => (
+                            {visibleWarnings.map((warning, index) => (
                                 <li key={`${warning}-${index}`} className="flex gap-1.5">
                                     <span aria-hidden="true" className="text-[var(--color-warning)]">⚠</span>
                                     <span>{warning}</span>

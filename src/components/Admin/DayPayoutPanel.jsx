@@ -3,6 +3,7 @@ import { generateShiftReport } from "../../utils/pdfExport";
 import { Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
 import { rolePluralLabel, roleShortLabel } from "../../utils/roleLabels";
 import NegativeNightNotice from "./NegativeNightNotice";
+import { withoutNegativePoolWarnings } from "./shiftEditorUtils";
 
 const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 // singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
@@ -333,6 +334,7 @@ function DayPayoutPanel({ date, summary, status, savedBy = null, loading }) {
             day: "numeric",
         });
     })();
+    const visibleValidations = withoutNegativePoolWarnings(summary?.validations || []);
 
     return (
         <Card className="!p-0">
@@ -403,23 +405,31 @@ function DayPayoutPanel({ date, summary, status, savedBy = null, loading }) {
                         comparing the app against the restaurant's spreadsheet, which lives in
                         the pre-save Review spot check. */}
 
-                    {/* A saved night that records someone at a negative amount says so
-                        in plain words, above the table where the minus sign appears.
-                        It sits ABOVE the Warnings block on purpose: the engine's own
-                        "Bar CTP pool is negative" lands in that block in danger red,
-                        and read alone it frames a correct night as a fault. This is the
-                        explanation that makes it read as what it is - see the notice
-                        itself for why a negative is right and how it nets out weekly. */}
-                    <NegativeNightNotice payoutRows={allPayoutRows(summary)} />
+                    {/* A saved night that records a negative amount says so in plain
+                        words, above the table where the minus sign appears - see the
+                        notice itself for why a negative is right and how it nets out
+                        weekly. It now reports the negative POOLS too, which is what let
+                        the engine's "…CTP pool is negative" strings come out of the red
+                        Warnings block below: the same correct night was being stated
+                        twice, the second time in the vocabulary of a fault. */}
+                    <NegativeNightNotice
+                        payoutRows={allPayoutRows(summary)}
+                        adjustedPools={summary.adjustedPools}
+                    />
 
-                    {/* Validations */}
-                    {summary.validations && summary.validations.length > 0 ? (
+                    {/* Validations, minus the two negative-CTP-pool lines the notice
+                        above now states neutrally. Filtered for DISPLAY only: they are
+                        still in `summary.validations` on the saved document and the
+                        engine still emits them. Everything else this block ever carried
+                        it still carries, the negative RUNNER PAYOUT warning included -
+                        that is a different condition and belongs in red. */}
+                    {visibleValidations.length > 0 ? (
                         <div className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
                             <h4 className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-2">
                                 Warnings
                             </h4>
                             <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
-                                {summary.validations.map((v, i) => (
+                                {visibleValidations.map((v, i) => (
                                     <li key={i}>{v}</li>
                                 ))}
                             </ul>

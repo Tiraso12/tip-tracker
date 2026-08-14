@@ -179,6 +179,44 @@ export function selectNegativePayouts(payoutRows = []) {
         }));
 }
 
+// Which CTP pools this night drove below zero, read off the engine's own adjusted pools
+// (`engine.js` §6) rather than re-derived here.
+//
+// This is a SEPARATE question from `selectNegativePayouts` above and the two do not
+// imply each other. A pool is negative before it is split; a person's recorded amount
+// nets that night's CTP against its GRT. On a contract-heavy night the CTP pool goes
+// under while every share still lands positive, so the pool is the only thing negative -
+// and the notice would have said nothing at all if it only ever looked at people. That
+// blind spot is why these figures are surfaced instead of the engine's red warning
+// strings, which said the same fact in the vocabulary of a fault.
+//
+// `engine.js` emits those strings regardless and still does: they are part of a saved
+// summary and are pinned by its tests. This only decides what a screen shows.
+const NEGATIVE_POOL_FIELDS = [
+    { key: "adjustedBarCTPPool", label: "Bar CTP" },
+    { key: "adjustedTeamCTPPool", label: "Dining Room CTP" },
+];
+
+export function selectNegativePools(adjustedPools = {}) {
+    return NEGATIVE_POOL_FIELDS
+        // Absent is not negative. Ledger docs written before `adjustedPools` existed have
+        // no figure to judge, and a missing key must read as "nothing to say" rather than
+        // as a zero that could never be below it.
+        .filter(({ key }) => adjustedPools?.[key] !== undefined && toMoney(adjustedPools[key]) < 0)
+        .map(({ key, label }) => ({ key, label, total: toMoney(adjustedPools[key]) }));
+}
+
+// The engine's two negative-pool warnings, dropped from a list bound for a red
+// "Warnings" block. They are not deleted from the summary and nothing stops being
+// checked - `NegativeNightNotice` states the same fact in neutral words, and a correct
+// night was being reported twice, once as a fault. Every other validation is untouched,
+// including the negative RUNNER PAYOUT warning, which is a different condition.
+const NEGATIVE_POOL_WARNING = /CTP pool is negative/i;
+
+export function withoutNegativePoolWarnings(validations = []) {
+    return validations.filter(validation => !NEGATIVE_POOL_WARNING.test(String(validation)));
+}
+
 export function validateShiftInputs({ teams, barTeam, runners }) {
     const errors = [];
     const assignedCount = teams.reduce((sum, team) => sum + team.members.length, 0)
