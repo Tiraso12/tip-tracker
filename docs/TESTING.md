@@ -39,13 +39,9 @@ npm run dev:local
 
 This starts `firebase emulators:exec` for Auth and Firestore, runs `scripts/seed-emulators.mjs`, then starts Vite in test mode on `127.0.0.1`. The seed script refuses to run unless both emulator host variables are present and the Firebase project id starts with `demo-`.
 
-Seeded local credentials:
+The seed prints every login it created, one per access tier, and they all share the password `Password123!`. Read that block rather than a copy here - `scripts/seed-emulators.mjs` is what defines them.
 
-```text
-admin@example.com / Password123!
-```
-
-Seeded data includes active employees across roles, one pending user, one inactive user, one temporary staff profile, one setup draft shift, and one closed shift with per-user tip records.
+Seeded data includes active employees across roles, a manager named by the `restaurant/config` pointer, captains with the Supervisor switch on and off, one pending user, one inactive user, one temporary staff profile, one setup draft shift, one closed shift with per-user tip records, and a worked fortnight ending yesterday so every paid account opens on a real pay statement.
 
 ## Commands
 
@@ -103,30 +99,19 @@ the auth REST calls read `FIREBASE_AUTH_EMULATOR_HOST`.
 
 ## What The Tests Cover
 
-The Firestore rules tests cover:
+Each suite states its own scope; read the file rather than a list here, which only goes stale.
 
-- logged-out access boundaries
-- employee access to only their own profile and tip records
-- employee write denial for payouts, shifts, temporary staff, and role changes
-- safe pending/unassigned self-registration defaults
-- username mapping creation and overwrite protection
-- admin access for user, shift, payout, and temporary staff operations
+Firestore rules (`tests/rules/`), one emulator, one `projectId` per file:
 
-The first Playwright test covers:
+- `firestore.rules.test.js` - logged-out boundaries, own-profile and own-tips access, write denial, self-registration defaults, username mapping
+- `current-state.test.js` - production today: `role: "admin"` is the only live authority while no manager pointer exists
+- `manager-tier.test.js` - both authorities live at once once a manager is named
+- `profile-self-service.test.js` - the field-scoped writes a person may make to their own profile
 
-- fake admin login through the UI
-- selecting a shift date
-- assigning employees to a dining team
-- saving a setup draft
-- entering closeout money
-- calculating payouts
-- confirming the closed shift
-- verifying shift and employee tip documents in the emulator
+Playwright (`tests/e2e/`), each driving the real UI against the emulators:
 
-The second Playwright test covers editing a closed, paid-out shift's roster:
-
-- reopening a closed shift and confirming the closed-shift roster-edit warning
-- asserting the bare Save Team Setup overwrite is not offered on a closed shift
-- removing an employee and re-saving through Calculate Payouts, then Confirm & Save Shift
-- verifying payouts, summary, and `closedAt` survive on the shift doc
-- verifying the removed employee is absent from payouts and their stale tip doc is cleaned up
+- `admin-closeout.spec.js` - the day's Floor plan → Settle up → Review flow, the money on Review, and editing a settled shift
+- `admin-pending-approvals.spec.js` - the approval flow and the app-bar count
+- `admin-temp-merge.spec.js` - merging a temporary profile, including the per-date collision block
+- `manager-tier.spec.js` - what each tier meets on screen, the Supervisor switch, and "THE COUPLING" between the app's two halves
+- `profile-account.spec.js` - account self-service and name changes

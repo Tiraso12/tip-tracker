@@ -20,8 +20,11 @@
 // A JOB TITLE GRANTS NOTHING. users.role - captain, server, back, assistant,
 // bartender, runner - is the title the money is calculated from, and only that.
 // A captain with the Supervisor switch off is paid exactly as a captain and has
-// exactly an employee's access; a trusted server can hold the switch without
-// inventing a title for it.
+// exactly an employee's access. WHO the switch may be offered to is a separate
+// question from what it grants, and it is answered once in canOfferSupervisor
+// below - the restaurant offers it to captain-titled people only. That is an
+// offer rule for the on-screen control and never a grant rule: no capability
+// here reads a job title to decide rights.
 //
 // SAFETY RULE, do not weaken: permission is bound to the SUPERVISOR switch on
 // users/{uid} plus the manager pointer, and to nothing else.

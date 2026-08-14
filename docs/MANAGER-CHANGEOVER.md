@@ -67,7 +67,9 @@ Decide two things and write them down:
    matter what job title their profile carries.
 2. **Who needs Supervisor on for the next service.** Every captain who will enter money, build a floor
    plan, or correct a settled day that night. If you are not sure, list everyone who has ever settled
-   up. Turning it on is reversible in one tap; discovering the list at 8pm is not recoverable.
+   up. Turning it on is reversible in one tap; discovering the list at 8pm is not recoverable. The
+   switch is offered for people whose job title is **Captain** only, so note anyone on the list who
+   carries a different title - they need the Captain title before they can be given the switch.
 
 ## Step 1 - inventory, read-only
 
@@ -129,13 +131,21 @@ the pointer takes nothing from the admin, so a difference there means something 
 
 Still the same afternoon, before anyone comes in for the night.
 
-There is **no on-screen control for the switch yet** - where it lives is waiting on the roster
-rebuild. Until it ships, set it the same way you wrote the pointer: for each person from the "before
-the day" list, Firebase console → `users` → their document → add field `isSupervisor`, type
-**boolean**, value **true**.
+Do this in the app, signed in as the manager. **Team** → search for the person → their person view →
+the **Supervisor** block → **Turn on**. One tap each, and **Turn off** in the same place reverses it.
+
+The block is offered only for someone whose **job title is Captain** and whose account is active, and
+never on your own profile. If it is missing for someone on your list, their title is not Captain: give
+them the Captain title first, in the same person view. That is the restaurant's rule and it is the
+only thing the title decides here - the switch itself is a separate field, and it is the switch, not
+the title, that grants anything.
 
 Absent or `false` both read as off. Nothing else on their profile changes; their job title and their
 pay are untouched by this field, and a captain with the switch off is still paid exactly as a captain.
+
+The reverse also holds, and it is stated in the confirmation when you do it: moving somebody **off**
+the Captain title turns their Supervisor switch off in the same write. Rights do not outlive the title
+that qualifies them.
 
 Only then does it matter that the tier is live.
 
@@ -150,8 +160,9 @@ data.
   the rules that stop clients doing this, which is why it is the console's job.
 - **To undo a hand-over** (the pointer already existed and was retargeted): write the previous uid
   back into `managerUid`. One field, one write, no intermediate state.
-- **To undo a Supervisor grant:** set that person's `isSupervisor` to `false`, or delete the field.
-  They keep their job title and their pay either way.
+- **To undo a Supervisor grant:** **Turn off** in that person's Supervisor block (step 4), or in the
+  console set their `isSupervisor` to `false` or delete the field. They keep their job title and their
+  pay either way.
 
 Undoing the changeover while leaving `isSupervisor: true` on people is harmless: the switch grants
 nothing while there is no pointer. `tests/rules/current-state.test.js` pins that.

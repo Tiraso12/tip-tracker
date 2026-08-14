@@ -30,14 +30,17 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 - Double-entry balance check on every calculation — warns if the shift doesn't balance
 
 **Reports & Exports**
-- Shift PDF report — full payout breakdown per employee (visible today, from the Shifts tab)
-- Weekly, pay-period, and monthly PDF reports with daily breakdowns and employee earnings summaries — implemented, but currently disabled: the admin Reports tab is off by default (`SHOW_ADMIN_REPORTS = false` in `AdminDashboard.jsx`), so managers can't reach these yet
-- Team sheet PDF — card-layout printout to post on the board before service — implemented in `pdfExport.js`, but not currently wired into any admin screen
+- Shift PDF report - full payout breakdown per employee, from the day's payout panel
+- Weekly, pay-period and monthly PDF reports, and the team sheet card printout - implemented in `pdfExport.js` but not wired into any screen; the admin Reports panel that used to reach them has been removed
+
+**Pay statement**
+- One pay stub per person and date range - every day in the range, CTP/GRT/Total, and cash on its own line for the week it was handed over
+- One component serves both your own pay and a colleague's, so the two cannot drift apart
 
 **Admin Dashboard**
-- Role-based access with admin approval flow for new users
-- Team management — add/edit employees and their roles
-- Calendar view — navigate and open any past shift
+- Tiered access - manager, captain (the per-person Supervisor switch), employee - with an approval flow for new sign-ups
+- Team roster - searchable, with job titles, approvals, deactivation, temporary-profile merges, and the Supervisor switch
+- Day Rail - pick any day and step through Floor plan → Settle up → Review
 - Real-time Firestore sync — data updates instantly across sessions
 
 ---
@@ -68,15 +71,20 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 src/
 ├── components/
 │   ├── Admin/
+│   │   ├── AdminDashboard.jsx       # Shift workspace shell and day loading
+│   │   ├── DayRail.jsx              # Floor plan → Settle up → Review
 │   │   ├── ShiftEditorPanel.jsx     # Main shift workspace
 │   │   ├── ShiftSetup/              # Drag-and-drop team builder
-│   │   ├── DayPayoutPanel.jsx       # Payout review and save
-│   │   ├── AdminReportsPanel.jsx    # Report generation UI
-│   │   └── TeamManagement.jsx       # Employee roster management
-│   ├── Calendar/                    # Month/week navigation
+│   │   ├── DayPayoutPanel.jsx       # Payout review, save, and shift PDF
+│   │   └── TeamManagement.jsx       # Team roster and person view
+│   ├── Pay/                         # Pay statement (own pay and colleague pay)
+│   ├── Account/                     # Identity, account sheet, self-service
+│   ├── AppBar/                      # Shared bar for both halves of the app
 │   └── Auth/                        # Login and approval flow
 ├── utils/
 │   ├── engine.js                    # Core calculation engine (pure JS)
+│   ├── permissions.js               # Every capability, named once
+│   ├── payoutLedger.js              # Payout totals and reconciliation
 │   ├── pdfExport.js                 # All PDF generation logic
 │   └── constants.js                 # Role point weights and flat rates
 ├── services/
@@ -109,10 +117,14 @@ VITE_FIREBASE_APP_ID=...
 ```
 
 ```bash
-npm run dev       # Start dev server
-npm test          # Run engine unit tests
+npm run dev       # Start dev server against the configured Firebase project
+npm test          # Run unit tests
 npm run build     # Production build
 ```
+
+Day-to-day development and the full test gate are emulator-first and need no Firebase project of
+your own. [docs/TESTING.md](docs/TESTING.md) is the authoritative setup: `npm run dev:local` for the
+loop and `npm run test:all` before pushing.
 
 ---
 

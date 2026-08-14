@@ -21,12 +21,14 @@ them is a night that can permanently block the merge.
 
 ## How to merge
 
-1. Open the admin dashboard and go to **Team Management**.
-2. Approve the employee's sign-up in **Pending Approvals** if you have not already. They
-   have to be an active employee before they can be a merge target.
-3. Scroll to **Temporary Staff Profiles** and find their temporary profile.
-4. In **Merge into account…**, pick their real account.
-5. Click **Merge** and confirm.
+1. Open **Team** from the account menu. That is the team roster: a search box, status
+   filters, and one row per person. Tapping a row opens that person.
+2. If you have not approved the employee's sign-up yet, filter to **Pending**, open them,
+   give them a job title, and tap **Approve account**. They have to be an active employee
+   before they can be a merge target.
+3. Search for the temporary profile by name and open it. Its row is tagged **Temp**.
+4. Under **Temporary profile**, pick their real account in **Real employee account**.
+5. Tap **Merge profile** and confirm.
 
 The merge moves their saved shifts and tip history onto the real account and removes the
 temporary profile. You can then keep assigning them to shifts under their real account.
