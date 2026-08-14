@@ -41,6 +41,7 @@ Distributing tips in a restaurant is surprisingly complex. Multiple teams with d
 - Tiered access - manager, captain (the per-person Supervisor switch), employee - with an approval flow for new sign-ups
 - Team roster - searchable, with job titles, approvals, deactivation, temporary-profile merges, and the Supervisor switch
 - Day Rail - pick any day and step through Floor plan → Settle up → Review
+- A settled day names who last saved it and when, so a correction is never anonymous
 - Live where it has to be - the app bar's pending-approvals count and a person's pay statement
   subscribe to Firestore; the day's workspace loads on request and refetches after a save, so a
   night costs a bounded read rather than a standing listener on the whole roster
@@ -79,7 +80,7 @@ src/
 │   │   ├── DayRail.jsx              # Floor plan → Settle up → Review
 │   │   ├── ShiftEditorPanel.jsx     # Main shift workspace
 │   │   ├── ShiftSetup/              # Drag-and-drop team builder
-│   │   ├── DayPayoutPanel.jsx       # Payout review, save, and shift PDF
+│   │   ├── DayPayoutPanel.jsx       # Settled day's payouts, saved-by line, shift PDF
 │   │   └── TeamManagement.jsx       # Team roster and person view
 │   ├── Pay/                         # Pay statement (own pay and colleague pay)
 │   ├── Account/                     # Identity, account sheet, self-service
