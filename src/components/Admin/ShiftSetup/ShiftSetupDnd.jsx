@@ -297,8 +297,14 @@ function ShiftSetupDnd({
             />
 
             {isMobile && mobilePickerOpen && selectedTeamId && !mobileReadOnly ? (
+            /* Above the floating Cancel/Done pair (z-30), which it must cover, and BELOW
+               the app bar (z-40), which has to outrank every floating layer because the
+               account sheet opens out of it as a bottom sheet. At z-40 this sheet TIED
+               the bar and won on DOM order, so building a floor plan on a phone blanked
+               it - the day, the home control and the account avatar all went under the
+               scrim and stopped responding. */
             <div
-                className="fixed inset-0 z-40"
+                className="fixed inset-0 z-[35]"
             >
                 <button
                     type="button"

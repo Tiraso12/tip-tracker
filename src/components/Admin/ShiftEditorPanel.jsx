@@ -1957,37 +1957,38 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         hasFloorStaff: hasAssignedStaff,
     });
 
-    // Every step fills the phone screen rather than shrink-wrapping its content. On
-    // Review that is what puts the floating save button INSIDE the card instead of
-    // leaving it hovering over the page below a short panel; on Settle up it is what
-    // lets the entry panel take the leftover height and scroll its own body. Content
-    // still packs snug at the top - the panel grows, the rows do not spread out.
+    // On a phone every step is BOUND to the viewport, not merely floored at it, and that
+    // one distinction is the whole overflow defect. A `min-height` leaves the column's
+    // used height auto, so it sizes to its CONTENT; the `flex-1 min-h-0` chain below it
+    // then never gets a definite height to shrink against, and the inner `overflow-y-auto`
+    // boxes never become scrollers. The PAGE scrolls instead, and the panel slides up
+    // under the sticky Day Rail while the step's own chrome - the editing strip, the pool
+    // summary, the group switcher - leaves the screen entirely. A definite height is what
+    // hands the chain something to divide, so the inner box scrolls and the page does not.
+    //
+    // This was gated behind `(min-height: 700px)` and applied to the money steps alone,
+    // which is why it read as a fix that had not taken: a phone browser's usable viewport
+    // is routinely shorter than that (320x568, 375x667, 390x664 all miss it), so on the
+    // screens that had the defect the rule never matched, and the floor plan was never
+    // given a height at all. The gate is gone and all three steps are bound.
+    //
+    // Content still packs snug at the top: the panel grows, the rows do not spread out.
+    // What scrolls differs by step - the floor plan scrolls its team grid, Settle up
+    // scrolls the entry panel's BODY so the group's name and pool stay pinned, Review
+    // scrolls its whole column.
+    //
+    // The `min-h` beside the height is a floor, not a fallback to the old behaviour: it
+    // keeps the height DEFINITE (a min-height only clamps the used height, it does not
+    // return it to auto) so the chain still works, while stopping a rotated or unusually
+    // short viewport from squeezing the money into a slot no field fits in. At 320x568 -
+    // the tight phone - the calc wins at 472px and the floor never bites.
     const isFullHeightStep = effectiveStep === "floor"
         || effectiveStep === "settle"
         || effectiveStep === "review";
 
-    // The two money steps go one further than the floor plan: their height is FIXED to
-    // the viewport, not merely floored at it. A min-height alone leaves the column free
-    // to grow past the screen, so the page scrolls again and the inner `min-h-0` chain
-    // never gets a constrained height to shrink against - an inner box only becomes the
-    // scroller once something above it stops growing. What scrolls differs by step:
-    // Settle up scrolls the entry panel's BODY so the group's name and pool stay pinned,
-    // Review scrolls its whole column, because there the day rail and the editing strip
-    // are the only things worth keeping on screen. The floor plan keeps the min-height:
-    // it is meant to grow with a long roster.
-    //
-    // The height gate is not decoration. Everything above the entry panel - app bar, day
-    // rail, editing strip, pool summary, group switcher, panel head - is fixed chrome that
-    // costs roughly 400px before a single money field is drawn, and the floating action
-    // takes its clearance off the bottom. Below ~700px of viewport that leaves the panel
-    // body too short to show a field at all, so a short phone keeps the old behaviour and
-    // scrolls the page instead of squeezing the money into a slot.
-    const isViewportBoundStep = effectiveStep === "settle" || effectiveStep === "review";
-
     return (
         <div className={"space-y-3 sm:space-y-4"
-            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]" : "")
-            + (isViewportBoundStep ? " [@media(max-width:560px)_and_(min-height:700px)]:h-[calc(100dvh-6rem)]" : "")}>
+            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:h-[calc(100dvh-6rem)] max-[560px]:min-h-[420px]" : "")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
                 shown; earlier/reachable steps are one tap away (order never forced). */}
             <DayRail steps={railSteps} onStepClick={goToStep} />
