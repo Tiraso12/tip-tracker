@@ -135,23 +135,9 @@ function FloorLineup({ lineup, onEditFloor }) {
     const barMembers = lineup?.barTeam?.members || [];
     const runners = lineup?.runners || [];
 
-    const diningCount = teams.reduce((total, team) => total + (team.members?.length || 0), 0);
-    const barCount = barMembers.length;
-    const runnerCount = runners.length;
-    const floorTotal = diningCount + barCount + runnerCount;
-
     return (
         <>
         <Card className="!p-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
-            <header className="px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-4 max-[560px]:shrink-0">
-                <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                    Floor plan is set
-                </h2>
-                <p className="mt-1 text-xs text-[var(--color-ink-soft)] tabular-nums">
-                    {floorTotal} on the floor · {diningCount} dining · {barCount} bar · {runnerCount} {plural(runnerCount, "runner", "runners")}
-                </p>
-            </header>
-
             <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:content-start max-[560px]:pb-24">
                 {teams.map((team, index) => (
                     <FloorTeamCard

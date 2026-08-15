@@ -881,18 +881,24 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     const isFullHeightStep = effectiveStep === "floor"
         || effectiveStep === "settle"
         || effectiveStep === "review";
+    // Settle up and Review fuse the rail into the card below (square corners, no
+    // gap) so the context band inside reads as one surface. The Floor plan keeps
+    // the rail as its own separate, fully-rounded floating card above a gap.
+    const railAttachesToCard = effectiveStep === "settle" || effectiveStep === "review";
 
     return (
         <div className={"space-y-3 sm:space-y-4"
-            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:h-[calc(100dvh-6rem)] max-[560px]:min-h-[420px] max-[560px]:space-y-0" : "")}>
+            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:h-[calc(100dvh-6rem)] max-[560px]:min-h-[420px]" : "")
+            + (railAttachesToCard ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
                 shown; earlier/reachable steps are one tap away (order never forced).
-                On a phone's full-height steps it stops being its own floating card and
-                becomes the top of ONE continuous surface with the editor Card below:
-                square bottom corners, no gap, and the same tint as the context band
-                inside, so the boxes divide context from entry rather than from itself. */}
+                On a phone, Settle up and Review fuse the rail into the editor Card
+                below: square bottom corners, no gap, and the same tint as the
+                context band inside, so the boxes divide context from entry rather
+                than from itself. The Floor plan does not - it stays its own
+                floating card. */}
             <DayRail steps={railSteps} onStepClick={goToStep}
-                className={isFullHeightStep ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-band)]" : ""} />
+                className={railAttachesToCard ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-band)]" : ""} />
 
             {/* Edit mode reads as a distinct layer: an accent stroke + soft accent
                 elevation lifts the workspace off the page, versus the plain bordered
@@ -900,7 +906,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 review) keep a neutral frame so the accent never competes with their
                 warning styling, but its FLOOR step gets the same accent editing frame
                 as a setup shift (v3: identical in-place edit look). */}
-            <Card className={"!p-0 " + (isFullHeightStep ? "max-[560px]:rounded-t-none max-[560px]:border-t-0 " : "") + (showEditFrame
+            <Card className={"!p-0 " + (railAttachesToCard ? "max-[560px]:rounded-t-none max-[560px]:border-t-0 " : "") + (showEditFrame
                 ? "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]"
                 : "")
                 + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
@@ -960,15 +966,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                             Closed shift · Paid out
                         </span>
                     </div>
-                ) : isEditingLayer ? (
+                ) : (isEditingLayer && effectiveStep !== "floor") ? (
                     <div className="sm:hidden sticky top-[var(--rail-stack-top)] z-[9] flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-                            {effectiveStep === "settle"
-                                ? "Editing · Settle up"
-                                : effectiveStep === "review"
-                                    ? "Editing · Review"
-                                    : "Editing floor plan"}
+                            {effectiveStep === "settle" ? "Editing · Settle up" : "Editing · Review"}
                         </span>
                     </div>
                 ) : null
