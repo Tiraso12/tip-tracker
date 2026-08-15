@@ -130,3 +130,33 @@ export function getDateKeys(start, end) {
 
     return keys;
 }
+
+/**
+ * Parses a "YYYY-MM-DD" key as a LOCAL date. Noon, not midnight: a DST spring
+ * forward at midnight would otherwise land the date on the previous day.
+ */
+export function parseDateKey(dateKey) {
+    return new Date(dateKey + "T12:00:00");
+}
+
+/**
+ * One step away from a date key, in the unit the screen reads in.
+ *
+ * `unit: "day"` moves a calendar day. `unit: "week"` moves ONE WORK WEEK, not
+ * seven arbitrary days: it re-anchors to the Friday that starts the week the key
+ * falls in (`getCurrentWeek`) and steps from there, so stepping from a Tuesday
+ * lands on a Friday and every further step stays on Fridays. That is what makes
+ * prev/next on the pay side land on the same weeks the statement is cut into.
+ */
+export function stepDateKey(dateKey, unit, direction) {
+    const cursor = parseDateKey(dateKey);
+
+    if (unit === "week") {
+        const weekStart = getCurrentWeek(cursor)[0];
+        weekStart.setDate(weekStart.getDate() + direction * 7);
+        return toDateKey(weekStart);
+    }
+
+    cursor.setDate(cursor.getDate() + direction);
+    return toDateKey(cursor);
+}

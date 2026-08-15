@@ -255,6 +255,54 @@ test("a Supervisor-on captain holds both their own pay and the workspace, and ne
     await expect(payStatement(page)).toBeVisible();
 });
 
+// The pay side reads a WEEK, so its prev/next step one Friday-start work week -
+// the same unit the label is written in, and the same weeks the statement is cut
+// into. Seven arbitrary days would drift the anchor off Friday and quietly show a
+// range the pay period never had.
+test("prev/next on the pay side step one Friday-start work week", async ({ page }) => {
+    await seedRestaurant();
+    await login(page, "supervisor");
+    await expect(payStatement(page)).toBeVisible();
+
+    const weekPill = page.getByRole("button", { name: /^Pay week:/ });
+    const pillWidth = async () => Math.round((await weekPill.boundingBox()).width);
+
+    // A step must not RESIZE the control: the thumb is still on the arrow when the
+    // label swaps. They land on the CURRENT week, so this compares the one state
+    // that used to be wider ("This week · ...") against an ordinary one.
+    await expect(weekPill).toHaveText(/^Week of /);
+    const currentWeekWidth = await pillWidth();
+    await page.getByRole("button", { name: "Next week" }).click();
+    await expect(weekPill).not.toHaveAttribute("aria-label", /this week/);
+    expect(await pillWidth()).toBe(currentWeekWidth);
+
+    // ...and the current week is still nameable, just not in a way that costs width.
+    await page.getByRole("button", { name: "Previous week" }).click();
+    await expect(weekPill).toHaveAttribute("aria-label", /this week/);
+
+    // Anchor on a Sunday inside the week that starts Fri May 22, through the same
+    // hidden native input the pill's calendar drives. Stepping must re-anchor to
+    // that Friday rather than move to the following Sunday.
+    await page.locator('header input[type="date"]').first().evaluate((el) => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(el, "2026-05-24");
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await expect(weekPill).toHaveText(/Week of May 22/);
+
+    await page.getByRole("button", { name: "Next week" }).click();
+    await expect(weekPill).toHaveText(/Week of May 29/);
+    await expect(payStatement(page)).toContainText("May 29 - Jun 4");
+
+    await page.getByRole("button", { name: "Previous week" }).click();
+    await page.getByRole("button", { name: "Previous week" }).click();
+    await expect(weekPill).toHaveText(/Week of May 15/);
+
+    // The calendar is still the other way in - this was an addition, not a swap.
+    await expect(page.locator('header input[type="date"]')).toHaveCount(1);
+});
+
 test("the manager gets the workspace and no pay page - they have no pay record", async ({ page }) => {
     await seedRestaurant();
     await login(page, "manager");

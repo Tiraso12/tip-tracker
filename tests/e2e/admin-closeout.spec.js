@@ -906,6 +906,26 @@ test.describe("app bar at 320px", () => {
             .toEqual(["focus", "click", "showPicker"]);
     });
 
+    test("prev/next step the day beside the pill, and the three still fit at 320px", async ({ page }) => {
+        await login(page);
+        await setShiftDate(page, "2026-05-24");
+
+        // A day screen steps a DAY. Both directions, because an off-by-one that
+        // only shows up going back is exactly the shape this control invites.
+        await page.getByRole("button", { name: "Previous day" }).click();
+        await expect(page.getByRole("button", { name: /^Shift date:/ })).toHaveText(/May 23/);
+        await page.getByRole("button", { name: "Next day" }).click();
+        await page.getByRole("button", { name: "Next day" }).click();
+        await expect(page.getByRole("button", { name: /^Shift date:/ })).toHaveText(/May 25/);
+
+        // The calendar is an ADDITION-free survivor: stepping never replaced it.
+        await expect(page.locator('header input[type="date"]')).toHaveCount(1);
+
+        // 320px is the width the bar already fights for. Three segments plus home
+        // plus the account avatar must not push the page sideways.
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+    });
+
     test("the editor shows the day being edited, as a label the bar cannot change mid-edit", async ({ page }) => {
         const date = "2026-05-24";
         await login(page);
@@ -922,8 +942,12 @@ test.describe("app bar at 320px", () => {
         await expect(dayLabel).toHaveText(/May 24/);
 
         // ...and it is a label, not a control: nothing here can swap the date under
-        // a half-entered shift.
+        // a half-entered shift. That covers BOTH ways the pill can move a day -
+        // the calendar behind it and the prev/next steps beside it. Prev/next must
+        // never become a back door around the one rule this label exists for.
         await expect(page.locator('input[type="date"]')).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Previous day" })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Next day" })).toHaveCount(0);
 
         // It is still there once the money work scrolls, because the bar is pinned.
         await page.evaluate(() => window.scrollTo(0, 600));
