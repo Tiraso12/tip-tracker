@@ -41,11 +41,11 @@ function StateDot({ state, index }) {
 // screen: pinned directly under the h-14 app bar (sticky top-14) instead of
 // scrolling away while money is being entered. z-10 keeps it beneath the app
 // bar's z-40 and above page content.
-function DayRail({ steps, onStepClick }) {
+function DayRail({ steps, onStepClick, className = "" }) {
     return (
         <nav
             aria-label="Day steps"
-            className="sticky top-14 z-10 flex items-stretch gap-1.5 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className={"sticky top-14 z-10 flex items-stretch gap-1.5 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-surface)] p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden " + className}
         >
             {steps.map((step) => {
                 const clickable = step.clickable;

@@ -115,8 +115,12 @@ const RailPill = memo(function RailPill({ group, selected, onSelect }) {
             <span className={"text-[13px] font-semibold whitespace-nowrap " + (selected ? "text-[var(--color-accent)]" : "text-[var(--color-ink)]")}>
                 {group.name}
             </span>
-            <span className={"font-mono tabular-nums text-[11.5px] whitespace-nowrap " + (selected ? "text-[var(--color-accent)]" : "text-[var(--color-ink-soft)]")}>
-                {group.poolLabel === "Pay" ? "Pay " : ""}${Math.round(group.pool).toLocaleString()}
+            {/* The SELECTED pill prints the exact figure, to the cent: on a phone it is
+                now the only place that group's pool is shown, so a rounded number would
+                be the money getting less legible, not more compact. Unselected pills stay
+                rounded - they are a menu, not a figure you are working from. */}
+            <span className={"font-mono tabular-nums whitespace-nowrap " + (selected ? "text-[12.5px] text-[var(--color-accent)] max-[560px]:font-semibold" : "text-[11.5px] text-[var(--color-ink-soft)]")}>
+                {group.poolLabel === "Pay" ? "Pay " : ""}{selected ? fmtMoney(group.pool) : "$" + Math.round(group.pool).toLocaleString()}
             </span>
             <span
                 className={
@@ -148,19 +152,24 @@ const RailPill = memo(function RailPill({ group, selected, onSelect }) {
 // BODY is what scrolls; the page behind it does not. The money fields used to run off the
 // bottom of a shrink-wrapped panel, so reaching Cash or Covers meant scrolling the whole
 // page and pushing the group switcher - the control that says which team's money you are
-// typing - off the top. The head stays pinned for that reason: the group name and its pool
-// must never leave the screen while its figures are being entered.
+// typing - off the top. On a phone the group name and its pool live on the selected
+// switcher pill, which is pinned above and carries the exact figure.
+//
+// The panel draws NO box of its own on a phone: the editor Card is the only frame, so a
+// money field is inside two frames instead of three and gains its width back. On desktop
+// the box stays - there the panel sits beside other content and needs its own edge.
 function CloseoutEntryPanel({ group, children }) {
     return (
-        <div className="border border-[var(--color-line-strong)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.05)] max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:flex-none">
+        <div className="border border-[var(--color-line-strong)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.05)] max-[560px]:border-0 max-[560px]:rounded-none max-[560px]:shadow-[none] max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+            {/* The selected switcher pill directly above already names the group, so
+                printing it again in the head said the same word twice on one screen, and
+                on a phone that head is hidden outright. The name stays in the accessibility
+                tree here - outside the head, so it survives that hiding - because which
+                pill is selected is not something a screen reader user landing inside the
+                panel already knows. */}
+            <span className="sr-only">{group.name}</span>
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:hidden">
                 <div className="flex flex-col gap-0.5 min-w-0">
-                    {/* The selected switcher pill directly above already names the group,
-                        so printing it again here said the same word twice on one screen.
-                        It stays in the accessibility tree because it was the panel's only
-                        identification, and which pill is selected is not something a
-                        screen reader user landing inside the panel already knows. */}
-                    <span className="sr-only">{group.name}</span>
                     <span className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-ink-muted)]">
                         {group.sub}
                     </span>
@@ -188,7 +197,7 @@ function CloseoutEntryPanel({ group, children }) {
                     ) : null}
                 </div>
             </div>
-            <div className="p-4 max-[560px]:p-3.5 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:overscroll-contain">
+            <div className="p-4 max-[560px]:px-0 max-[560px]:py-3.5 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:overscroll-contain">
                 {children}
             </div>
         </div>
@@ -1988,10 +1997,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
 
     return (
         <div className={"space-y-3 sm:space-y-4"
-            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:h-[calc(100dvh-6rem)] max-[560px]:min-h-[420px]" : "")}>
+            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:h-[calc(100dvh-6rem)] max-[560px]:min-h-[420px] max-[560px]:space-y-0" : "")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
-                shown; earlier/reachable steps are one tap away (order never forced). */}
-            <DayRail steps={railSteps} onStepClick={goToStep} />
+                shown; earlier/reachable steps are one tap away (order never forced).
+                On a phone's full-height steps it stops being its own floating card and
+                becomes the top of ONE continuous surface with the editor Card below:
+                square bottom corners, no gap, and the same tint as the context band
+                inside, so the boxes divide context from entry rather than from itself. */}
+            <DayRail steps={railSteps} onStepClick={goToStep}
+                className={isFullHeightStep ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-surface-muted)]/40" : ""} />
 
             {/* Edit mode reads as a distinct layer: an accent stroke + soft accent
                 elevation lifts the workspace off the page, versus the plain bordered
@@ -1999,7 +2013,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 review) keep a neutral frame so the accent never competes with their
                 warning styling, but its FLOOR step gets the same accent editing frame
                 as a setup shift (v3: identical in-place edit look). */}
-            <Card className={"!p-0 " + (showEditFrame
+            <Card className={"!p-0 " + (isFullHeightStep ? "max-[560px]:rounded-t-none max-[560px]:border-t-0 " : "") + (showEditFrame
                 ? "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]"
                 : "")
                 + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
@@ -2153,7 +2167,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                     panel. Tapping a pill focuses that group; the strip scrolls sideways on
                                     phone so page height stays constant no matter how large the roster is.
                                     A status line + edge fade keep off-screen groups and their money status
-                                    discoverable instead of a blind sideways swipe. */}
+                                    discoverable instead of a blind sideways swipe.
+
+                                    On a phone the day's pool and the switcher are CONTEXT, not
+                                    entry, so they share one tinted band that runs edge to edge
+                                    (the negative margins cancel the Card's padding) and ends in a
+                                    single hairline. Below that hairline is plain paper carrying
+                                    nothing but the money fields. One line divides the two, instead
+                                    of three boxes dividing the context from itself. */}
+                                <div className="space-y-4 max-[560px]:space-y-3 max-[560px]:flex-none max-[560px]:-mx-3 max-[560px]:-mt-3 max-[560px]:px-3 max-[560px]:pt-3 max-[560px]:pb-2 max-[560px]:bg-[var(--color-surface-muted)]/40 max-[560px]:border-b max-[560px]:border-[var(--color-line)]">
                                 <div className="flex items-center justify-between gap-3">
                                     <span className="inline-flex items-baseline gap-2">
                                         <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
@@ -2192,12 +2214,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                         />
                                     ))}
                                 </ScrollRail>
+                                </div>
 
                                 {/* Locked view = these very same fields, disabled. A native
                                     disabled fieldset switches every input/stepper off at once; Edit
                                     flips it back on in place. The group switcher above stays outside
                                     the fieldset so you can still page through each group while locked. */}
-                                <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+                                <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0 max-[560px]:!mt-3 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
                                 <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
                                     {activeGroup.kind === "dining" ? (
                                         <>
