@@ -48,17 +48,19 @@ test("Firebase emulator ports are configurable for local port conflicts", () => 
 
 test("Shift editor isolates money closeout entry from unrelated input rerenders", () => {
     const source = readSource("src/components/Admin/ShiftEditorPanel.jsx");
+    const railPillSource = readSource("src/components/Admin/ShiftEditor/RailPill.jsx");
+    const entryPanelSource = readSource("src/components/Admin/ShiftEditor/CloseoutEntryPanel.jsx");
 
     // The team-switcher renders one fixed-height entry panel and a rail of memoized
     // pills, so only the focused group's inputs (plus the pill whose pool changed) react
     // to a keystroke - the roster no longer renders as a growing stack of cards.
     assert.match(
-        source,
+        railPillSource,
         /const\s+RailPill\s*=\s*memo\(/,
         "Switcher rail pills should be memoized so unrelated teams don't rerender on every keystroke."
     );
     assert.match(
-        source,
+        entryPanelSource,
         /function\s+CloseoutEntryPanel\(/,
         "Money inputs should render through a single fixed-height entry panel."
     );

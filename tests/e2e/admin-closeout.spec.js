@@ -992,9 +992,16 @@ test.describe("app bar at 320px", () => {
         });
 
         expect(bar.controls.length).toBeGreaterThanOrEqual(3);
+        // Prev/next on the date pill are w-8 (32px) below sm - a measured 320px
+        // concession. Height stays 44px; the other bar controls stay 44x44.
+        const stepControl = /^(Previous|Next) (day|week)$/;
         for (const control of bar.controls) {
-            expect(control.w, `${control.label} width`).toBeGreaterThanOrEqual(44);
             expect(control.h, `${control.label} height`).toBeGreaterThanOrEqual(44);
+            if (stepControl.test(control.label || "")) {
+                expect(control.w, `${control.label} width`).toBe(32);
+            } else {
+                expect(control.w, `${control.label} width`).toBeGreaterThanOrEqual(44);
+            }
         }
         expect(bar.barOverflows).toBe(false);
         expect(bar.docOverflows).toBe(false);
