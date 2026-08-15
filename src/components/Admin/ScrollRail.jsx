@@ -3,7 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // A horizontally scrolling strip with edge fades + a "›" cue when there is more
 // off-screen. Used by the Settle up group switcher so off-screen groups (and
 // their status dots) are discoverable at 390px instead of a blind sideways swipe.
-function ScrollRail({ children, className = "", role, ariaLabel, depsKey }) {
+// `fadeFrom` is the colour the edge fades dissolve INTO, so it must be whatever
+// the rail is actually sitting on. It defaults to the card surface; the Settle up
+// switcher passes the context band's colour, because a white fade over a tinted
+// band reads as a white smear rather than as content running off the edge.
+function ScrollRail({ children, className = "", role, ariaLabel, depsKey, fadeFrom = "var(--color-surface)" }) {
     const scrollRef = useRef(null);
     const [edges, setEdges] = useState({ left: false, right: false });
 
@@ -42,13 +46,15 @@ function ScrollRail({ children, className = "", role, ariaLabel, depsKey }) {
             {edges.left ? (
                 <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-[var(--color-surface)] to-transparent"
+                    className="pointer-events-none absolute inset-y-0 left-0 w-6"
+                    style={{ backgroundImage: `linear-gradient(to right, ${fadeFrom}, transparent)` }}
                 />
             ) : null}
             {edges.right ? (
                 <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-end bg-gradient-to-l from-[var(--color-surface)] via-[var(--color-surface)]/80 to-transparent"
+                    className="pointer-events-none absolute inset-y-0 right-0 flex w-9 items-center justify-end"
+                    style={{ backgroundImage: `linear-gradient(to left, ${fadeFrom} 45%, transparent)` }}
                 >
                     <span className="pr-0.5 text-sm font-semibold text-[var(--color-ink-muted)]">›</span>
                 </div>

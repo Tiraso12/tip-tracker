@@ -11,6 +11,20 @@
   --color-bg: #fafaf9;            /* warm near-white, page background */
   --color-surface: #ffffff;       /* cards, panels */
   --color-surface-muted: #f5f5f4; /* subtle inset surfaces */
+  /* The phone Settle up context band. Solid, not surface-muted at 40%, because
+     the band spans two elements stacked over DIFFERENT backgrounds - the Day
+     Rail over the page, the switcher over a card - and the same alpha over each
+     resolves to two near-but-unequal greys. One continuous surface has to be one
+     colour, and ScrollRail's edge fade has to be able to name it to blend in. */
+  --color-band: #fbfbfb;
+
+  /* Where a second pinned row stacks under the Day Rail. The rail pins at
+     3.5rem (its `sticky top-14`) and stands 58px tall on a phone - p-1.5, a
+     44px tap target, and its two hairlines. Anything else that must stay on
+     screen while the page scrolls pins here instead of underneath it. Keep this
+     in step with DayRail's own classes: they are one measurement in two files,
+     and if they drift the rail silently covers whatever stacks below it. */
+  --rail-stack-top: 114px;
 
   /* Text */
   --color-ink: #0a0a0a;           /* primary text */

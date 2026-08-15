@@ -106,20 +106,33 @@ const RailPill = memo(function RailPill({ group, selected, onSelect }) {
             onClick={onSelect}
             className={
                 "flex-none inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[var(--radius-md)] border max-[560px]:min-h-[44px] " +
+                // On a phone these are TABS, not pills: no box of their own, just a word
+                // and its figure with the active one underlined. A drawn rectangle per
+                // group competed with the entry surface below for the same attention, and
+                // shape now separates the two navigations - the Day Rail's steps stay
+                // boxed, the group switcher does not. ScrollRail's edge fade and "›" keep
+                // off-screen groups discoverable, which is what a border used to hint at.
+                "max-[560px]:rounded-none max-[560px]:border-transparent max-[560px]:bg-transparent max-[560px]:px-2.5 " +
                 "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
                 (selected
-                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[inset_0_-2px_0_var(--color-accent)]"
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] shadow-[inset_0_-2px_0_var(--color-accent)] "
+                      + "max-[560px]:bg-transparent max-[560px]:shadow-[inset_0_-3px_0_var(--color-accent)]"
                     : "border-[var(--color-line)] bg-[var(--color-surface)] hover:border-[var(--color-line-strong)]")
             }
         >
             <span className={"text-[13px] font-semibold whitespace-nowrap " + (selected ? "text-[var(--color-accent)]" : "text-[var(--color-ink)]")}>
                 {group.name}
             </span>
-            {/* The SELECTED pill prints the exact figure, to the cent: on a phone it is
-                now the only place that group's pool is shown, so a rounded number would
-                be the money getting less legible, not more compact. Unselected pills stay
-                rounded - they are a menu, not a figure you are working from. */}
-            <span className={"font-mono tabular-nums whitespace-nowrap " + (selected ? "text-[12.5px] text-[var(--color-accent)] max-[560px]:font-semibold" : "text-[11.5px] text-[var(--color-ink-soft)]")}>
+            {/* On a phone a tab is the team's NAME and nothing else. Carrying the pool
+                here made every tab as wide as its figure, which is what pushed the third
+                group off the edge, and a switcher is a place you choose from rather than
+                a place you read money from. The figure needs a home of its own on the
+                phone - until it has one it is not shown there at all.
+
+                Desktop keeps it: the pills are not width-constrained there, and the
+                selected one prints to the cent because a rounded pool on a screen with
+                room for the real one is just a less useful number. */}
+            <span className={"font-mono tabular-nums whitespace-nowrap max-[560px]:hidden " + (selected ? "text-[12.5px] text-[var(--color-accent)]" : "text-[11.5px] text-[var(--color-ink-soft)]")}>
                 {group.poolLabel === "Pay" ? "Pay " : ""}{selected ? fmtMoney(group.pool) : "$" + Math.round(group.pool).toLocaleString()}
             </span>
             <span
@@ -158,7 +171,45 @@ const RailPill = memo(function RailPill({ group, selected, onSelect }) {
 // The panel draws NO box of its own on a phone: the editor Card is the only frame, so a
 // money field is inside two frames instead of three and gains its width back. On desktop
 // the box stays - there the panel sits beside other content and needs its own edge.
+// Tracks whether a scrolling element has more content below the fold, so the
+// panel can say so. Returns false the moment the last pixel is reached, and
+// re-measures on resize and on content changes (a disclosure opening changes the
+// answer without any scrolling happening).
+function useHasMoreBelow(ref) {
+    const [more, setMore] = useState(false);
+
+    const measure = useCallback(() => {
+        const el = ref.current;
+        if (!el) return;
+        const next = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
+        setMore((prev) => (prev === next ? prev : next));
+    }, [ref]);
+
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return undefined;
+        measure();
+        el.addEventListener("scroll", measure, { passive: true });
+        window.addEventListener("resize", measure);
+        // The fields themselves change height (contracts / point-split disclosures),
+        // so watching the scroller alone would miss the case that matters most.
+        const ro = new ResizeObserver(measure);
+        ro.observe(el);
+        if (el.firstElementChild) ro.observe(el.firstElementChild);
+        return () => {
+            el.removeEventListener("scroll", measure);
+            window.removeEventListener("resize", measure);
+            ro.disconnect();
+        };
+    }, [measure, ref]);
+
+    return more;
+}
+
 function CloseoutEntryPanel({ group, children }) {
+    const bodyRef = useRef(null);
+    const hasMoreBelow = useHasMoreBelow(bodyRef);
+
     return (
         <div className="border border-[var(--color-line-strong)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.05)] max-[560px]:border-0 max-[560px]:rounded-none max-[560px]:shadow-[none] max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
             {/* The selected switcher pill directly above already names the group, so
@@ -197,8 +248,37 @@ function CloseoutEntryPanel({ group, children }) {
                     ) : null}
                 </div>
             </div>
-            <div className="p-4 max-[560px]:px-0 max-[560px]:py-3.5 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:overscroll-contain">
-                {children}
+            {/* The scroller and its cue share a relative box so the cue can sit on the
+                panel's bottom edge without scrolling away with the fields. */}
+            <div className="relative max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+                <div
+                    ref={bodyRef}
+                    className="p-4 max-[560px]:px-0 max-[560px]:pt-3.5 max-[560px]:pb-14 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:overscroll-contain"
+                >
+                    {children}
+                </div>
+                {/* "There is more money below this fold." The panel now runs to the bottom
+                    of the card, which reads as an ending, so without this the last field
+                    on screen looks like the last field there is - and a Runners Fee nobody
+                    scrolls to is a Runners Fee nobody enters. Matches the horizontal cue on
+                    the group switcher: a fade the content dissolves into, plus a chevron.
+                    Hidden the instant the end is reached, and never shown on desktop, where
+                    the body does not scroll. */}
+                {hasMoreBelow ? (
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-x-0 bottom-0 flex h-12 items-end justify-center"
+                        style={{ backgroundImage: "linear-gradient(to top, var(--color-surface) 45%, transparent)" }}
+                    >
+                        {/* A chip, not a bare glyph: at the foot of a white panel a lone
+                            chevron in muted grey is exactly what the eye skips. The border
+                            gives it an edge to catch on without it reading as a button -
+                            it is `pointer-events-none`, the panel itself is what scrolls. */}
+                        <span className="mb-2 inline-flex h-6 items-center gap-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink-soft)] shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+                            More <span aria-hidden="true" className="text-[11px] leading-none">⌄</span>
+                        </span>
+                    </div>
+                ) : null}
             </div>
         </div>
     );
@@ -2005,7 +2085,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 square bottom corners, no gap, and the same tint as the context band
                 inside, so the boxes divide context from entry rather than from itself. */}
             <DayRail steps={railSteps} onStepClick={goToStep}
-                className={isFullHeightStep ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-surface-muted)]/40" : ""} />
+                className={isFullHeightStep ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-band)]" : ""} />
 
             {/* Edit mode reads as a distinct layer: an accent stroke + soft accent
                 elevation lifts the workspace off the page, versus the plain bordered
@@ -2050,8 +2130,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     always-visible strip. Non-closed shows an accent "Editing floor plan"
                     cue (matching the workspace's accent frame) so it is clear you are in
                     the editing layer, not the read-only floor view. */}
+                {/* Both strips PIN under the Day Rail rather than scrolling beneath it.
+                    On a short viewport the editor column hits its 420px floor, the page
+                    starts to scroll, and the rail - being sticky - slid straight over
+                    whichever strip sat below it. The cue that says you are editing, or
+                    that this shift is already paid out, is exactly the thing that must
+                    not disappear the moment you move the screen. */}
                 {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
-                    <div className="sm:hidden flex items-center gap-2 px-3 py-1 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
+                    <div className="sm:hidden sticky top-[var(--rail-stack-top)] z-[9] flex items-center gap-2 px-3 py-1 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
                         {/* The raw ISO date used to sit at the right of this strip,
                             because the day was otherwise invisible on a phone. The app
                             bar now carries it, pinned and readable, so this strip is
@@ -2068,7 +2154,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                         </span>
                     </div>
                 ) : isEditingLayer ? (
-                    <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">
+                    <div className="sm:hidden sticky top-[var(--rail-stack-top)] z-[9] flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
                             {effectiveStep === "settle"
@@ -2078,16 +2164,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                     : "Editing floor plan"}
                         </span>
                     </div>
-                ) : (
-                    // Locked Settle up: a neutral view header, not an editing cue -
-                    // tap the floating Edit button to change the money.
-                    <div className="sm:hidden flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-line)] bg-[var(--color-surface-muted)]/60">
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-ink-soft)]">
-                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-ink-muted)]" />
-                            Settle up
-                        </span>
-                    </div>
-                )}
+                ) : null
+                /* A locked Settle up used to print a neutral "SETTLE UP" strip here. The
+                   Day Rail directly above already marks Settle as the active step, so the
+                   strip said the step's name a second time and charged the money below it
+                   a full band of height to do so. The two strips that remain each say
+                   something the rail does not: this shift is already paid out, and you are
+                   in the editing layer. */}
 
                 {loading ? (
                     <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
@@ -2156,13 +2239,16 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                On a phone the section is a column that fills the screen: the summary
                                line, the group switcher and the Review payouts row are flex-none, and
                                the entry panel between them takes every remaining pixel and scrolls
-                               its own body. The column still stops short of the very bottom so the
-                               floating action has a band of its own - nothing here is ever under it,
-                               and so nothing here has to be scrolled out from under it - but the
-                               clearance is sized to the pill rather than to a scrolling page. The
-                               96px a scrolling page needed left a dead white band below the panel;
-                               the panel takes that height back. */
-                            <section className="space-y-4 pb-24 max-[560px]:pb-14 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+                               its own body.
+
+                               The FAB's clearance is INSIDE that scroller (the body's own pb-14),
+                               not below the panel. Reserving it outside cost a band of dead screen
+                               on the one surface with no height to spare, and bought nothing the
+                               scroller cannot buy itself: the last field still scrolls clear of the
+                               floating pill, it just does so within the panel. So the panel now runs
+                               to the bottom of the card. The desktop pb-24 stays - there the page
+                               scrolls and the FAB is fixed at every width. */
+                            <section className="space-y-4 pb-24 max-[560px]:pb-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
                                 {/* Team switcher: a compact horizontal strip above one fixed-height entry
                                     panel. Tapping a pill focuses that group; the strip scrolls sideways on
                                     phone so page height stays constant no matter how large the roster is.
@@ -2175,8 +2261,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                     single hairline. Below that hairline is plain paper carrying
                                     nothing but the money fields. One line divides the two, instead
                                     of three boxes dividing the context from itself. */}
-                                <div className="space-y-4 max-[560px]:space-y-3 max-[560px]:flex-none max-[560px]:-mx-3 max-[560px]:-mt-3 max-[560px]:px-3 max-[560px]:pt-3 max-[560px]:pb-2 max-[560px]:bg-[var(--color-surface-muted)]/40 max-[560px]:border-b max-[560px]:border-[var(--color-line)]">
-                                <div className="flex items-center justify-between gap-3">
+                                <div className="[--rail-fade:var(--color-surface)] max-[560px]:[--rail-fade:var(--color-band)] space-y-4 max-[560px]:space-y-0 max-[560px]:flex max-[560px]:flex-col max-[560px]:gap-2.5 max-[560px]:flex-none max-[560px]:-mx-3 max-[560px]:-mt-3 max-[560px]:px-3 max-[560px]:pt-3 max-[560px]:pb-2 max-[560px]:bg-[var(--color-band)] max-[560px]:border-b max-[560px]:border-[var(--color-line)]">
+                                {/* On a phone the tabs come FIRST and this summary reads
+                                    underneath them: you pick the team, then the day's total
+                                    and what is still owed sit closest to the money they
+                                    describe. `order` moves it visually without moving it in
+                                    the DOM, so the tab strip keeps its natural focus order.
+                                    Desktop keeps the original stacking (block flow, no
+                                    flex, so `order` does nothing there). */}
+                                <div className="flex items-center justify-between gap-3 max-[560px]:order-2">
                                     <span className="inline-flex items-baseline gap-2">
                                         <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
                                             {poolGroupSummary.total} {poolGroupSummary.total === 1 ? "group" : "groups"} · Pool
@@ -2185,14 +2278,20 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                             {fmtMoney(poolSummary.payoutPool)}
                                         </strong>
                                     </span>
+                                    {/* Phone: the per-tab dots already carry this. Each tab shows its
+                                        own group's state in its own colour, right next to the name you
+                                        would tap to fix it, so a rolled-up count of the same fact was
+                                        the screen saying it twice - once vaguely. Desktop keeps the
+                                        roll-up: there the switcher can hold more groups than the eye
+                                        counts dots for. */}
                                     {groupStatusSummary.total > 0 ? (
                                         groupStatusSummary.needsMoney > 0 ? (
-                                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)]">
+                                            <span className="max-[560px]:hidden inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)]">
                                                 <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
                                                 {groupStatusSummary.needsMoney} still need money
                                             </span>
                                         ) : (
-                                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
+                                            <span className="max-[560px]:hidden inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
                                                 <span aria-hidden="true">✓</span>
                                                 All groups funded
                                             </span>
@@ -2203,6 +2302,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                                     role="tablist"
                                     ariaLabel="Select a group to enter money"
                                     depsKey={closeoutGroups.length}
+                                    fadeFrom="var(--rail-fade)"
                                     className="flex gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 pr-8 [scrollbar-width:thin]"
                                 >
                                     {closeoutGroups.map(group => (
