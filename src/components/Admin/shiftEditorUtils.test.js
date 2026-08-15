@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
     applyBarFoodSalesEdit,
+    buildPayoutReview,
     deriveRunnersFee,
     fmtAmount,
     getPayoutNonCashTotal,
@@ -260,4 +261,34 @@ test("only the negative-pool warnings are dropped from a warnings list", () => {
             "Warning: Positive bar pools exist but there are no bar points assigned.",
         ],
     );
+});
+
+// The Review headline ("= Everyone paid", `staffTotal`) is CTP + GRT across dining,
+// bar, and runners - cash has its own line and must never fold into this figure. This
+// exact mislabel (dining + bar counted as "the floor's") shipped before, so the pin
+// checks a mixed-role fixture where dining and bar both carry real cash.
+test("buildPayoutReview's staffTotal (Everyone paid) excludes cash across dining and bar", () => {
+    const mappedPayouts = {
+        diningServer: { name: "Dining Server", role: "server", tips: 200, gratuity: 50, cash: 40 },
+        bartender: { name: "Bartender", role: "bartender", tips: 150, gratuity: 30, cash: 60 },
+        runner: { name: "Runner", role: "runner", tips: 40, gratuity: 10, cash: 0 },
+    };
+
+    const review = buildPayoutReview({}, mappedPayouts);
+
+    const nonCashSum = Object.values(mappedPayouts).reduce(
+        (sum, payout) => sum + getPayoutNonCashTotal(payout),
+        0,
+    );
+    const cashSum = Object.values(mappedPayouts).reduce((sum, payout) => sum + Number(payout.cash || 0), 0);
+
+    assert.ok(cashSum > 0, "fixture must carry real cash to be a meaningful pin");
+    assert.equal(review.staffTotal, nonCashSum);
+    assert.equal(review.staffTotal, 480);
+    assert.ok(review.staffTotal < nonCashSum + cashSum);
+
+    // Cash stays on the rows / available separately - it must not have been dropped
+    // from the fixture to make the total match.
+    assert.equal(review.payoutRows.find(row => row.uid === "diningServer").cash, 40);
+    assert.equal(review.payoutRows.find(row => row.uid === "bartender").cash, 60);
 });
