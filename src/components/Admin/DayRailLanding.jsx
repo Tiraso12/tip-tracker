@@ -187,7 +187,8 @@ function TrashIcon() {
 // weighs. It was a 12px red text link (98x16, no border, no icon) you could brush
 // past while scrolling a paid-out day; it is a bounded, clearly-labelled danger
 // zone that names the consequence before you reach the button, and the button
-// itself is a full 44px-tall danger target instead of a line of text.
+// itself is a full, comfortably-sized 44px-tall danger target instead of a
+// line of text.
 //
 // The copy is passed in because the two dates that can be removed are not the same
 // thing: a closed shift, and a date carrying nothing but leftover ledger entries.

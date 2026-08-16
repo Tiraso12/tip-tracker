@@ -78,8 +78,11 @@ function SideNavItem({ item, active, onClick, collapsed }) {
             title={collapsed ? item.label : undefined}
             className={
                 // Desktop-only rows: the pointer here is a mouse, not a thumb, so
-                // the denser sidebar height is fine. The 44px thumb-target rule
-                // applies to the app bar and the Day Rail, which a phone still has.
+                // the denser sidebar height is fine. 44px is the usual comfortable
+                // thumb target for the app bar and the Day Rail, which a phone
+                // still has - not a floor every control must hit; the Pullenberg
+                // kit wins where it specifies its own size (see BarDatePill's
+                // 36px pill).
                 "group relative w-full flex items-center gap-3 px-3 py-2 text-sm rounded-[var(--radius-sm)] " +
                 "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
                 (collapsed ? "justify-center px-0 h-10 " : "") +

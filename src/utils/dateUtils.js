@@ -65,6 +65,23 @@ export function formatMonthDayRange(start, end) {
 }
 
 /**
+ * Formats a work week as the Pullenberg kit's compact range (kit's
+ * PayScreen.jsx: `KitDatePill label="Aug 10 - 16"`, en dash, month named
+ * once) - "Aug 14 - 20" within a month, "Aug 28 - Sep 3" across one, since
+ * the kit itself never shows a week crossing a month boundary and repeating
+ * the month on both ends is the only unambiguous fallback.
+ */
+export function formatWeekRange(start, end) {
+    if (!start || !end) return "";
+    const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+    if (sameMonth) {
+        const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(start);
+        return `${month} ${start.getDate()} – ${end.getDate()}`;
+    }
+    return `${formatMonthDay(start)} – ${formatMonthDay(end)}`;
+}
+
+/**
  * Formats a date as "Day" (e.g., "Friday")
  */
 export function formatDayName(date) {

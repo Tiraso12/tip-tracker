@@ -93,11 +93,15 @@ function AccountSheet({ items = [], pendingApprovalCount = 0 }) {
                 }
                 title="Account"
                 className={
-                    "h-11 w-11 inline-flex items-center justify-center rounded-full border text-xs font-semibold tracking-tight " +
-                    "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
-                    (open
-                        ? "border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                        : "border-[var(--color-line)] bg-[var(--color-surface-muted)] text-[var(--color-ink-soft)] hover:border-[var(--color-line-strong)] hover:text-[var(--color-ink)]")
+                    // The kit's own avatar (Shared.jsx KitAppBar) is a solid
+                    // mint-400 circle with pine-950 text, always - no separate
+                    // outline/rest state. Match that exactly; `open` only dims
+                    // the fill slightly rather than swapping the whole scheme,
+                    // so the menu-open cue does not read as a different control.
+                    "h-11 w-11 inline-flex items-center justify-center rounded-full border border-transparent text-xs font-semibold tracking-tight " +
+                    "bg-[var(--color-bar-mint)] text-[var(--color-bar-bg)] " +
+                    "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-bar-mint)]/40 " +
+                    (open ? "brightness-90" : "hover:brightness-110")
                 }
             >
                 <span aria-hidden="true">{initials}</span>
@@ -105,9 +109,10 @@ function AccountSheet({ items = [], pendingApprovalCount = 0 }) {
 
             {/* Absolutely positioned over the trigger and pointer-transparent: the
                 bar row never reflows for it and the 44x44 target stays whole. The
-                ring is the bar's own surface colour, so the count reads as a chip
-                on the avatar rather than a smudge against it. The trigger's
-                aria-label already speaks the number, so this is decorative. */}
+                ring matches the avatar's own solid mint fill, so the count reads
+                as a chip cut into that surface rather than a smudge on top of it.
+                The trigger's aria-label already speaks the number, so this is
+                decorative. */}
             {hasPending ? (
                 <span
                     aria-hidden="true"
@@ -116,7 +121,7 @@ function AccountSheet({ items = [], pendingApprovalCount = 0 }) {
                         "pointer-events-none absolute -top-0.5 -right-0.5 h-[18px] min-w-[18px] px-1 " +
                         "inline-flex items-center justify-center rounded-full " +
                         "bg-[var(--color-accent)] text-[10px] font-semibold leading-none text-white " +
-                        "ring-2 ring-[var(--color-surface)]"
+                        "ring-2 ring-[var(--color-bar-mint)]"
                     }
                 >
                     {pendingCount > 9 ? "9+" : pendingCount}

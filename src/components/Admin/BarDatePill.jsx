@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { formatMonthDay, getCurrentWeek, parseDateKey, stepDateKey, toDateKey } from "../../utils/dateUtils";
+import { formatWeekRange, getCurrentWeek, parseDateKey, stepDateKey, toDateKey } from "../../utils/dateUtils";
 
 // The "Bar Date" - the Shifts-tab date lives in the top app bar as a compact
 // reading pill so the content area opens flush with the Day Rail. Tapping the
@@ -7,10 +7,11 @@ import { formatMonthDay, getCurrentWeek, parseDateKey, stepDateKey, toDateKey } 
 // changes as soon as a date is chosen - no confirm step). A single tap only ever
 // OPENS the OS picker, a deliberate modal, so it can never move the day by
 // itself; dismissing it without choosing leaves the day unchanged. Off today the
-// pill turns warning-amber; getting back to today is the app bar's home control,
-// which resets the day AND the screen. A separate "Today" return pill used to sit
-// here doing the same thing in a smaller target, and the two together overflowed
-// the bar at 320px, so the pill now reads the day and nothing else.
+// pill's border turns warning-amber; getting back to today is the app bar's home
+// control, which resets the day AND the screen. A separate "Today" return pill
+// used to sit here doing the same thing in a smaller target, and the two
+// together overflowed the bar at 320px, so the pill now reads the day and
+// nothing else.
 //
 // PREV/NEXT FLANK THE PILL INSIDE THE SAME SHELL - one segmented control, still
 // one date control. Stepping is the common move (last night, next payday); the
@@ -22,14 +23,46 @@ import { formatMonthDay, getCurrentWeek, parseDateKey, stepDateKey, toDateKey } 
 // week screen steps one Friday-start work week (`stepDateKey`). Stepping is a
 // plain state change and never opens the picker.
 //
-// A STEP MUST NOT RESIZE THE CONTROL. The thumb is still on the arrow when the
-// label swaps, so a label that is wider in one state than the other slides the
-// arrow out from under it mid-tap. That is why the week label reads "Week of ..."
-// in every state and lets the tone carry which week is current - see the label
-// below. THE DAY SIDE IS THE DELIBERATE EXCEPTION: "Today · Aug 15" is 16px wider
-// than "Sun, Aug 16", so the day pill does move. The captain was shown both and
-// chose to keep the word on 2026-08-15 - "Today" earns its width on the screen
-// where money is entered against a night. Do not quietly make the two consistent.
+// A STEP MUST NOT RESIZE THE CONTROL was the rule this pill shipped under: the
+// thumb is still on the arrow when the label swaps, so a label wider in one
+// state than another slides the arrow out from under it mid-tap. It is why the
+// week label used to read "Week of ..." in every state, constant width, tone
+// alone saying which week is current - and why the day side reading "Today ·
+// Aug 15" and jumping 16px on every step was a KEPT, deliberate exception as of
+// 2026-08-15.
+//
+// On 2026-08-16 the real Pullenberg kit turned up (Shared.jsx / PayScreen.jsx /
+// FloorReviewScreens.jsx) and neither of its labels is either of ours: the day
+// pill is plain "Sat, Aug 15", never "Today", and the week pill is a compact
+// range, "Aug 10 - 16" (en dash, month named once), never "Week of ...". Kit
+// wins over both of this file's own conventions (see AGENTS.md's kit-authority
+// note) - the captain called the kit's transparent/outline shell over the old
+// filled chip, and the kit's week range over "Week of", both on 2026-08-16.
+// `formatWeekRange` builds that range and falls back to naming the month on
+// both ends ("Aug 28 - Sep 3") for a week that crosses a boundary, a case the
+// kit's own screens never show - the only unambiguous option once both ends
+// need it. THIS BRINGS THE RESIZE BACK: unlike "Week of", the range's width
+// depends on the days themselves, so it holds steady across a run of same-
+// month weeks ("Aug 14 - 20" to "Aug 21 - 27") but visibly changes on the one
+// week a month boundary falls in - the exact defect this file's day-pill fix
+// was written to remove, now reintroduced on the week side on purpose because
+// the kit's own form does it. Flagged, not silently reintroduced: watch how
+// that reads against the flanking arrows on the week that crosses a boundary.
+//
+// Because the kit never had to depict "today" in a live, steppable control
+// either, the tone still has to ride the border (mint when current, warning-
+// amber otherwise) or the shell goes back to being colour-blind about which
+// day/week this is, on the one screen it is not allowed to be. The calendar
+// icon and the prev/next chevrons all read the same `--color-bar-mint` - the
+// kit's own mint-400 - so the three glyphs read as one set regardless of that
+// border tone.
+//
+// The pill is 36px tall (`h-9`), the kit's own KitDatePill height. 44px is
+// this app's usual comfortable phone thumb-target, not a floor every control
+// must hit - the Pullenberg kit wins where it specifies a control's own size,
+// and it specifies 36px here. The captain chose that on 2026-08-16 with the
+// smaller target in view; this is the kit-wins principle applying, not a
+// one-off exception to keep re-litigating.
 //
 // `readOnly` renders the same pill as a plain label. The shift editor mounts it
 // that way: on a phone the editor's own header is `hidden sm:flex`, so the day
@@ -45,6 +78,8 @@ import { formatMonthDay, getCurrentWeek, parseDateKey, stepDateKey, toDateKey } 
 // on the screen where money is typed against a date. It is also why the read-only
 // label carries NO step controls: prev/next must not become a back door around
 // the one rule this pill exists to enforce.
+
+const ICON_TONE = "text-[var(--color-bar-mint)]";
 
 function CalendarIcon() {
     return (
@@ -71,31 +106,29 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
     const isWeek = unit === "week";
     const weekDates = isWeek ? getCurrentWeek(parseDateKey(selectedDate)) : null;
     const weekKeys = weekDates ? weekDates.map(toDateKey) : null;
-    // "Current" is what turns the pill accent-green instead of warning-amber: the
-    // day you are on, or the week you are in.
+    // "Current" is what turns the pill's border mint instead of warning-amber:
+    // the day you are on, or the week you are in.
     const isToday = isWeek ? weekKeys.includes(todayKey) : selectedDate === todayKey;
 
     const monthDay = parseDateKey(selectedDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
     const weekday = parseDateKey(selectedDate).toLocaleDateString(undefined, { weekday: "short" });
-    // The week label NEVER changes shape - "Week of <Friday>" whether or not that
-    // week is the current one. It used to read "This week · ..." on the current
-    // week, and stepping onto it made the whole control jump wider mid-tap, right
-    // under the thumb that was still travelling. Currency is the TONE's job, which
-    // is exactly what the tone already says; the word was saying it twice and
-    // charging width for it. Screen readers get it back as a spoken suffix below,
-    // so nothing about "which week is this" is colour-only.
-    const pillLabel = isWeek
-        ? `Week of ${formatMonthDay(weekDates[0])}`
-        : (isToday ? `Today · ${monthDay}` : `${weekday}, ${monthDay}`);
+    // Neither label changes shape for "today" - "<range>" and "<Weekday>, <Mon
+    // D>" read the same whether or not that day/week is the current one.
+    // Currency is the TONE's job (below). The week label DOES still change
+    // shape between weeks, on purpose - see the kit-range paragraph above.
+    // Screen readers get the day back too, via the read-only span's spoken
+    // sentence and the week button's aria-label.
+    const pillLabel = isWeek ? formatWeekRange(weekDates[0], weekDates[6]) : `${weekday}, ${monthDay}`;
 
     // Shared between the interactive control and the read-only label so the day
-    // reads identically wherever it appears in the bar. The tone is the shell's,
-    // not the label's, so the step buttons sit inside the same accent/warning skin.
+    // reads identically wherever it appears in the bar. The kit's transparent,
+    // thin-border shell: bg-transparent always, text stays the bar's ink white,
+    // and only the border carries which day/week this is.
     const toneClass = isToday
-        ? "border-[var(--color-accent-soft)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-        : "border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] text-[var(--color-warning)]";
+        ? "border-[var(--color-bar-mint)]/60 bg-transparent text-[var(--color-bar-ink)]"
+        : "border-[var(--color-warning)]/50 bg-transparent text-[var(--color-bar-ink)]";
     const shellClass =
-        "relative inline-flex items-center gap-1.5 h-11 rounded-full border px-3 text-xs font-medium tabular-nums transition-colors " +
+        "relative inline-flex items-center gap-1.5 h-9 rounded-full border px-3 text-xs font-medium tabular-nums transition-colors " +
         toneClass;
 
     if (readOnly) {
@@ -109,7 +142,9 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
             // label is the sighted read; the full sentence is what gets announced, so
             // "Mon, Jun 1" is never read as a bare fragment next to the controls.
             <span className={shellClass} data-testid="editor-day-label">
-                <CalendarIcon />
+                <span className={ICON_TONE}>
+                    <CalendarIcon />
+                </span>
                 <span className="sr-only">{`Editing the shift for ${spokenDate}`}</span>
                 <span aria-hidden="true" className="whitespace-nowrap">{pillLabel}</span>
             </span>
@@ -136,21 +171,20 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
 
     const step = (direction) => onSelectDate(stepDateKey(selectedDate, unit, direction));
 
-    // w-8 below sm is the 320px concession, and it is measured, not guessed: the
-    // widest the control ever gets is the pay side's "Week of Aug 14" at 186px,
-    // which at 320px leaves 14px clear of the home button. The 44px height keeps
-    // the target comfortable in the direction the thumb travels down the bar; the
-    // width is what the bar can actually pay for. rounded-full only on the outer
-    // edge so the three segments read as one pill rather than three buttons in a
-    // row.
+    // w-8 below sm is the 320px concession, measured against the pay side's old
+    // "Week of Aug 14" at 186px, the widest state that label ever reached - the
+    // kit's range form replacing it (see above) is a different, narrower shape
+    // and needs its own re-measure rather than trusting that number. rounded-full
+    // only on the outer edge so the three segments read as one pill rather than
+    // three buttons in a row.
     const stepClass =
-        "h-11 w-8 sm:w-9 inline-flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+        "h-9 w-8 sm:w-9 inline-flex items-center justify-center " + ICON_TONE + " transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
         (isToday ? "hover:bg-[var(--color-accent)]/10" : "hover:bg-[var(--color-warning)]/10");
 
     return (
         <div
             className={
-                "relative inline-flex items-center h-11 rounded-full border text-xs font-medium tabular-nums transition-colors " +
+                "relative inline-flex items-center h-9 rounded-full border text-xs font-medium tabular-nums transition-colors " +
                 toneClass
             }
         >
@@ -184,18 +218,20 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
                 aria-label={
                     isWeek
                         // "This week" survives here and nowhere else: the sighted read
-                        // gets it from the accent tone, which costs no width.
+                        // gets it from the border tone, which costs no width.
                         ? `Pay week: ${pillLabel}${isToday ? " - this week" : ""}. Tap to change week.`
                         : `Shift date: ${pillLabel}. Tap to change day.`
                 }
-                className="h-11 inline-flex items-center gap-1.5 px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 rounded-full"
+                className="h-9 inline-flex items-center gap-1.5 px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 rounded-full"
             >
                 {/* The calendar glyph is now the only picker affordance - the
                     dropdown chevron that used to sit at the pill's right edge was
                     dropped when the step chevrons arrived: three chevrons in one
                     control read as ambiguous, and it was already the first thing
                     scheduled to go under 340px. */}
-                <CalendarIcon />
+                <span className={ICON_TONE}>
+                    <CalendarIcon />
+                </span>
                 {/* nowrap: at 320px the label would otherwise wrap inside the
                     fixed-height pill and spill out of it. */}
                 <span className="whitespace-nowrap">{pillLabel}</span>

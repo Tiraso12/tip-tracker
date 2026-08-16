@@ -39,7 +39,7 @@ function AppBar({ onHome, homeLabel, homeTitle, tier, dateControl = null, accoun
                     onClick={onHome}
                     aria-label={homeLabel}
                     title={homeTitle || homeLabel}
-                    className="h-11 w-11 inline-flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-bar-ink-soft)] hover:text-[var(--color-bar-ink)] hover:bg-[var(--color-bar-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-bar-ink)]/30"
+                    className="h-11 w-11 inline-flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-bar-ink)]/75 hover:text-[var(--color-bar-ink-soft)] hover:bg-[var(--color-bar-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-bar-mint)]/40"
                 >
                     <HomeIcon />
                 </button>
@@ -53,12 +53,18 @@ function AppBar({ onHome, homeLabel, homeTitle, tier, dateControl = null, accoun
                     they hold none - an employee is shown no badge. The shared
                     `Badge` component is filled for light card surfaces; here on
                     the dark bar it uses an outline instead - transparent with a
-                    mint border and mint text - matching the kit's tier pill.
-                    Kit shows this at every width (it drops the wordmark on a
-                    narrow bar instead, see above) - so unlike the wordmark this
-                    does not hide on a phone. */}
+                    mint border and mint text - matching the kit's tier pill
+                    exactly: 2px/8px padding, 11px text, 0.08em tracking. `leading-
+                    none` is load-bearing, not decorative - the kit's own chip
+                    never sets a line-height, so it renders at the browser's tight
+                    ~1.2 default, while this app's ambient 1.5 body line-height
+                    inflated the same padding into a visibly taller pill (22.5px
+                    measured vs the kit's own ~17px) before this was added. Kit
+                    shows this at every width (it drops the wordmark on a narrow
+                    bar instead, see above) - so unlike the wordmark this does not
+                    hide on a phone. */}
                 {tier ? (
-                    <span className="inline-flex items-center rounded-full border border-[var(--color-bar-ink-soft)]/35 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-bar-ink-soft)]">
+                    <span className="inline-flex items-center rounded-full border border-[var(--color-bar-mint)]/35 px-2 py-0.5 text-[11px] leading-none font-medium uppercase tracking-[0.08em] text-[var(--color-bar-mint)]">
                         {tier}
                     </span>
                 ) : null}

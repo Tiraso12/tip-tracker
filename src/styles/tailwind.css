@@ -19,11 +19,14 @@
   --color-band: #fbfbfa;
 
   /* Where a second pinned row stacks under the Day Rail. The rail pins at
-     3.5rem (its `sticky top-14`) and stands 58px tall on a phone - p-1.5, a
-     44px tap target, and its two hairlines. Anything else that must stay on
-     screen while the page scrolls pins here instead of underneath it. Keep this
-     in step with DayRail's own classes: they are one measurement in two files,
-     and if they drift the rail silently covers whatever stacks below it. */
+     3.5rem (its `sticky top-14`) and stands 58px tall on a phone - p-1.5, its
+     usual 44px-comfortable tap target (this app's default for a phone thumb
+     target, not a floor every control must hit - the Pullenberg kit wins where
+     it specifies a control's own size), and its two hairlines. Anything else
+     that must stay on screen while the page scrolls pins here instead of
+     underneath it. Keep this in step with DayRail's own classes: they are one
+     measurement in two files, and if they drift the rail silently covers
+     whatever stacks below it. */
   --rail-stack-top: 114px;
 
   /* Text — green-cast near-black, never pure black */
@@ -53,6 +56,11 @@
   --color-bar-ink: #f6faf7;
   --color-bar-ink-soft: #a9e8c0;
   --color-bar-hover: rgba(246, 250, 247, 0.1);
+  /* The Pullenberg kit's mint-400 (Shared.jsx KitDatePill's calendar-icon
+     colour), not mint-300 like --color-bar-ink-soft above - one bright accent
+     for every icon glyph on the bar (BarDatePill's calendar icon and its
+     prev/next chevrons) so they read as one set. */
+  --color-bar-mint: #3ecf8e;
 
   /* Radius */
   --radius-xs: 5px;
