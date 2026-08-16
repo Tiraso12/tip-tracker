@@ -1,3 +1,4 @@
+import { useState } from "react";
 import ShiftSetupDnd from "../ShiftSetup/ShiftSetupDnd";
 import { EditorActionPair } from "./EditorActionPair";
 
@@ -15,6 +16,8 @@ export function FloorStep({
     onDoneFloor,
     onGoToReview,
 }) {
+    const [floorSheetOpen, setFloorSheetOpen] = useState(false);
+
     return (
         <div className="max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0">
             {/* PROTOTYPE v3: identical in-place editor for setup AND settled
@@ -27,6 +30,7 @@ export function FloorStep({
                 barTeam={barTeam} setBarTeam={setBarTeam}
                 runners={runners} setRunners={setRunners}
                 readOnly={false}
+                onSheetOpenChange={setFloorSheetOpen}
             />
             {/* Floating action pair (shared with Settle up). Cancel leaves edit
                 mode WITHOUT saving and returns to the read-only floor view; Done
@@ -35,12 +39,14 @@ export function FloorStep({
                 save (Review, with the "Re-saving overwrites the saved payouts
                 for {date}" warning + Confirm & Save).
                 Nothing is written until that explicit confirm. */}
-            <EditorActionPair
-                onCancel={onCancel}
-                onPrimary={shiftStatus === "closed" ? onGoToReview : onDoneFloor}
-                primaryLabel={isSaving ? "Saving…" : "✓ Done"}
-                busy={isSaving}
-            />
+            {floorSheetOpen ? null : (
+                <EditorActionPair
+                    onCancel={onCancel}
+                    onPrimary={shiftStatus === "closed" ? onGoToReview : onDoneFloor}
+                    primaryLabel={isSaving ? "Saving…" : "✓ Done"}
+                    busy={isSaving}
+                />
+            )}
         </div>
     );
 }

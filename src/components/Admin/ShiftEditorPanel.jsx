@@ -885,6 +885,105 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // gap) so the context band inside reads as one surface. The Floor plan keeps
     // the rail as its own separate, fully-rounded floating card above a gap.
     const railAttachesToCard = effectiveStep === "settle" || effectiveStep === "review";
+    const stepContent = loading ? (
+        <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
+            Loading shift data…
+        </div>
+    ) : (
+        <div className={"p-3 sm:p-6" + (isFullHeightStep ? " max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
+            {/* The Day Rail above names the active step, so no duplicate
+                step heading is rendered here. */}
+
+            {/* Not on Review. There the messages are the engine's own validations,
+                which the captain already passed through on the way here, and the
+                block is tall enough to push the spot-check card - the one thing
+                Review exists for - off the top of a phone screen. Floor and Settle
+                up still show it, because there it carries the errors that block a
+                save and it sits above the fields those errors name. Review's own
+                save progress/failure surfaces inline next to its save button. */}
+            {validationMessages.length > 0 && effectiveStep !== "review" ? (
+                <div role="alert" className="mb-4 px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
+                    <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
+                        Review before saving
+                    </div>
+                    <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
+                        {validationMessages.map((message, index) => (
+                            <li key={`${message}-${index}`}>{message}</li>
+                        ))}
+                    </ul>
+                </div>
+            ) : null}
+
+            {effectiveStep === "floor" ? (
+                <FloorStep
+                    allEmployees={allEmployees}
+                    teams={teams}
+                    setTeams={setTeams}
+                    barTeam={barTeam}
+                    setBarTeam={setBarTeam}
+                    runners={runners}
+                    setRunners={setRunners}
+                    shiftStatus={shiftStatus}
+                    isSaving={isSaving}
+                    onCancel={handleCancelEdit}
+                    onDoneFloor={handleDoneFloor}
+                    onGoToReview={goToReview}
+                />
+            ) : effectiveStep === "settle" ? (
+                <SettleStep
+                    closeoutGroups={closeoutGroups}
+                    activeGroupId={activeGroupId}
+                    onSelectGroup={setActiveGroupId}
+                    poolSummary={poolSummary}
+                    poolGroupSummary={poolGroupSummary}
+                    groupStatusSummary={groupStatusSummary}
+                    teams={teams}
+                    barTeam={barTeam}
+                    runners={runners}
+                    settleEditable={settleEditable}
+                    shiftStatus={shiftStatus}
+                    isSaving={isSaving}
+                    saveStatus={saveStatus}
+                    draftStatus={draftStatus}
+                    onPoolChange={updatePool}
+                    onToggleContracts={toggleContractVisibility}
+                    onAddContract={addContract}
+                    onUpdateContract={updateContract}
+                    onRemoveContract={removeContract}
+                    onBarPoolChange={updateBarPool}
+                    onBarFoodSalesChange={updateBarFoodSales}
+                    onTeamMemberPointsChange={updateTeamMemberPoints}
+                    onTeamMemberPointsAdjust={adjustTeamMemberPoints}
+                    onBarMemberPointsChange={updateBarMemberPoints}
+                    onBarMemberPointsAdjust={adjustBarMemberPoints}
+                    onRunnerPayoutChange={updateRunnerPayout}
+                    onEditSettle={handleEditSettle}
+                    onCancelSettle={handleCancelSettle}
+                    onDoneSettle={handleDoneSettle}
+                    onGoToReview={goToReview}
+                />
+            ) : (
+                <ReviewStep
+                    saveFailure={saveFailure}
+                    liveReview={liveReview}
+                    saveBlocked={saveBlocked}
+                    balanceReport={balanceReport}
+                    poolSummary={poolSummary}
+                    reviewMoneyGroups={reviewMoneyGroups}
+                    reviewFloorGroups={reviewFloorGroups}
+                    hasAssignedStaff={hasAssignedStaff}
+                    shiftStatus={shiftStatus}
+                    date={date}
+                    saveStatus={saveStatus}
+                    draftStatus={draftStatus}
+                    isSaving={isSaving}
+                    onFixMoney={() => setStep("settle")}
+                    onFixFloor={() => setStep("floor")}
+                    onConfirmSave={handleConfirmSave}
+                />
+            )}
+        </div>
+    );
 
     return (
         <div className={"space-y-3 sm:space-y-4"
@@ -900,12 +999,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
             <DayRail steps={railSteps} onStepClick={goToStep}
                 className={railAttachesToCard ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-band)]" : ""} />
 
-            {/* Edit mode reads as a distinct layer: an accent stroke + soft accent
-                elevation lifts the workspace off the page, versus the plain bordered
-                cards of the read-only landing. A settled shift's money steps (settle /
-                review) keep a neutral frame so the accent never competes with their
-                warning styling, but its FLOOR step gets the same accent editing frame
-                as a setup shift (v3: identical in-place edit look). */}
+            {effectiveStep === "floor" ? (
+                <div className="max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+                    {stepContent}
+                </div>
+            ) : (
             <Card className={"!p-0 " + (railAttachesToCard ? "max-[560px]:rounded-t-none max-[560px]:border-t-0 " : "") + (showEditFrame
                 ? "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]"
                 : "")
@@ -981,106 +1079,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                    something the rail does not: this shift is already paid out, and you are
                    in the editing layer. */}
 
-                {loading ? (
-                    <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
-                        Loading shift data…
-                    </div>
-                ) : (
-                    <div className={"p-3 sm:p-6" + (isFullHeightStep ? " max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
-                        {/* The Day Rail above names the active step, so no duplicate
-                            step heading is rendered here. */}
-
-                        {/* Not on Review. There the messages are the engine's own validations,
-                            which the captain already passed through on the way here, and the
-                            block is tall enough to push the spot-check card - the one thing
-                            Review exists for - off the top of a phone screen. Floor and Settle
-                            up still show it, because there it carries the errors that block a
-                            save and it sits above the fields those errors name. Review's own
-                            save progress/failure surfaces inline next to its save button. */}
-                        {validationMessages.length > 0 && effectiveStep !== "review" ? (
-                            <div role="alert" className="mb-4 px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
-                                <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
-                                    Review before saving
-                                </div>
-                                <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
-                                    {validationMessages.map((message, index) => (
-                                        <li key={`${message}-${index}`}>{message}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ) : null}
-
-                        {effectiveStep === "floor" ? (
-                            <FloorStep
-                                allEmployees={allEmployees}
-                                teams={teams}
-                                setTeams={setTeams}
-                                barTeam={barTeam}
-                                setBarTeam={setBarTeam}
-                                runners={runners}
-                                setRunners={setRunners}
-                                shiftStatus={shiftStatus}
-                                isSaving={isSaving}
-                                onCancel={handleCancelEdit}
-                                onDoneFloor={handleDoneFloor}
-                                onGoToReview={goToReview}
-                            />
-                        ) : effectiveStep === "settle" ? (
-                            <SettleStep
-                                closeoutGroups={closeoutGroups}
-                                activeGroupId={activeGroupId}
-                                onSelectGroup={setActiveGroupId}
-                                poolSummary={poolSummary}
-                                poolGroupSummary={poolGroupSummary}
-                                groupStatusSummary={groupStatusSummary}
-                                teams={teams}
-                                barTeam={barTeam}
-                                runners={runners}
-                                settleEditable={settleEditable}
-                                shiftStatus={shiftStatus}
-                                isSaving={isSaving}
-                                saveStatus={saveStatus}
-                                draftStatus={draftStatus}
-                                onPoolChange={updatePool}
-                                onToggleContracts={toggleContractVisibility}
-                                onAddContract={addContract}
-                                onUpdateContract={updateContract}
-                                onRemoveContract={removeContract}
-                                onBarPoolChange={updateBarPool}
-                                onBarFoodSalesChange={updateBarFoodSales}
-                                onTeamMemberPointsChange={updateTeamMemberPoints}
-                                onTeamMemberPointsAdjust={adjustTeamMemberPoints}
-                                onBarMemberPointsChange={updateBarMemberPoints}
-                                onBarMemberPointsAdjust={adjustBarMemberPoints}
-                                onRunnerPayoutChange={updateRunnerPayout}
-                                onEditSettle={handleEditSettle}
-                                onCancelSettle={handleCancelSettle}
-                                onDoneSettle={handleDoneSettle}
-                                onGoToReview={goToReview}
-                            />
-                        ) : (
-                            <ReviewStep
-                                saveFailure={saveFailure}
-                                liveReview={liveReview}
-                                saveBlocked={saveBlocked}
-                                balanceReport={balanceReport}
-                                poolSummary={poolSummary}
-                                reviewMoneyGroups={reviewMoneyGroups}
-                                reviewFloorGroups={reviewFloorGroups}
-                                hasAssignedStaff={hasAssignedStaff}
-                                shiftStatus={shiftStatus}
-                                date={date}
-                                saveStatus={saveStatus}
-                                draftStatus={draftStatus}
-                                isSaving={isSaving}
-                                onFixMoney={() => setStep("settle")}
-                                onFixFloor={() => setStep("floor")}
-                                onConfirmSave={handleConfirmSave}
-                            />
-                        )}
-                    </div>
-                )}
+                {stepContent}
             </Card>
+            )}
 
         </div>
     );
