@@ -5,7 +5,6 @@ import { calculateShift } from "../../utils/engine";
 import DayRail from "./DayRail";
 import { getRailSteps } from "../../utils/dayFlow";
 import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleStatus";
-import { Card } from "../ui";
 import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
 import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
 import { RUNNER_FLAT_RATE } from "../../utils/constants";
@@ -836,14 +835,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // `ReviewNotReady`) instead of pretending to be Settle up.
     const effectiveStep = step;
 
-    // The editing "layer" (accent frame + "Editing" strip) is active on the floor and
-    // review steps, and on Settle up only once it is unlocked. A locked Settle up reads
-    // as a neutral, read-only view.
-    const isEditingLayer = effectiveStep === "settle" ? settleEditable : true;
-    // Closed-shift money steps keep their warning frame, so the accent editing frame
-    // shows only when we are in the editing layer and not on a closed money step.
-    const showEditFrame = isEditingLayer && !(shiftStatus === "closed" && effectiveStep !== "floor");
-
     // Day-level step status for the rail. Status is always shown; order is never
     // hard-forced - any earlier/reachable step is one tap away.
     const railSteps = getRailSteps({
@@ -853,54 +844,25 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         hasFloorStaff: hasAssignedStaff,
     });
 
-    // On a phone every step is BOUND to the viewport, not merely floored at it, and that
-    // one distinction is the whole overflow defect. A `min-height` leaves the column's
-    // used height auto, so it sizes to its CONTENT; the `flex-1 min-h-0` chain below it
-    // then never gets a definite height to shrink against, and the inner `overflow-y-auto`
-    // boxes never become scrollers. The PAGE scrolls instead, and the panel slides up
-    // under the sticky Day Rail while the step's own chrome - the editing strip, the pool
-    // summary, the group switcher - leaves the screen entirely. A definite height is what
-    // hands the chain something to divide, so the inner box scrolls and the page does not.
-    //
-    // This was gated behind `(min-height: 700px)` and applied to the money steps alone,
-    // which is why it read as a fix that had not taken: a phone browser's usable viewport
-    // is routinely shorter than that (320x568, 375x667, 390x664 all miss it), so on the
-    // screens that had the defect the rule never matched. The gate is gone; Review stays
-    // bound to it. Floor plan and Settle up do not - see below.
-    //
-    // Content still packs snug at the top: the panel grows, the rows do not spread out.
-    // Review scrolls its whole column inside the bound above; Settle up scrolls the
-    // entry panel's BODY so the group's name and pool stay pinned; the floor plan scrolls
-    // the ordinary page, same as everywhere else that isn't bound to the viewport.
-    //
-    // The `min-h` beside the height is a floor, not a fallback to the old behaviour: it
-    // keeps the height DEFINITE (a min-height only clamps the used height, it does not
-    // return it to auto) so the chain still works, while stopping a rotated or unusually
-    // short viewport from squeezing the money into a slot no field fits in. At 320x568 -
-    // the tight phone - the calc wins at 472px and the floor never bites.
-    // Settle up and the floor plan are deliberately NOT bound to the viewport. Settle:
-    // the captain asked for the titled money card to hug its own content instead of
-    // stretching to fill the screen with an internal scroller. Floor: an inner
-    // scrollport made the team grid read as boxed - a hard-clipped edge instead of the
-    // kit's floating cards, and a second scroll target (tap the gutter beside the
-    // floating Cancel/Done pair and the OUTER column scrolled instead of the grid,
-    // because two nested scrollers were both listening). The captain asked for one
-    // scroll: the page, with the team cards passing behind the fixed action pair the
-    // same way FloatingActions already floats over the day landing's payout rows.
-    // Both reintroduce the page-scroll shape the comment above warns about, on
-    // purpose, scoped to these two steps.
-    const isFullHeightStep = effectiveStep === "review";
-    // Review fuses the rail into the card below (square corners, no gap) so the
-    // context band inside reads as one surface. Floor plan and Settle up keep the
-    // rail as its own separate, fully-rounded floating card above a gap - both
-    // steps float on the page background rather than sit inside an outer panel.
-    const railAttachesToCard = effectiveStep === "review";
+    // Every step used to be BOUND to the viewport on a phone: a definite height for a
+    // `flex-1 min-h-0` chain to shrink against, so an inner `overflow-y-auto` box
+    // scrolled and the page did not. That inner scrollport was itself a leftover
+    // wrapper - it hard-clipped cards at its edges when scrolled and read as a boxed
+    // seam above the floating action pair instead of ordinary page content passing
+    // behind it. Floor plan shed it first; Review gets the identical fix here for the
+    // identical defect. Neither is bound anymore - both now scroll with the page like
+    // everywhere else that isn't explicitly viewport-bound, and their cards pass behind
+    // the floating action pair the same way FloatingActions already floats over content
+    // elsewhere. Settle up was never bound to begin with: the captain asked for the
+    // titled money card to hug its own content instead of stretching to fill the screen
+    // with an internal scroller. No current step needs the viewport-bound treatment, so
+    // nothing below reaches for it - a future step that does can reintroduce the flag.
     const stepContent = loading ? (
         <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
             Loading shift data…
         </div>
     ) : (
-        <div className={"p-3 sm:p-6" + (isFullHeightStep ? " max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
+        <div className="p-3 sm:p-6">
             {/* The Day Rail above names the active step, so no duplicate
                 step heading is rendered here. */}
 
@@ -997,103 +959,20 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
 
     return (
         <div className={"space-y-3 sm:space-y-4"
-            + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:h-[calc(100dvh-6rem)] max-[560px]:min-h-[420px]" : "")
-            + (railAttachesToCard || effectiveStep === "settle" ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
+            + (effectiveStep === "settle" ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
                 shown; earlier/reachable steps are one tap away (order never forced).
-                On a phone, Review fuses the rail into its editor Card below: square
-                bottom corners, no gap, and the same tint as the context band inside,
-                so the boxes divide context from entry rather than from itself. Floor
-                plan and Settle up do not - each stays its own floating card, floating
-                on the page background rather than inside an outer white panel. */}
-            <DayRail steps={railSteps} onStepClick={goToStep}
-                bleed={!railAttachesToCard}
-                className={railAttachesToCard ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-band)]" : ""} />
+                Every step - Floor plan, Settle up, Review - keeps the rail as its own
+                separate, fully-rounded floating card above a gap: each step floats on
+                the page background rather than sitting inside an outer white panel.
+                Review used to fuse the rail into a "Shift Workspace" Card below it
+                (square corners, no gap); that outer panel is gone, so the rail no
+                longer has anything to fuse against. */}
+            <DayRail steps={railSteps} onStepClick={goToStep} bleed />
 
-            {effectiveStep === "floor" || effectiveStep === "settle" ? (
-                <div>
-                    {stepContent}
-                </div>
-            ) : (
-            <Card className={"!p-0 " + (railAttachesToCard ? "max-[560px]:rounded-t-none max-[560px]:border-t-0 " : "") + (showEditFrame
-                ? "ring-2 ring-[var(--color-accent)]/25 shadow-[0_10px_30px_rgba(47,111,79,0.10)]"
-                : "")
-                + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : "")}>
-                <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
-                    <div className="flex flex-col gap-1">
-                        {/* No date here: the app bar now carries the day being edited
-                            at every width, pinned, and in a readable form. This header
-                            printed the raw ISO key, so the same day appeared twice on
-                            one screen in two different formats. */}
-                        <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                            Shift Workspace
-                        </h2>
-                        {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
-                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                Closed shift
-                            </span>
-                        ) : (
-                            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
-                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-                                Editing
-                            </span>
-                        )}
-                        {saveStatus ? (
-                            <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
-                        ) : draftStatus ? (
-                            <span className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
-                        ) : null}
-                    </div>
-                </header>
-
-                {/* Mobile status strip: the workspace header above is `hidden sm:flex`,
-                    so on phones the closed / paid-out cue would otherwise vanish and an
-                    admin could re-save a paid-out shift blind. Surface a compact,
-                    always-visible strip. Non-closed shows an accent "Editing floor plan"
-                    cue (matching the workspace's accent frame) so it is clear you are in
-                    the editing layer, not the read-only floor view. */}
-                {/* Both strips PIN under the Day Rail rather than scrolling beneath it.
-                    On a short viewport the editor column hits its 420px floor, the page
-                    starts to scroll, and the rail - being sticky - slid straight over
-                    whichever strip sat below it. The cue that says you are editing, or
-                    that this shift is already paid out, is exactly the thing that must
-                    not disappear the moment you move the screen. */}
-                {(shiftStatus === "closed" && effectiveStep !== "floor") ? (
-                    <div className="sm:hidden sticky top-[var(--rail-stack-top)] z-[9] flex items-center gap-2 px-3 py-1 border-b border-[var(--color-warning)]/25 bg-[var(--color-warning-soft)]">
-                        {/* The raw ISO date used to sit at the right of this strip,
-                            because the day was otherwise invisible on a phone. The app
-                            bar now carries it, pinned and readable, so this strip is
-                            back to saying only what it is for: this shift is paid out.
-
-                            Sized down to a marker rather than a banner: it has to be
-                            unmissable before a re-save, not loud, and every pixel it
-                            spends comes straight off the money below it. It keeps the
-                            warning colour and the dot, which is what makes it read at
-                            this size - do not also shrink those. */}
-                        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-warning)]">
-                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
-                            Closed shift · Paid out
-                        </span>
-                    </div>
-                ) : (isEditingLayer && effectiveStep !== "floor") ? (
-                    <div className="sm:hidden sticky top-[var(--rail-stack-top)] z-[9] flex items-center gap-2 px-3 py-2.5 border-b border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]">
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent)]">
-                            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" />
-                            {effectiveStep === "settle" ? "Editing · Settle up" : "Editing · Review"}
-                        </span>
-                    </div>
-                ) : null
-                /* A locked Settle up used to print a neutral "SETTLE UP" strip here. The
-                   Day Rail directly above already marks Settle as the active step, so the
-                   strip said the step's name a second time and charged the money below it
-                   a full band of height to do so. The two strips that remain each say
-                   something the rail does not: this shift is already paid out, and you are
-                   in the editing layer. */}
-
+            <div>
                 {stepContent}
-            </Card>
-            )}
-
+            </div>
         </div>
     );
 }

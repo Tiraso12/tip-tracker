@@ -54,7 +54,6 @@ export function CalculatedPayoutReview({
     moneyGroups = [],
     floorGroups = [],
     floorPoints = 0,
-    onFixMoney,
     onFixFloor,
 }) {
     const { result, payoutRows, staffTotal } = review;
@@ -159,9 +158,13 @@ export function CalculatedPayoutReview({
                 open={openRow === "money"}
                 onToggle={() => toggle("money")}
             >
-                <div className="space-y-2.5">
+                {/* NOTE for future edits: dining money is pooled house-wide across every
+                    dining team and split by one point value (engine.js), so a wrong figure
+                    moves everyone. Do not add copy here that attributes a person's payout
+                    to one team's money - it cannot, and it would send the hunt the wrong way. */}
+                <div className="divide-y divide-[var(--color-line)]">
                     {moneyGroups.map(group => (
-                        <div key={group.id} className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5">
+                        <div key={group.id} className="py-2.5 first:pt-0 last:pb-0">
                             <div className="flex items-baseline justify-between gap-3">
                                 <strong className="text-[13px] text-[var(--color-ink)]">{group.name}</strong>
                                 <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">
@@ -178,11 +181,6 @@ export function CalculatedPayoutReview({
                             </div>
                         </div>
                     ))}
-                    {/* NOTE for future edits: dining money is pooled house-wide across every
-                        dining team and split by one point value (engine.js), so a wrong figure
-                        moves everyone. Do not add copy here that attributes a person's payout
-                        to one team's money - it cannot, and it would send the hunt the wrong way. */}
-                    <FixJump label="Fix in Settle up" onClick={onFixMoney} />
                 </div>
             </ReviewDisclosure>
 
@@ -193,25 +191,27 @@ export function CalculatedPayoutReview({
                 open={openRow === "floor"}
                 onToggle={() => toggle("floor")}
             >
-                <div className="space-y-2.5">
-                    {floorGroups.map(group => (
-                        <div key={group.id} className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5">
-                            <div className="flex items-baseline justify-between gap-3">
-                                <strong className="text-[13px] text-[var(--color-ink)]">{group.name}</strong>
-                                <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">
-                                    {group.members.length} {group.members.length === 1 ? "person" : "people"}
-                                    {group.kind === "runners"
-                                        ? (group.members.length > 0
-                                            ? <> · <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(group.pay)}</span> off the pool</>
-                                            : null)
-                                        : <> · {group.points} {group.points === 1 ? "pt" : "pts"}</>}
-                                </span>
+                <div className="space-y-3">
+                    <div className="divide-y divide-[var(--color-line)]">
+                        {floorGroups.map(group => (
+                            <div key={group.id} className="py-2.5 first:pt-0 last:pb-0">
+                                <div className="flex items-baseline justify-between gap-3">
+                                    <strong className="text-[13px] text-[var(--color-ink)]">{group.name}</strong>
+                                    <span className="shrink-0 text-[11px] text-[var(--color-ink-soft)]">
+                                        {group.members.length} {group.members.length === 1 ? "person" : "people"}
+                                        {group.kind === "runners"
+                                            ? (group.members.length > 0
+                                                ? <> · <span className="font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(group.pay)}</span> off the pool</>
+                                                : null)
+                                            : <> · {group.points} {group.points === 1 ? "pt" : "pts"}</>}
+                                    </span>
+                                </div>
+                                <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-ink-soft)]">
+                                    {group.members.length > 0 ? group.members.join(" · ") : "Nobody assigned"}
+                                </p>
                             </div>
-                            <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-ink-soft)]">
-                                {group.members.length > 0 ? group.members.join(" · ") : "Nobody assigned"}
-                            </p>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                     <FixJump label="Fix on the Floor plan" onClick={onFixFloor} />
                 </div>
             </ReviewDisclosure>
@@ -243,15 +243,20 @@ export function CalculatedPayoutReview({
                 open={openRow === "totals"}
                 onToggle={() => toggle("totals")}
             >
-                <div className="space-y-3">
+                <div className="space-y-4">
                     {/* The dining ledger, then the three destinations it resolves into.
                         There is deliberately NO parallel bar ledger: the captain's call,
                         and a correct one - the footer below already names dining take-home,
                         bar take-home and runners, so a second column deriving the bar would
                         state the same figure twice. What the bar needs from this ledger is
                         the transfer pair, and both legs are visible here as dining-side
-                        movements ("− To the bar", "+ Runners fee"). */}
-                    <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5 space-y-1.5">
+                        movements ("− To the bar", "+ Runners fee").
+
+                        Flat rows, no boxed-card background: three logical sections (dining
+                        ledger, three-pool split, cash cross-check) stay readable through a
+                        small uppercase label and a hairline before each running total,
+                        matching the kit's plain list rather than stacking a card per section. */}
+                    <div className="space-y-1.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-muted)]">
                             Dining room
                         </span>
@@ -269,8 +274,9 @@ export function CalculatedPayoutReview({
                         <LedgerRow label="− Runners" sub="paid off the top" value={fmtMoney(runnerTake)} />
                         <LedgerRow label="− To the bar" sub="bar allocation" value={fmtMoney(barAllocation)} />
                         <LedgerRow label="+ Runners fee" sub="from the bar" value={fmtMoney(feeTransfer)} />
-                        <div className="border-t border-[var(--color-line)]" />
-                        <LedgerRow label="= Dining take-home" value={fmtMoney(diningTake)} tone="total" testId="totals-dining-ledger" />
+                        <div className="border-t border-[var(--color-line)] pt-1.5">
+                            <LedgerRow label="= Dining take-home" value={fmtMoney(diningTake)} tone="total" testId="totals-dining-ledger" />
+                        </div>
                     </div>
 
                     {/* Intent option 1: an all-in total that is ALWAYS decomposed and is
@@ -280,19 +286,20 @@ export function CalculatedPayoutReview({
                         the balance check below mean anything: the engine reconciles
                         `totalAvailable − totalDistributed` across all three, so dropping
                         the combined number would leave "✓ Balanced" anchored to nothing. */}
-                    <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface-muted)] px-3 py-2.5 space-y-1.5">
+                    <div className="space-y-1.5 border-t border-[var(--color-line)] pt-4">
                         <LedgerRow label="Dining take-home" sub="split by dining points" value={fmtMoney(diningTake)} testId="totals-dining" />
                         <LedgerRow label="Bar take-home" sub="its own pool, split by bar points" value={fmtMoney(barTake)} testId="totals-bar" />
                         <LedgerRow label="Runners" sub="flat, off the dining pool" value={fmtMoney(runnerTake)} testId="totals-runners" />
-                        <div className="border-t border-[var(--color-line)]" />
-                        <LedgerRow label="= Everyone paid" sub="all three pools, CTP + GRT" value={fmtMoney(staffTotal)} tone="total" testId="totals-everyone-paid" />
+                        <div className="border-t border-[var(--color-line)] pt-1.5">
+                            <LedgerRow label="= Everyone paid" sub="all three pools, CTP + GRT" value={fmtMoney(staffTotal)} tone="total" testId="totals-everyone-paid" />
+                        </div>
                     </div>
 
                     {/* Tier 3 - the cross-checks. Cash is money too, but it is distributed
                         separately and must never fold into the pool total (CTP + GRT); it
                         sits here because unlike every derived figure above it is a number
                         the captain typed, so it is the one worth checking against reality. */}
-                    <div className="rounded-[var(--radius-sm)] bg-[var(--color-surface)] px-3 py-2.5 space-y-2">
+                    <div className="space-y-2 border-t border-[var(--color-line)] pt-4">
                         <LedgerRow
                             label="Available cash"
                             sub="you entered this - check it against the drawer"

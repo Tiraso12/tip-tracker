@@ -148,19 +148,19 @@ export function ReviewStep({
         /* STEP 3 - Review -> Confirm & Save. The payout list used to live
            in a `max-h-96 overflow-y-auto` box nested inside the page
            scroll, so its last rows were silently clipped with no cue that
-           the container scrolled; everything now flows in the page. There
-           is no "Back to Settle up" button - the "Fix in Settle up" and
-           "Fix on the Floor plan" jumps inside the rows below already do
-           that, from the place that explains why you would go. The bottom
-           padding is the floating save button's clearance, exactly as
-           Settle up does it.
-
-           On a phone this column IS the scroller: it takes the height
-           left under the day rail and the editing strip and scrolls
-           inside itself, so the rail stays reachable while the numbers
-           are read. The bottom padding rides inside that scroll, which
-           is what still lets the last row clear the floating save. */
-        <section className="space-y-4 pb-24 sm:mx-auto sm:max-w-lg max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:overscroll-contain">
+           the container scrolled. That box was replaced by a viewport-bound
+           column with its own `flex-1 min-h-0 overflow-y-auto` scrollport -
+           still a boxed inner scroller, just a taller one: it hard-clipped
+           the spot-check card and disclosures at its edges and read as a
+           seam above Confirm & Save instead of ordinary content passing
+           behind it. Floor plan carried the identical defect and shed it
+           first; this column now scrolls with the page the same way, and
+           the bottom padding is purely the floating save button's
+           clearance, exactly as Settle up and Floor plan already have it.
+           There is no "Back to Settle up" button - the "Fix in Settle up"
+           and "Fix on the Floor plan" jumps inside the rows below already
+           do that, from the place that explains why you would go. */
+        <section className="space-y-4 pb-24">
             {/* Why this shift cannot be saved, above the numbers it is about.
                 Both blocks sit at the top of Review deliberately: a reason
                 below the fold is the same dead end as no reason at all. */}
@@ -186,7 +186,6 @@ export function ReviewStep({
                     moneyGroups={reviewMoneyGroups}
                     floorGroups={reviewFloorGroups}
                     floorPoints={poolSummary.restaurantPoints + poolSummary.barPoints}
-                    onFixMoney={onFixMoney}
                     onFixFloor={onFixFloor}
                 />
             ) : (
