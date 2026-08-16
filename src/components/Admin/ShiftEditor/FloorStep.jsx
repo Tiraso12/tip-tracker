@@ -19,7 +19,7 @@ export function FloorStep({
     const [floorSheetOpen, setFloorSheetOpen] = useState(false);
 
     return (
-        <div className="max-[560px]:flex-1 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-0">
+        <div>
             {/* PROTOTYPE v3: identical in-place editor for setup AND settled
                 shifts - the redesigned cards are always editable (the entry
                 was an explicit "Edit"; autosave is disabled for closed shifts

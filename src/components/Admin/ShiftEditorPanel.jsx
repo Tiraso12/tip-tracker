@@ -865,27 +865,31 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // This was gated behind `(min-height: 700px)` and applied to the money steps alone,
     // which is why it read as a fix that had not taken: a phone browser's usable viewport
     // is routinely shorter than that (320x568, 375x667, 390x664 all miss it), so on the
-    // screens that had the defect the rule never matched, and the floor plan was never
-    // given a height at all. The gate is gone and all three steps are bound.
+    // screens that had the defect the rule never matched. The gate is gone; Review stays
+    // bound to it. Floor plan and Settle up do not - see below.
     //
     // Content still packs snug at the top: the panel grows, the rows do not spread out.
-    // What scrolls differs by step - the floor plan scrolls its team grid, Settle up
-    // scrolls the entry panel's BODY so the group's name and pool stay pinned, Review
-    // scrolls its whole column.
+    // Review scrolls its whole column inside the bound above; Settle up scrolls the
+    // entry panel's BODY so the group's name and pool stay pinned; the floor plan scrolls
+    // the ordinary page, same as everywhere else that isn't bound to the viewport.
     //
     // The `min-h` beside the height is a floor, not a fallback to the old behaviour: it
     // keeps the height DEFINITE (a min-height only clamps the used height, it does not
     // return it to auto) so the chain still works, while stopping a rotated or unusually
     // short viewport from squeezing the money into a slot no field fits in. At 320x568 -
     // the tight phone - the calc wins at 472px and the floor never bites.
-    // Settle up is deliberately NOT bound to the viewport: the captain asked for the
-    // titled money card to hug its own content instead of stretching to fill the
-    // screen with an internal scroller. That reintroduces the page-scroll shape the
-    // comment above warns about, on purpose, scoped to this one step - the group
-    // switcher band is no longer pinned above the fields while they scroll, which is
-    // the traded-off behavior of hugging instead of filling.
-    const isFullHeightStep = effectiveStep === "floor"
-        || effectiveStep === "review";
+    // Settle up and the floor plan are deliberately NOT bound to the viewport. Settle:
+    // the captain asked for the titled money card to hug its own content instead of
+    // stretching to fill the screen with an internal scroller. Floor: an inner
+    // scrollport made the team grid read as boxed - a hard-clipped edge instead of the
+    // kit's floating cards, and a second scroll target (tap the gutter beside the
+    // floating Cancel/Done pair and the OUTER column scrolled instead of the grid,
+    // because two nested scrollers were both listening). The captain asked for one
+    // scroll: the page, with the team cards passing behind the fixed action pair the
+    // same way FloatingActions already floats over the day landing's payout rows.
+    // Both reintroduce the page-scroll shape the comment above warns about, on
+    // purpose, scoped to these two steps.
+    const isFullHeightStep = effectiveStep === "review";
     // Review fuses the rail into the card below (square corners, no gap) so the
     // context band inside reads as one surface. Floor plan and Settle up keep the
     // rail as its own separate, fully-rounded floating card above a gap - both
@@ -1007,7 +1011,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 className={railAttachesToCard ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-band)]" : ""} />
 
             {effectiveStep === "floor" || effectiveStep === "settle" ? (
-                <div className={effectiveStep === "floor" ? "max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : ""}>
+                <div>
                     {stepContent}
                 </div>
             ) : (

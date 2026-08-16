@@ -532,7 +532,7 @@ function ShiftSetupDnd({
     }, [handleAddUnregistered, tempForm.name, tempForm.role]);
 
     return (
-        <div className="relative flex min-h-[420px] flex-col gap-3 max-[560px]:min-h-0 max-[560px]:flex-1 max-[560px]:overflow-hidden">
+        <div className="relative flex min-h-[420px] flex-col gap-3">
             <div
                 className="hidden"
                 onDragOver={(e) => { e.preventDefault(); if (dragOverId !== 'pool') setDragOverId('pool'); }}
@@ -571,7 +571,7 @@ function ShiftSetupDnd({
                 )}
             </div>
 
-            <div className="grid flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto pb-32 pr-1 max-[900px]:grid-cols-1 max-[560px]:grid-cols-1 max-[560px]:gap-2 max-[560px]:pb-28">
+            <div className="grid flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto pb-32 pr-1 max-[900px]:grid-cols-1 max-[560px]:grid-cols-1 max-[560px]:gap-2 max-[560px]:flex-none max-[560px]:overflow-visible max-[560px]:pb-0">
                 {floorSections.map(section => (
                     <TeamCard
                         key={section.id}
@@ -590,7 +590,7 @@ function ShiftSetupDnd({
                 <button
                     type="button"
                     onClick={() => openPickerForTeam(floorSections[0]?.id || "team-1")}
-                    className="fixed bottom-[5.75rem] left-3 right-3 z-20 flex items-center justify-between gap-3 rounded-full bg-[var(--color-bar-bg)] px-4 py-3 text-left text-[var(--color-surface)] shadow-[0_14px_34px_rgba(15,23,42,0.28)] sm:left-auto sm:right-6 sm:w-[22rem] max-[560px]:relative max-[560px]:bottom-auto max-[560px]:left-auto max-[560px]:right-auto max-[560px]:mb-[5.75rem] max-[560px]:mt-1 max-[560px]:w-auto max-[560px]:shrink-0"
+                    className="fixed bottom-[5.75rem] left-3 right-3 z-20 flex items-center justify-between gap-3 rounded-full bg-[var(--color-bar-bg)] px-4 py-3 text-left text-[var(--color-surface)] shadow-[0_14px_34px_rgba(15,23,42,0.28)] sm:left-auto sm:right-6 sm:w-[22rem] max-[560px]:relative max-[560px]:bottom-auto max-[560px]:left-auto max-[560px]:right-auto max-[560px]:mt-1 max-[560px]:w-auto max-[560px]:shrink-0"
                 >
                     <span className="text-[13px] font-medium">{unassignedEmployees.length} not on the floor</span>
                     <span className="text-[12px] font-semibold text-[var(--color-bar-ink-soft)]">Add people ↑</span>
