@@ -48,24 +48,23 @@ export function SettleStep({
 
     return (
         /* STEP 2 - Settle up: the calm single money switcher, edited in place and
-           saved with the same bottom-right FAB as the floor plan. The bottom
-           padding is that FAB's clearance, so the last money row (the Contracts
-           disclosure) can always be scrolled clear of it - and it is not
-           phone-only, because the FAB is `fixed` at every width.
+           saved with the same bottom-right FAB as the floor plan.
 
-           On a phone the section is a column that fills the screen: the summary
-           line, the group switcher and the Review payouts row are flex-none, and
-           the entry panel between them takes every remaining pixel and scrolls
-           its own body.
+           The titled money card HUGS its content at every width instead of filling
+           the screen with its own internal scroller - the page scrolls, same as
+           desktop always has, and pb-24 is that FAB's clearance below the card.
+           The floating Edit/Cancel/Done pair is `fixed`, so it stays reachable
+           regardless of how far the page scrolls.
 
-           The FAB's clearance is INSIDE that scroller (the body's own pb-14),
-           not below the panel. Reserving it outside cost a band of dead screen
-           on the one surface with no height to spare, and bought nothing the
-           scroller cannot buy itself: the last field still scrolls clear of the
-           floating pill, it just does so within the panel. So the panel now runs
-           to the bottom of the card. The desktop pb-24 stays - there the page
-           scrolls and the FAB is fixed at every width. */
-        <section className="space-y-4 pb-24 max-[560px]:pb-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+           On a phone pb-24 (96px) is NOT the only reserve stacked below the card:
+           the step content wrapper's own bottom padding (12px) and the workspace
+           main's (20px) both land after this section too, so the real total was
+           128px of pure clearance - nothing wrong at any one layer, but three
+           layers compounding into a scroll that revealed far more empty paper
+           than a short card needed. pb-16 brings the mobile total back to ~96px
+           to match what desktop (where the extra 32px is lost in a taller
+           viewport) already gets away with. */
+        <section className="space-y-4 pb-24 max-[560px]:pb-16">
             {/* Team switcher: a compact horizontal strip above one fixed-height entry
                 panel. Tapping a pill focuses that group; the strip scrolls sideways on
                 phone so page height stays constant no matter how large the roster is.
@@ -78,7 +77,18 @@ export function SettleStep({
                 single hairline. Below that hairline is plain paper carrying
                 nothing but the money fields. One line divides the two, instead
                 of three boxes dividing the context from itself. */}
-            <div className="[--rail-fade:var(--color-surface)] max-[560px]:[--rail-fade:var(--color-band)] space-y-4 max-[560px]:space-y-0 max-[560px]:flex max-[560px]:flex-col max-[560px]:gap-2.5 max-[560px]:flex-none max-[560px]:-mx-3 max-[560px]:-mt-3 max-[560px]:px-3 max-[560px]:pt-3 max-[560px]:pb-2 max-[560px]:bg-[var(--color-band)] max-[560px]:border-b max-[560px]:border-[var(--color-line)]">
+            {/* --color-band is barely a shade off --color-bg (page paper) - the kit
+                uses --color-surface-muted for this strip, which actually reads as a
+                tinted band instead of quietly matching the page underneath it.
+
+                -mx-7 (28px) bleeds past BOTH ancestor paddings between this band and
+                the true screen edge: the step content's own p-3 (12px) and, past
+                that, main's px-4 (16px). -mx-3 only canceled the first, landing the
+                band flush with the page's content column rather than the screen edge
+                - one padding layer short of running edge to edge like the Day Rail
+                above it does. px-3 re-establishes the band's own 12px inner padding
+                once the bleed clears both outer layers. */}
+            <div className="[--rail-fade:var(--color-surface)] max-[560px]:[--rail-fade:var(--color-surface-muted)] space-y-4 max-[560px]:space-y-0 max-[560px]:flex max-[560px]:flex-col max-[560px]:gap-2.5 max-[560px]:flex-none max-[560px]:-mx-7 max-[560px]:-mt-3 max-[560px]:px-3 max-[560px]:pt-3 max-[560px]:pb-2 max-[560px]:bg-[var(--color-surface-muted)] max-[560px]:border-b max-[560px]:border-[var(--color-line)]">
             {/* On a phone the tabs come FIRST and this summary reads
                 underneath them: you pick the team, then the day's total
                 and what is still owed sit closest to the money they
@@ -115,12 +125,21 @@ export function SettleStep({
                     )
                 ) : null}
             </div>
+            {/* Phone only: justify-between spreads the tabs across the row's full
+                width, like the kit, when they fit. gap-2 is the floor, not the only
+                spacing - with few groups there is free space to distribute, and
+                justify-between adds it; with enough groups to overflow, there is none
+                left to add and this falls back to the plain gap-2 packing
+                overflow-x-auto scrolls through, no group-count check needed. Desktop
+                keeps the left-packed rail: at 1200px, space-between across 2-3 tabs
+                reads as scattered rather than as a filled row - the kit's own spread
+                assumes a phone-width rail, not a desktop-width one. */}
             <ScrollRail
                 role="tablist"
                 ariaLabel="Select a group to enter money"
                 depsKey={closeoutGroups.length}
                 fadeFrom="var(--rail-fade)"
-                className="flex gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 pr-8 [scrollbar-width:thin]"
+                className="flex max-[560px]:justify-between gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 pr-8 [scrollbar-width:thin]"
             >
                 {closeoutGroups.map(group => (
                     <RailPill
@@ -137,7 +156,10 @@ export function SettleStep({
                 disabled fieldset switches every input/stepper off at once; Edit
                 flips it back on in place. The group switcher above stays outside
                 the fieldset so you can still page through each group while locked. */}
-            <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0 max-[560px]:!mt-3 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+            {/* -mx-3 matches the band above: both cancel the step content's own p-3
+                so the card's sides line up with the band's tinted strip instead of
+                sitting a second layer of padding further in. */}
+            <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0 max-[560px]:!mt-3 max-[560px]:-mx-3">
             {activeGroup && (activeGroup.kind !== "dining" || diningTeam) ? (
                 <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
                     {activeGroup.kind === "dining" ? (
@@ -208,9 +230,11 @@ export function SettleStep({
             </fieldset>
 
             {/* A closed shift disables draft autosave, so surface the live save/
-                draft status inline; a setup shift's money autosaves silently. */}
+                draft status inline; a setup shift's money autosaves silently. Settle
+                up floats on the page background (no outer workspace header), so this
+                is the only place that status shows at any width. */}
             {(saveStatus || draftStatus) ? (
-                <p aria-live="polite" aria-atomic="true" className="sm:hidden text-xs text-[var(--color-ink-soft)]">
+                <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
                     {saveStatus || draftStatus}
                 </p>
             ) : null}

@@ -623,7 +623,15 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                 </aside>
 
                 {/* Main content */}
-                <main className="flex-1 min-w-0 px-4 sm:px-8 py-5 lg:py-10">
+                <main className={
+                    "flex-1 min-w-0 px-4 sm:px-8 pb-5 sm:pt-5 lg:py-10 "
+                    // The editor's mobile header (Edit shift / Set up the floor) is
+                    // hidden below sm - see the header's own className below - so its
+                    // top padding would otherwise be a naked gap with nothing in it.
+                    // The Day Rail sits flush under the app bar there instead, like
+                    // the kit's spine. sm and up keep the gap - there the header shows.
+                    + (activeTab === "editor" ? "pt-0" : "pt-5")
+                }>
                     <div className="max-w-6xl mx-auto">
                         <header className={
                             // On mobile Shifts and the editor the content header is

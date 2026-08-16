@@ -20,8 +20,8 @@ export const STEP_ORDER = ["floor", "settle", "review"];
 export const ORPHANED_PAYOUTS_STATUS = "orphaned-payouts";
 
 export const RAIL_LABELS = {
-    floor: "Floor",
-    settle: "Settle",
+    floor: "Floor plan",
+    settle: "Settle up",
     review: "Review",
     payout: "Pay out",
 };

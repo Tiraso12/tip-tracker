@@ -878,13 +878,19 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // return it to auto) so the chain still works, while stopping a rotated or unusually
     // short viewport from squeezing the money into a slot no field fits in. At 320x568 -
     // the tight phone - the calc wins at 472px and the floor never bites.
+    // Settle up is deliberately NOT bound to the viewport: the captain asked for the
+    // titled money card to hug its own content instead of stretching to fill the
+    // screen with an internal scroller. That reintroduces the page-scroll shape the
+    // comment above warns about, on purpose, scoped to this one step - the group
+    // switcher band is no longer pinned above the fields while they scroll, which is
+    // the traded-off behavior of hugging instead of filling.
     const isFullHeightStep = effectiveStep === "floor"
-        || effectiveStep === "settle"
         || effectiveStep === "review";
-    // Settle up and Review fuse the rail into the card below (square corners, no
-    // gap) so the context band inside reads as one surface. The Floor plan keeps
-    // the rail as its own separate, fully-rounded floating card above a gap.
-    const railAttachesToCard = effectiveStep === "settle" || effectiveStep === "review";
+    // Review fuses the rail into the card below (square corners, no gap) so the
+    // context band inside reads as one surface. Floor plan and Settle up keep the
+    // rail as its own separate, fully-rounded floating card above a gap - both
+    // steps float on the page background rather than sit inside an outer panel.
+    const railAttachesToCard = effectiveStep === "review";
     const stepContent = loading ? (
         <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
             Loading shift data…
@@ -988,19 +994,20 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     return (
         <div className={"space-y-3 sm:space-y-4"
             + (isFullHeightStep ? " max-[560px]:flex max-[560px]:flex-col max-[560px]:h-[calc(100dvh-6rem)] max-[560px]:min-h-[420px]" : "")
-            + (railAttachesToCard ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
+            + (railAttachesToCard || effectiveStep === "settle" ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
             {/* The day rail: an ordered, day-level step spine. Status is always
                 shown; earlier/reachable steps are one tap away (order never forced).
-                On a phone, Settle up and Review fuse the rail into the editor Card
-                below: square bottom corners, no gap, and the same tint as the
-                context band inside, so the boxes divide context from entry rather
-                than from itself. The Floor plan does not - it stays its own
-                floating card. */}
+                On a phone, Review fuses the rail into its editor Card below: square
+                bottom corners, no gap, and the same tint as the context band inside,
+                so the boxes divide context from entry rather than from itself. Floor
+                plan and Settle up do not - each stays its own floating card, floating
+                on the page background rather than inside an outer white panel. */}
             <DayRail steps={railSteps} onStepClick={goToStep}
+                bleed={!railAttachesToCard}
                 className={railAttachesToCard ? "max-[560px]:rounded-b-none max-[560px]:bg-[var(--color-band)]" : ""} />
 
-            {effectiveStep === "floor" ? (
-                <div className="max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
+            {effectiveStep === "floor" || effectiveStep === "settle" ? (
+                <div className={effectiveStep === "floor" ? "max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0" : ""}>
                     {stepContent}
                 </div>
             ) : (

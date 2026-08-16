@@ -1,6 +1,5 @@
 import React from "react";
 import AccountSheet from "../Account/AccountSheet";
-import { Badge } from "../ui";
 
 // The app bar, shared by BOTH halves of the app.
 //
@@ -51,10 +50,16 @@ function AppBar({ onHome, homeLabel, homeTitle, tier, dateControl = null, accoun
                     Tip Tracker
                 </span>
                 {/* Names the tier the viewer actually holds, and nothing when
-                    they hold none - an employee is shown no badge. */}
+                    they hold none - an employee is shown no badge. The shared
+                    `Badge` component is filled for light card surfaces; here on
+                    the dark bar it uses an outline instead - transparent with a
+                    mint border and mint text - matching the kit's tier pill.
+                    Kit shows this at every width (it drops the wordmark on a
+                    narrow bar instead, see above) - so unlike the wordmark this
+                    does not hide on a phone. */}
                 {tier ? (
-                    <span className="hidden sm:inline">
-                        <Badge tone="accent">{tier}</Badge>
+                    <span className="inline-flex items-center rounded-full border border-[var(--color-bar-ink-soft)]/35 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-bar-ink-soft)]">
+                        {tier}
                     </span>
                 ) : null}
             </div>
