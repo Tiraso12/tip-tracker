@@ -10,7 +10,7 @@ export default function Card({
     <div
       className={
         "bg-[var(--color-surface)] border border-[var(--color-line)] " +
-        "rounded-[var(--radius-md)] " +
+        "rounded-[var(--radius-md)] shadow-[var(--shadow-card)] " +
         (padded ? "p-6 " : "") +
         className
       }

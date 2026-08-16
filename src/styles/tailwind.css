@@ -1,22 +1,22 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 
 /* ----------------------------------------------------------------- */
-/*  v0.7.0-ui-polish — Refined Minimalist Light Theme                */
-/*  Editorial. Restrained. Trustworthy for a money / payroll tool.   */
+/*  Pullenberg — warm paper + deepened pine, editorial and restrained*/
+/*  Trustworthy for a money / payroll tool.                          */
 /* ----------------------------------------------------------------- */
 
 @theme {
   /* Surfaces */
-  --color-bg: #fafaf9;            /* warm near-white, page background */
+  --color-bg: #fafaf8;            /* warm paper, page background */
   --color-surface: #ffffff;       /* cards, panels */
-  --color-surface-muted: #f5f5f4; /* subtle inset surfaces */
+  --color-surface-muted: #f2f2ef; /* subtle inset surfaces */
   /* The phone Settle up context band. Solid, not surface-muted at 40%, because
      the band spans two elements stacked over DIFFERENT backgrounds - the Day
      Rail over the page, the switcher over a card - and the same alpha over each
      resolves to two near-but-unequal greys. One continuous surface has to be one
      colour, and ScrollRail's edge fade has to be able to name it to blend in. */
-  --color-band: #fbfbfb;
+  --color-band: #fbfbfa;
 
   /* Where a second pinned row stacks under the Day Rail. The rail pins at
      3.5rem (its `sticky top-14`) and stands 58px tall on a phone - p-1.5, a
@@ -26,37 +26,47 @@
      and if they drift the rail silently covers whatever stacks below it. */
   --rail-stack-top: 114px;
 
-  /* Text */
-  --color-ink: #0a0a0a;           /* primary text */
-  --color-ink-soft: #525252;      /* secondary text */
-  --color-ink-muted: #a3a3a3;     /* tertiary / placeholder text */
+  /* Text — green-cast near-black, never pure black */
+  --color-ink: #101512;           /* primary text */
+  --color-ink-soft: #4c544f;      /* secondary text */
+  --color-ink-muted: #98a19b;     /* tertiary / placeholder text */
 
-  /* Accent — single restrained accent for primary actions */
-  --color-accent: #1a3d2e;        /* deep forest green */
-  --color-accent-hover: #15331f;
-  --color-accent-soft: #e8efe9;   /* subtle tint for backgrounds, hovers */
+  /* Accent — pine green, the brand */
+  --color-accent: #1b5e3f;        /* pine-700 */
+  --color-accent-hover: #174a33;  /* pine-800 */
+  --color-accent-soft: #e7f7ec;   /* mint-100 tint for backgrounds, hovers */
 
   /* Borders */
-  --color-line: #e7e5e4;          /* hairline default */
-  --color-line-strong: #d6d3d1;   /* used on focus / hover */
+  --color-line: #e7e6e2;          /* hairline default */
+  --color-line-strong: #d5d4cf;   /* used on focus / hover */
 
   /* Semantic */
-  --color-danger: #b91c1c;
-  --color-danger-soft: #fef2f2;
-  --color-success: #15803d;
-  --color-success-soft: #f0fdf4;
-  --color-warning: #b45309;
-  --color-warning-soft: #fffbeb;
+  --color-danger: #bb3a2e;
+  --color-danger-soft: #fbf0ee;
+  --color-success: #1f7a45;
+  --color-success-soft: #ecf7ef;
+  --color-warning: #a16207;
+  --color-warning-soft: #fdf7e7;
 
-  /* Radius — tighter than the previous playful scale */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* Bar — the app bar's own dark pine skin, distinct from the light page */
+  --color-bar-bg: #0b2119;
+  --color-bar-ink: #f6faf7;
+  --color-bar-ink-soft: #a9e8c0;
+  --color-bar-hover: rgba(246, 250, 247, 0.1);
+
+  /* Radius */
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Elevation - barely-there, for cards that want to lift off the page */
+  --shadow-card: 0 1px 2px rgba(16, 21, 18, 0.04);
 
   /* Typography */
-  --font-display: "Fraunces", Georgia, serif;
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-sans: "Schibsted Grotesk", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 

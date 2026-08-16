@@ -33,21 +33,21 @@ function HomeIcon() {
 
 function AppBar({ onHome, homeLabel, homeTitle, tier, dateControl = null, accountItems = [], pendingApprovalCount = 0 }) {
     return (
-        <header className="sticky top-0 z-40 h-14 px-3 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
+        <header className="sticky top-0 z-40 h-14 px-3 sm:px-6 flex items-center justify-between bg-[var(--color-bar-bg)] border-b border-[var(--color-bar-hover)]">
             <div className="flex items-center gap-2 sm:gap-3">
                 <button
                     type="button"
                     onClick={onHome}
                     aria-label={homeLabel}
                     title={homeTitle || homeLabel}
-                    className="h-11 w-11 inline-flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
+                    className="h-11 w-11 inline-flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-bar-ink-soft)] hover:text-[var(--color-bar-ink)] hover:bg-[var(--color-bar-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-bar-ink)]/30"
                 >
                     <HomeIcon />
                 </button>
                 {/* Brand is kept for desktop coherence but dropped on the phone
                     bar - there the day and the account avatar are all the width
                     allows. */}
-                <span className="hidden sm:inline font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
+                <span className="hidden sm:inline font-display text-lg font-medium tracking-tight text-[var(--color-bar-ink)]">
                     Tip Tracker
                 </span>
                 {/* Names the tier the viewer actually holds, and nothing when

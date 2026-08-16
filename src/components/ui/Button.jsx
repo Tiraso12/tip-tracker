@@ -36,7 +36,7 @@ export default function Button({
       className={
         // Buttons are fixed-height, so a wrapped label always spills out of the
         // box - keep labels on one line and let the layout deal with the width.
-        "inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius-sm)] " +
+        "inline-flex items-center justify-center whitespace-nowrap rounded-[var(--radius-pill)] " +
         "font-medium tracking-tight transition-colors duration-150 " +
         "focus:outline-none focus-visible:ring-4 disabled:cursor-not-allowed " +
         VARIANTS[variant] + " " + SIZES[size] + " " + className

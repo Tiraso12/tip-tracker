@@ -7,8 +7,8 @@
 
 import { ASSIGNABLE_ROLES, rolePluralLabel, roleShortLabel } from './roleLabels';
 
-const PRIMARY_COLOR = [26, 61, 46]; // #1a3d2e — forest green accent (matches v0.7.0 UI theme)
-const PRIMARY_SOFT = [232, 239, 233]; // #e8efe9 — soft accent tint for section header backgrounds
+const PRIMARY_COLOR = [27, 94, 63]; // #1b5e3f - pine accent (matches --color-accent)
+const PRIMARY_SOFT = [231, 247, 236]; // #e7f7ec - soft accent tint for section header backgrounds (matches --color-accent-soft)
 const ROLE_ORDER = ASSIGNABLE_ROLES;
 
 const n = (value) => Number(value) || 0;
