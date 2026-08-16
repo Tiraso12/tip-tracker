@@ -46,16 +46,39 @@ function InfoIcon() {
 
 const plural = (count, one, many) => (count === 1 ? one : many);
 
+function getPreviousPayPeriod(period) {
+    const previousDay = new Date(period.start);
+    previousDay.setDate(previousDay.getDate() - 1);
+    return getBiweeklyPeriod(previousDay);
+}
+
+function DateBlock({ date, active }) {
+    const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date);
+    return (
+        <span
+            className={
+                "flex h-11 w-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-[var(--radius-sm)] " +
+                (active
+                    ? "bg-[var(--color-accent-soft)] text-[var(--color-accent-hover)]"
+                    : "bg-[var(--color-surface-muted)] text-[var(--color-ink-muted)]")
+            }
+            aria-hidden="true"
+        >
+            <span className="text-[9px] font-semibold uppercase tracking-[0.1em]">{weekday}</span>
+            <span className="font-mono text-base font-semibold leading-none tabular-nums">{date.getDate()}</span>
+        </span>
+    );
+}
+
 function ShiftRow({ row }) {
     const date = new Date(`${row.dateKey}T12:00:00`);
-    const dayLabel = `${new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date)} ${date.getMonth() + 1}/${date.getDate()}`;
 
     if (!row.worked) {
         // A day off is a BLANK ROW, not a hidden one: seeing the empty Monday is
         // how an employee answers "did a day go missing?" for themselves.
         return (
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[var(--color-surface-muted)]/40">
-                <span className="text-sm text-[var(--color-ink-muted)]">{dayLabel}</span>
+            <div className="flex items-center gap-3 px-3.5 py-2">
+                <DateBlock date={date} active={false} />
                 <span className="text-xs text-[var(--color-ink-muted)]">
                     {row.notYet ? "Not worked yet" : "No shift"}
                 </span>
@@ -64,26 +87,28 @@ function ShiftRow({ row }) {
     }
 
     return (
-        <div className="px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-                <span className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-sm font-medium text-[var(--color-ink)]">{dayLabel}</span>
+        <div className="flex items-center gap-3 px-3.5 py-3">
+            <DateBlock date={date} active />
+            <div className="min-w-0 flex-1">
+                <div className="min-w-0">
                     {row.role ? (
-                        <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-[var(--radius-xs)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                        <span className="inline-flex max-w-full items-center rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
                             {roleShortLabel(row.role)}
                             {row.points !== null ? ` · ${row.points} ${plural(row.points, "pt", "pts")}` : ""}
                         </span>
                     ) : null}
-                </span>
-                <strong className="shrink-0 font-mono tabular-nums text-sm text-[var(--color-ink)]">
+                </div>
+                <p className="mt-1 font-mono text-[11.5px] tabular-nums text-[var(--color-ink-soft)]">
+                    CTP {fmtMoney(row.ctp)} · GRT {fmtMoney(row.grt)}
+                </p>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+                <strong className="font-mono text-base font-semibold tabular-nums text-[var(--color-ink)]">
                     {fmtMoney(row.total)}
                 </strong>
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs font-mono tabular-nums">
-                <span className="text-[var(--color-ink-soft)]">
-                    CTP {fmtMoney(row.ctp)} · GRT {fmtMoney(row.grt)}
+                <span className="font-mono text-[11px] tabular-nums text-[var(--color-ink-muted)]">
+                    Cash {fmtMoney(row.cash)}
                 </span>
-                <span className="text-[var(--color-ink-muted)]">Cash {fmtMoney(row.cash)}</span>
             </div>
         </div>
     );
@@ -116,12 +141,20 @@ function PayStatement({ person, startDate, endDate, eyebrow, heading, voice = "o
     const personUid = person?.uid || null;
     const [allData, setAllData] = useState({});
 
-    const period = useMemo(() => getBiweeklyPeriod(startDate || new Date()), [startDate]);
+    const selectedPeriod = useMemo(() => getBiweeklyPeriod(startDate || new Date()), [startDate]);
+    const todayKey = toDateKey(new Date());
+    const period = useMemo(() => {
+        const selectedPeriodEndKey = toDateKey(selectedPeriod.end);
+        return selectedPeriodEndKey >= todayKey ? getPreviousPayPeriod(selectedPeriod) : selectedPeriod;
+    }, [selectedPeriod, todayKey]);
     const rangeKeys = useMemo(() => getDateKeys(startDate, endDate), [startDate, endDate]);
     const periodKeys = useMemo(() => getDateKeys(period.start, period.end), [period]);
     const subscriptionKeys = useMemo(
-        () => getPayStatementSubscriptionKeys(startDate, endDate),
-        [startDate, endDate]
+        () => Array.from(new Set([
+            ...getPayStatementSubscriptionKeys(startDate, endDate),
+            ...periodKeys,
+        ])).sort(),
+        [startDate, endDate, periodKeys]
     );
 
     // Whose money is on screen has to change the instant the person does -
@@ -145,7 +178,6 @@ function PayStatement({ person, startDate, endDate, eyebrow, heading, voice = "o
         );
     }, [personUid, subscriptionKeys]);
 
-    const todayKey = toDateKey(new Date());
     const rangeRows = useMemo(
         () => buildPayStatementRows(allData, rangeKeys, todayKey),
         [allData, rangeKeys, todayKey]
@@ -165,72 +197,58 @@ function PayStatement({ person, startDate, endDate, eyebrow, heading, voice = "o
 
     return (
         <div className="space-y-4" data-testid="pay-statement">
-            <Card className="!p-0 overflow-hidden">
-                <div className="px-5 py-5 sm:px-6">
-                    <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                        {eyebrow}
+            <header className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                    {eyebrow}
+                </span>
+                <h1 className="m-0 font-display text-[2rem] font-normal leading-[1.1] text-[var(--color-ink)] max-[560px]:text-[31px]">
+                    {heading}
+                </h1>
+            </header>
+
+            <section className="flex items-end justify-between gap-3 rounded-[var(--radius-md)] bg-[var(--color-bar-bg)] px-5 py-[18px] text-[var(--color-bar-ink)] max-[560px]:px-4" aria-label="Weekly take-home">
+                <div className="min-w-0">
+                    <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[rgba(246,250,247,0.6)]">
+                        This week
                     </span>
-                    <p className="mt-1 font-mono tabular-nums text-xs text-[var(--color-ink-soft)]">
-                        {heading}
-                    </p>
-                    <strong className="mt-3 block font-display text-[2rem] leading-none font-medium tracking-tight tabular-nums text-[var(--color-ink)]">
+                    <strong className="mt-1 block font-display text-[2.5rem] font-normal leading-none text-[var(--color-bar-ink-soft)] max-[560px]:text-[38px]">
                         {fmtMoney(rangeTotals.total)}
                     </strong>
-                    <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
-                        <span>CTP {fmtMoney(rangeTotals.ctp)}</span>
-                        <span>GRT {fmtMoney(rangeTotals.grt)}</span>
-                        <span className="text-[var(--color-ink-muted)]">
-                            {rangeTotals.shifts} {plural(rangeTotals.shifts, "shift", "shifts")}
-                        </span>
-                    </div>
                 </div>
-
-                {/* Cash on its own line, always, and said in words as well as
-                    position - it is handed over separately and is never part of
-                    a total. */}
-                <div className="flex items-center justify-between gap-3 px-5 py-3 sm:px-6 border-t border-[var(--color-line)] bg-[var(--color-surface-muted)]/50">
-                    <div className="min-w-0">
-                        <p className="text-xs font-medium text-[var(--color-ink-soft)]">Cash</p>
-                        <p className="mt-0.5 text-[11px] text-[var(--color-ink-muted)]">
-                            Paid separately in cash. Not part of the total above.
-                        </p>
-                    </div>
-                    <span className="shrink-0 font-mono tabular-nums text-sm text-[var(--color-ink-soft)]">
+                <div className="shrink-0 text-right">
+                    <p className="text-[11px] text-[var(--color-bar-ink-soft)]">Cash</p>
+                    <span className="mt-1 block font-mono text-[15px] tabular-nums text-[#3ecf8e]">
                         {fmtMoney(rangeTotals.cash)}
                     </span>
                 </div>
+            </section>
+
+            <div className="space-y-2" aria-label="Daily pay">
+                {rangeRows.map((row) => {
+                    const cardClass = row.worked
+                        ? "border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
+                        : "border-dashed border-[var(--color-line)] bg-transparent";
+                    return (
+                        <div key={row.dateKey} className={"overflow-hidden rounded-[var(--radius-md)] border " + cardClass}>
+                            <ShiftRow row={row} />
+                        </div>
+                    );
+                })}
+            </div>
+
+            <Card className="!p-0 overflow-hidden" aria-label="Paycheck totals">
+                <MoneyRow label="CTP (paycheck)" value={fmtMoney(periodTotals.ctp)} />
+                <MoneyRow label="GRT (paycheck)" value={fmtMoney(periodTotals.grt)} />
+                <MoneyRow label="Cash (handed weekly)" value={fmtMoney(rangeTotals.cash)} />
+                <MoneyRow label="Pay period total" value={fmtMoney(periodTotals.total)} strong />
             </Card>
 
-            <Card className="!p-0 overflow-hidden">
-                <div className="px-4 py-2 border-b border-[var(--color-line)] bg-[var(--color-surface-muted)]/65 text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
-                    Shifts
-                </div>
-                <div className="divide-y divide-[var(--color-line)]">
-                    {rangeRows.map((row) => (
-                        <ShiftRow key={row.dateKey} row={row} />
-                    ))}
-                </div>
-            </Card>
-
-            <Card className="!p-0 overflow-hidden">
-                <div className="px-5 py-4 sm:px-6 border-b border-[var(--color-line)]">
-                    <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                        Pay period
-                    </span>
-                    <p className="mt-1 font-mono tabular-nums text-xs text-[var(--color-ink-soft)]">
-                        {formatMonthDayRange(period.start, period.end)} · 2 weeks · {periodTotals.shifts}{" "}
-                        {plural(periodTotals.shifts, "shift", "shifts")}
-                    </p>
-                </div>
-                <MoneyRow label="CTP" value={fmtMoney(periodTotals.ctp)} />
-                <MoneyRow label="GRT" value={fmtMoney(periodTotals.grt)} />
-                <MoneyRow label="Total (CTP+GRT)" value={fmtMoney(periodTotals.total)} strong />
-                {/* No cash line here on purpose. Cash is handed over WEEKLY, so a
-                    figure summed across the two-week period is money that never
-                    lands with this period's advice. The week's cash is on the top
-                    card, where it is the amount somebody was actually handed. */}
-                <MoneyRow label="Advice" value={formatMonthDay(adviceDate)} />
-            </Card>
+            <p className="flex items-start gap-2 px-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">
+                <InfoIcon />
+                <span>
+                    Pay period {formatMonthDayRange(period.start, period.end)} · lands on your {formatMonthDay(adviceDate)} paycheck.
+                </span>
+            </p>
 
             <p className="flex items-start gap-2 px-1 text-[11px] leading-relaxed text-[var(--color-ink-muted)]">
                 <InfoIcon />
