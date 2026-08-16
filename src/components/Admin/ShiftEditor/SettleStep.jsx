@@ -1,9 +1,7 @@
-import FloatingActions from "../FloatingActions";
 import ScrollRail from "../ScrollRail";
 import { fmtMoney } from "../shiftEditorUtils";
 import { BarPoolFields } from "./BarPoolFields";
 import { CloseoutEntryPanel } from "./CloseoutEntryPanel";
-import { EditorActionPair } from "./EditorActionPair";
 import { PointSplitDisclosure } from "./PointSplitDisclosure";
 import { RailPill } from "./RailPill";
 import { RunnerGroup } from "./RunnerGroup";
@@ -19,9 +17,6 @@ export function SettleStep({
     teams,
     barTeam,
     runners,
-    settleEditable,
-    shiftStatus,
-    isSaving,
     saveStatus,
     draftStatus,
     onPoolChange,
@@ -36,10 +31,6 @@ export function SettleStep({
     onBarMemberPointsChange,
     onBarMemberPointsAdjust,
     onRunnerPayoutChange,
-    onEditSettle,
-    onCancelSettle,
-    onDoneSettle,
-    onGoToReview,
 }) {
     // A missing id is a bug, not a reason to impersonate the first group. A silent
     // fallback and a broken tab look identical on screen; fail visibly instead.
@@ -47,24 +38,12 @@ export function SettleStep({
     const diningTeam = activeGroup?.kind === "dining" ? teams[activeGroup.teamIndex] : null;
 
     return (
-        /* STEP 2 - Settle up: the calm single money switcher, edited in place and
-           saved with the same bottom-right FAB as the floor plan.
-
-           The titled money card HUGS its content at every width instead of filling
+        /* STEP 2 - Settle up: the calm single money switcher, edited directly in
+           place - no lock/unlock, no floating Cancel/Done (see ShiftEditorPanel.jsx).
+           The titled money card hugs its content at every width instead of filling
            the screen with its own internal scroller - the page scrolls, same as
-           desktop always has, and pb-24 is that FAB's clearance below the card.
-           The floating Edit/Cancel/Done pair is `fixed`, so it stays reachable
-           regardless of how far the page scrolls.
-
-           On a phone pb-24 (96px) is NOT the only reserve stacked below the card:
-           the step content wrapper's own bottom padding (12px) and the workspace
-           main's (20px) both land after this section too, so the real total was
-           128px of pure clearance - nothing wrong at any one layer, but three
-           layers compounding into a scroll that revealed far more empty paper
-           than a short card needed. pb-16 brings the mobile total back to ~96px
-           to match what desktop (where the extra 32px is lost in a taller
-           viewport) already gets away with. */
-        <section className="space-y-4 pb-24 max-[560px]:pb-16">
+           desktop always has. */
+        <section className="space-y-4 pb-6">
             {/* Team switcher: a compact horizontal strip above one fixed-height entry
                 panel. Tapping a pill focuses that group; the strip scrolls sideways on
                 phone so page height stays constant no matter how large the roster is.
@@ -159,7 +138,7 @@ export function SettleStep({
             {/* -mx-3 matches the band above: both cancel the step content's own p-3
                 so the card's sides line up with the band's tinted strip instead of
                 sitting a second layer of padding further in. */}
-            <fieldset disabled={!settleEditable} className="m-0 min-w-0 border-0 p-0 max-[560px]:!mt-3 max-[560px]:-mx-3">
+            <div className="m-0 min-w-0 max-[560px]:!mt-3 max-[560px]:-mx-3">
             {activeGroup && (activeGroup.kind !== "dining" || diningTeam) ? (
                 <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
                     {activeGroup.kind === "dining" ? (
@@ -227,7 +206,7 @@ export function SettleStep({
                     </div>
                 </div>
             )}
-            </fieldset>
+            </div>
 
             {/* A closed shift disables draft autosave, so surface the live save/
                 draft status inline; a setup shift's money autosaves silently. Settle
@@ -238,33 +217,6 @@ export function SettleStep({
                     {saveStatus || draftStatus}
                 </p>
             ) : null}
-
-            {settleEditable ? (
-                /* Editing: the floor plan's floating pair. Cancel re-locks without
-                   saving; Done saves the money and re-locks in place (a closed shift
-                   instead takes the paid-out path: Done -> Review -> Confirm & Save). */
-                <EditorActionPair
-                    onCancel={onCancelSettle}
-                    onPrimary={shiftStatus === "closed" ? onGoToReview : onDoneSettle}
-                    primaryLabel={isSaving ? "Saving…" : "✓ Done"}
-                    busy={isSaving}
-                />
-            ) : (
-                /* Nothing sits under the entry panel on a locked Settle up. The
-                   full-width row that used to (see the note above
-                   `ReviewNotReady`) only led to Review, which the rail above
-                   already does, so the panel gets that height and the floating
-                   ✎ Edit is the one action on the screen. */
-                <FloatingActions>
-                        <button
-                            type="button"
-                            onClick={onEditSettle}
-                            className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95"
-                        >
-                            ✎ Edit
-                        </button>
-                    </FloatingActions>
-            )}
         </section>
     );
 }

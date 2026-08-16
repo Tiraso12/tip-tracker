@@ -8,14 +8,10 @@ import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
 const plural = (count, one, many) => count === 1 ? one : many;
 
-const ROLE_FILTERS = [
-    { value: 'all', label: 'All' },
-    ...ASSIGNABLE_ROLES.map(role => ({
-        value: role,
-        label: role === 'bartender' ? roleShortLabel(role) : rolePluralLabel(role),
-    })),
-    { value: 'temp', label: 'Temp' },
-];
+const ROLE_FILTERS = ASSIGNABLE_ROLES.map(role => ({
+    value: role,
+    label: role === 'bartender' ? roleShortLabel(role) : rolePluralLabel(role),
+}));
 
 const poolNameFor = (employee) => employee?.isUnregistered
     ? tempStaffNameFor(employee)
@@ -69,7 +65,7 @@ function TeamMemberChip({ member, teamId, canEditRole, draggable, onDragStart, o
             )}
             <button
                 type="button"
-                onClick={onRemove}
+                onClick={(e) => { e.stopPropagation(); onRemove(); }}
                 aria-label={`Remove ${member.name}`}
                 className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-sm leading-none text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
             >
@@ -82,7 +78,8 @@ function TeamMemberChip({ member, teamId, canEditRole, draggable, onDragStart, o
 function TeamCard({
     section,
     isOver,
-    interactive,
+    tappable,
+    dragEnabled,
     onOpen,
     onDragOver,
     onDragLeave,
@@ -90,21 +87,45 @@ function TeamCard({
     onDragStart,
     onRemove,
     onRoleChange,
-    onAddTeam,
-    onRemoveTeam,
 }) {
-    const { id, title, members, canEditRole, canAddTeam, canRemoveTeam, removeTeamDisabled } = section;
+    const { id, title, members, canEditRole } = section;
     const populated = members.length > 0;
 
+    // Team-count (+Team/-Team) lives in the dedicated TeamCountStepper in the summary
+    // row above, not inside the card - having it in both places read as two controls
+    // for one job. The whole card is the "add people" trigger (no separate +Add
+    // button); which team a tap targets is decided entirely by which card was tapped,
+    // so the sheet it opens has no second team-switcher re-asking the same question.
+    //
+    // `tappable` (whole card opens the add-people sheet) and `dragEnabled`
+    // (drag-and-drop + inline role edit) are separate axes: a read-only card (a closed
+    // shift on a phone) can still exist without either. `isOver` (a drag hover) gets
+    // its own accent-soft fill on top of the resting border, so an active drag target
+    // stays visually distinct. Nested controls (member chips' remove/role) stop the
+    // click so tapping THEM never also opens the sheet; `e.target !== e.currentTarget`
+    // does the same for keyboard activation, so Enter/Space on a nested button can't
+    // double-fire onOpen.
     return (
         <section
+            role={tappable ? "button" : undefined}
+            tabIndex={tappable ? 0 : undefined}
+            onClick={tappable ? () => onOpen(id) : undefined}
+            onKeyDown={tappable ? (e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpen(id);
+                }
+            } : undefined}
+            aria-label={tappable ? `Add employees to ${title}` : undefined}
             className={[
-                "rounded-[12px] border bg-[var(--color-surface)] shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors",
-                isOver ? "border-dashed border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : "border-[var(--color-line)]",
+                "rounded-[12px] border shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors",
+                tappable ? "border-dashed border-[var(--color-accent)] cursor-pointer" : "border-[var(--color-line)]",
+                isOver ? "bg-[var(--color-accent-soft)]" : "bg-[var(--color-surface)]",
             ].join(" ")}
-            onDragOver={(e) => interactive && onDragOver(e, id)}
-            onDragLeave={interactive ? onDragLeave : undefined}
-            onDrop={(e) => interactive && onDrop(e, id)}
+            onDragOver={(e) => dragEnabled && onDragOver(e, id)}
+            onDragLeave={dragEnabled ? onDragLeave : undefined}
+            onDrop={(e) => dragEnabled && onDrop(e, id)}
         >
             <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                 <h3 className="m-0 min-w-0 truncate text-[13px] font-semibold text-[var(--color-ink)]">
@@ -120,73 +141,41 @@ function TeamCard({
                         key={member.uid}
                         member={member}
                         teamId={id}
-                        canEditRole={interactive && canEditRole}
-                        draggable={interactive}
+                        canEditRole={dragEnabled && canEditRole}
+                        draggable={dragEnabled}
                         onDragStart={(e) => onDragStart(e, member.uid, id)}
                         onRemove={() => onRemove(member.uid, id)}
                         onRoleChange={onRoleChange}
                     />
                 )) : null}
-                {interactive ? (
-                    <button
-                        type="button"
-                        onClick={() => onOpen(id)}
-                        className="inline-flex h-8 items-center rounded-full border border-dashed border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 text-[12.5px] font-semibold text-[var(--color-accent)] transition-colors hover:bg-[var(--color-surface)]"
-                    >
-                        + Add
-                    </button>
-                ) : null}
-                {interactive && canAddTeam ? (
-                    <button
-                        type="button"
-                        onClick={onAddTeam}
-                        className="hidden h-8 items-center rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-3 text-[12.5px] font-semibold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-line-strong)] max-[560px]:inline-flex"
-                    >
-                        + Team
-                    </button>
-                ) : null}
-                {interactive && canRemoveTeam ? (
-                    <button
-                        type="button"
-                        onClick={onRemoveTeam}
-                        disabled={removeTeamDisabled}
-                        className="hidden h-8 items-center rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] px-3 text-[12.5px] font-semibold text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-line-strong)] disabled:cursor-not-allowed disabled:opacity-35 max-[560px]:inline-flex"
-                    >
-                        − Team
-                    </button>
-                ) : null}
             </div>
         </section>
     );
 }
 
-function TeamTargetRail({ sections, selectedTeamId, onSelect }) {
+function TeamCountStepper({ count, onAdd, onRemove, addDisabled, removeDisabled }) {
     return (
-        <ScrollRail
-            ariaLabel="Choose the team to assign into"
-            depsKey={`${selectedTeamId}-${sections.length}`}
-            className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-            {sections.map(section => {
-                const selected = selectedTeamId === section.id;
-                return (
-                    <button
-                        key={section.id}
-                        type="button"
-                        onClick={() => onSelect(section.id)}
-                        aria-pressed={selected}
-                        className={[
-                            "h-8 flex-none rounded-full border px-3 text-[11.5px] font-semibold transition-colors",
-                            selected
-                                ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
-                                : "border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:border-[var(--color-line-strong)]",
-                        ].join(" ")}
-                    >
-                        {section.title}
-                    </button>
-                );
-            })}
-        </ScrollRail>
+        <div className="flex shrink-0 items-center gap-1.5">
+            <button
+                type="button"
+                onClick={onRemove}
+                disabled={removeDisabled}
+                aria-label="Remove last restaurant team"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-base font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-line-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+                −
+            </button>
+            <span className="min-w-5 text-center text-sm font-bold text-[var(--color-ink)]">{count}</span>
+            <button
+                type="button"
+                onClick={onAdd}
+                disabled={addDisabled}
+                aria-label="Add restaurant team"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-base font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-line-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+                +
+            </button>
+        </div>
     );
 }
 
@@ -332,9 +321,12 @@ function ShiftSetupDnd({
         return Array.from(uids);
     }, [teams, barTeam.members, runners]);
 
-    const selectedTargetLabel = useMemo(() => {
-        return floorSections.find(section => section.id === selectedTeamId)?.title || "";
-    }, [floorSections, selectedTeamId]);
+    // The sheet's whole content (title, live member preview, roster) is scoped to
+    // whichever card the admin tapped - one lookup shared by all of it.
+    const activeSection = useMemo(() => (
+        floorSections.find(section => section.id === selectedTeamId) || null
+    ), [floorSections, selectedTeamId]);
+    const selectedTargetLabel = activeSection?.title || "";
 
     // F10 is scoped to phones: a closed shift's floor is view-only until the admin
     // taps "Edit roster". Desktop behavior is intentionally unchanged.
@@ -507,20 +499,19 @@ function ShiftSetupDnd({
     ), [assignedUids, combinedEmployees]);
 
     const roleCounts = useMemo(() => {
-        const counts = { all: unassignedEmployees.length, temp: 0 };
+        // `all` isn't a filter chip anymore (removed per the captain - the unfiltered
+        // roster is already the default view), but ScrollRail's depsKey still needs a
+        // total to know when to re-measure its overflow fade.
+        const counts = { all: unassignedEmployees.length };
         ASSIGNABLE_ROLES.forEach(role => { counts[role] = 0; });
         unassignedEmployees.forEach(emp => {
-            if (emp.isUnregistered) counts.temp += 1;
             if (ASSIGNABLE_ROLES.includes(emp.role)) counts[emp.role] += 1;
         });
         return counts;
     }, [unassignedEmployees]);
 
     const visibleEmployees = useMemo(() => (
-        unassignedEmployees.filter(emp => (
-            roleFilter === 'all'
-                || (roleFilter === 'temp' ? emp.isUnregistered : emp.role === roleFilter)
-        ))
+        unassignedEmployees.filter(emp => roleFilter === 'all' || emp.role === roleFilter)
     ), [roleFilter, unassignedEmployees]);
 
     const handleCreateTempStaff = useCallback(() => {
@@ -540,62 +531,34 @@ function ShiftSetupDnd({
                 onDrop={handleDropPool}
             />
 
-            <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-bg)] px-3 py-2 max-[560px]:hidden">
+            <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-bg)] px-3 py-2">
                 <div className="min-w-0 text-[0.78rem] font-medium text-[var(--color-ink-soft)]">
                     {teams.reduce((total, team) => total + team.members.length, 0)} dining / {barTeam.members.length} bar / {runners.length} {plural(runners.length, 'runner', 'runners')}
                 </div>
                 {mobileReadOnly ? null : (
-                    <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                            type="button"
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-base font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-line-strong)] disabled:cursor-not-allowed disabled:opacity-40 max-[560px]:h-10 max-[560px]:w-10"
-                            onClick={handleRemoveTeam}
-                            disabled={teams.length <= 1}
-                            title="Remove last team"
-                            aria-label="Remove last restaurant team"
-                        >
-                            −
-                        </button>
-                        <span className="min-w-5 text-center text-sm font-bold text-[var(--color-ink)]">{teams.length}</span>
-                        <button
-                            type="button"
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-base font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-line-strong)] disabled:cursor-not-allowed disabled:opacity-40 max-[560px]:h-10 max-[560px]:w-10"
-                            onClick={handleAddTeam}
-                            title="Add team"
-                            aria-label="Add restaurant team"
-                            disabled={teams.length >= 6}
-                        >
-                            +
-                        </button>
-                    </div>
+                    <TeamCountStepper
+                        count={teams.length}
+                        onAdd={handleAddTeam}
+                        onRemove={handleRemoveTeam}
+                        addDisabled={teams.length >= 6}
+                        removeDisabled={teams.length <= 1}
+                    />
                 )}
             </div>
 
-            <div className="grid flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto pb-32 pr-1 max-[900px]:grid-cols-1 max-[560px]:grid-cols-1 max-[560px]:gap-2 max-[560px]:flex-none max-[560px]:overflow-visible max-[560px]:pb-0">
+            <div className="grid flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto pb-32 pr-1 max-[900px]:grid-cols-1 max-[560px]:grid-cols-1 max-[560px]:gap-2 max-[560px]:flex-none max-[560px]:overflow-visible">
                 {floorSections.map(section => (
                     <TeamCard
                         key={section.id}
                         section={section}
                         isOver={dragOverId === section.id}
-                        interactive={!mobileReadOnly}
+                        tappable={!mobileReadOnly}
+                        dragEnabled={!mobileReadOnly}
                         onOpen={openPickerForTeam}
-                        onAddTeam={handleAddTeam}
-                        onRemoveTeam={handleRemoveTeam}
                         {...handlers}
                     />
                 ))}
             </div>
-
-            {!mobilePickerOpen && !mobileReadOnly ? (
-                <button
-                    type="button"
-                    onClick={() => openPickerForTeam(floorSections[0]?.id || "team-1")}
-                    className="fixed bottom-[5.75rem] left-3 right-3 z-20 flex items-center justify-between gap-3 rounded-full bg-[var(--color-bar-bg)] px-4 py-3 text-left text-[var(--color-surface)] shadow-[0_14px_34px_rgba(15,23,42,0.28)] sm:left-auto sm:right-6 sm:w-[22rem] max-[560px]:relative max-[560px]:bottom-auto max-[560px]:left-auto max-[560px]:right-auto max-[560px]:mt-1 max-[560px]:w-auto max-[560px]:shrink-0"
-                >
-                    <span className="text-[13px] font-medium">{unassignedEmployees.length} not on the floor</span>
-                    <span className="text-[12px] font-semibold text-[var(--color-bar-ink-soft)]">Add people ↑</span>
-                </button>
-            ) : null}
 
             {sheetOpen ? (
             <div className="fixed inset-0 z-20">
@@ -620,23 +583,40 @@ function ShiftSetupDnd({
                         <span className="mx-auto block h-1 w-9 rounded-full bg-[var(--color-line-strong)]" />
                     </button>
                     <div className="flex-none border-b border-[var(--color-line)] px-4 pb-3 pt-2">
-                        <div className="mb-2.5 flex items-center gap-3">
+                        <div className="mb-2 flex items-center justify-between gap-3">
                             <h3 className="m-0 min-w-0 truncate font-display text-[19px] font-medium text-[var(--color-ink)]">
-                                Add to
+                                Add to {selectedTargetLabel || 'team'}
                             </h3>
+                            <span className="shrink-0 text-[11px] font-medium text-[var(--color-ink-muted)]">
+                                {activeSection?.members.length || 0} {plural(activeSection?.members.length || 0, 'person', 'people')}
+                            </span>
                         </div>
-                        <TeamTargetRail
-                            sections={floorSections}
-                            selectedTeamId={selectedTeamId}
-                            onSelect={setSelectedTeamId}
+                        {/* Which team is being edited is decided by the card the admin
+                            tapped, not a second switcher here re-asking the same
+                            question - that read as redundant. This is a live mirror of
+                            that card's roster instead: the sheet covers it, so without
+                            this the admin can't see who's already on the team (or who
+                            they just added) while picking more people from below. */}
+                        <div className="mb-2.5 flex flex-wrap gap-1.5">
+                            {activeSection?.members.length ? activeSection.members.map(member => (
+                                <TeamMemberChip
+                                    key={member.uid}
+                                    member={member}
+                                    teamId={activeSection.id}
+                                    canEditRole={activeSection.canEditRole}
+                                    draggable={false}
+                                    onRemove={() => removeEmployee(member.uid, activeSection.id)}
+                                    onRoleChange={updateMemberRole}
+                                />
+                            )) : (
+                                <p className="m-0 text-[12px] text-[var(--color-ink-muted)]">No one on this team yet.</p>
+                            )}
+                        </div>
+                        <RoleFilterRail
+                            roleFilter={roleFilter}
+                            counts={roleCounts}
+                            onChange={setRoleFilter}
                         />
-                        <div className="mt-2.5">
-                            <RoleFilterRail
-                                roleFilter={roleFilter}
-                                counts={roleCounts}
-                                onChange={setRoleFilter}
-                            />
-                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto bg-[var(--color-surface)] pb-28">

@@ -478,7 +478,7 @@ function PersonView({
                 page content scroll under a full-bleed band rather than past a
                 floating word. The bottom-right corner is deliberately untouched:
                 it belongs to FloatingActions. */}
-            <div className="sticky top-14 z-10 -mx-4 border-b border-[var(--color-line)] bg-[var(--color-bg)] px-4 py-2 sm:-mx-8 sm:px-8">
+            <div className="sticky top-14 z-10 -mx-2 border-b border-[var(--color-line)] bg-[var(--color-bg)] px-2 py-2 sm:-mx-8 sm:px-8">
                 <Button variant="ghost" className="min-h-11 !px-2" onClick={onBack} aria-label="Back to team roster">
                     <BackIcon />
                     Team roster

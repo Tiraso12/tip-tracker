@@ -21,7 +21,6 @@ import {
     mapPayoutsForFirebase,
     toMoney,
     validateShiftInputs,
-    validateTeamSetup,
 } from "./shiftEditorUtils";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 import { describeShiftBalance } from "../../utils/shiftBalance";
@@ -65,10 +64,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     const [barTeam, setBarTeam] = useState({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
     const [runners, setRunners] = useState([]);
     const [saveStatus, setSaveStatus] = useState("");
-    const [validationMessages, setValidationMessages] = useState([]);
-    // What came back from a refused Confirm & Save, in captain-facing wording. Its own
-    // state rather than `validationMessages`, which Review deliberately suppresses -
-    // that suppression is why the failure reason used to reach nobody.
+    // What came back from a refused Confirm & Save, in captain-facing wording.
     const [saveFailure, setSaveFailure] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -78,17 +74,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // The old two-accordion editor is retired; each step is its own focused screen.
     const [step, setStep] = useState(["settle", "review"].includes(initialStep) ? initialStep : "floor");
     const [activeGroupId, setActiveGroupId] = useState("team-1");
-    // Settle up lands LOCKED: the money form is visible but its fields are disabled
-    // until the admin taps the floating Edit. Done/Cancel re-lock in place (they do
-    // not leave the settle screen). The group switcher stays tappable while locked.
-    const [settleEditable, setSettleEditable] = useState(false);
     const [draftStatus, setDraftStatus] = useState("");
-    // Fingerprint of the shift as loaded, so Cancel can tell an untouched view from
-    // one with real edits and only confirm a discard when work would actually be lost.
+    // Fingerprint of the shift as loaded, so the leave-guard can tell an untouched view
+    // from one with real edits and only confirm a discard when work would actually be
+    // lost. Covers money too - `fingerprintShift` reads pools nested inside teams/barTeam.
     const loadedFingerprintRef = useRef("");
-    // Snapshot of the money taken when Settle up is unlocked, so Cancel can revert to
-    // exactly what was showing before this edit and truly discard the changes.
-    const settleSnapshotRef = useRef(null);
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -486,12 +476,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         }));
     };
 
-    // Settle up always (re-)enters locked: switching day-steps or loading a new day
-    // returns the money form to its read-only view.
-    useEffect(() => {
-        setSettleEditable(false);
-    }, [step, date]);
-
     useEffect(() => {
         const loadShift = async () => {
             try {
@@ -542,12 +526,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     }, [date]);
 
     useEffect(() => {
-        // Pause autosave while Settle up is unlocked: in-progress money edits must not
-        // persist until Done, so Cancel can restore the pre-edit snapshot and discard.
-        if (!hasLoadedShift || loading || isSaving || shiftStatus === "closed" || settleEditable) return undefined;
+        // The sole persistence path for a setup shift, covering Floor AND Settle -
+        // both are directly editable with no lock/Cancel/Done, so this is the only
+        // thing that saves either. Stays off for a closed shift: edits there persist
+        // only through Review -> Confirm & Save (see handleConfirmSave below).
+        if (!hasLoadedShift || loading || isSaving || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
         let cancelled = false;
+        const wasAlreadySetup = shiftStatus === "setup";
         const timeoutId = window.setTimeout(async () => {
             setDraftStatus("Saving draft...");
             try {
@@ -558,6 +545,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     runners,
                     includeCloseoutDraft: true,
                 }));
+                // Only on the transition into "setup" - once flagged there is nothing
+                // more to mark, and this would otherwise re-write every participant's
+                // profile on every autosave tick while actively editing.
+                if (!wasAlreadySetup) await markUserHistoryFlags("setup");
 
                 if (!cancelled) {
                     setShiftStatus("setup");
@@ -583,87 +574,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         hasLoadedShift,
         isSaving,
         loading,
+        markUserHistoryFlags,
         runners,
-        settleEditable,
         shiftStatus,
         teams,
     ]);
-
-    const handleSaveTeamSetup = async () => {
-        if (isSaving) return;
-
-        if (shiftStatus === "closed") {
-            setSaveStatus("This shift is already closed and paid out. Go to Review and Confirm & Save Shift to update the roster and payouts together.");
-            return false;
-        }
-
-        const inputErrors = validateTeamSetup({ teams, barTeam, runners });
-        if (inputErrors.length > 0) {
-            setValidationMessages(inputErrors);
-            setSaveStatus("Assign staff before saving the floor plan.");
-            return false;
-        }
-
-        setIsSaving(true);
-        setValidationMessages([]);
-        setSaveStatus("Saving floor plan...");
-        const endPendingAction = beginPendingAction();
-
-        try {
-            await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({ date, teams, barTeam, runners }));
-            await markUserHistoryFlags("setup");
-            setShiftStatus("setup");
-            setSaveStatus("Floor plan saved.");
-            setTimeout(() => setSaveStatus(""), 3000);
-            return true;
-        } catch (e) {
-            console.error(e);
-            setSaveStatus("Failed to save floor plan.");
-            setValidationMessages(["The floor plan could not be saved. Please try again."]);
-            return false;
-        } finally {
-            setIsSaving(false);
-            endPendingAction();
-        }
-    };
-
-    // PROTOTYPE (in-place edit): "Done" saves the floor and returns to the read-only
-    // landing instead of advancing to Settle. Settle is reached from the day rail.
-    const handleDoneFloor = async () => {
-        const ok = await handleSaveTeamSetup();
-        if (!ok) return;
-        onClose();
-    };
-
-    // Settle up "Done": persist the entered money (as the shift's setup draft, the
-    // same shape autosave writes) and RE-LOCK in place - stays on the Settle screen,
-    // returning to the locked view. A closed shift instead takes the paid-out path
-    // (Done -> Review -> Confirm & Save), so this only runs for a setup shift; the
-    // closed case is wired to goToReview on the button.
-    const handleDoneSettle = async () => {
-        if (isSaving) return;
-        setIsSaving(true);
-        setSaveStatus("Saving money…");
-        const endPendingAction = beginPendingAction();
-        try {
-            await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
-                date,
-                teams,
-                barTeam,
-                runners,
-                includeCloseoutDraft: true,
-            }));
-            setShiftStatus("setup");
-            setSaveStatus("Money saved.");
-            setSettleEditable(false);
-        } catch (e) {
-            console.error("Failed to save settle-up money:", e);
-            setSaveStatus("Failed to save money.");
-        } finally {
-            setIsSaving(false);
-            endPendingAction();
-        }
-    };
 
     // Has the admin actually changed anything since the shift loaded?
     const isDirty = hasLoadedShift
@@ -701,66 +616,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         return () => onRegisterLeaveGuard(null);
     }, [onRegisterLeaveGuard, confirmLeaveEditor]);
 
-    // Cancel: leave edit mode WITHOUT committing and return to the read-only landing.
-    // onClose() re-reads the day, so nothing in-editor is written.
-    const handleCancelEdit = () => {
-        if (!confirmLeaveEditor()) return;
-        onClose();
-    };
-
-    // Settle up "Edit": snapshot the money as it stands, then unlock the fields.
-    // Autosave is paused while unlocked (see the draft effect), so nothing persists
-    // until Done - which lets Cancel restore this snapshot and truly discard.
-    const handleEditSettle = () => {
-        settleSnapshotRef.current = { teams, barTeam, runners };
-        setSettleEditable(true);
-    };
-
-    // Settle up "Cancel": discard the in-progress edits by restoring the snapshot from
-    // when Edit was pressed, then re-lock in place (stay on the Settle screen). On a
-    // closed shift, confirm first when there are real changes to drop.
-    const handleCancelSettle = () => {
-        if (isSaving) return;
-        const snapshot = settleSnapshotRef.current;
-        const changed = snapshot
-            && fingerprintShift(teams, barTeam, runners)
-                !== fingerprintShift(snapshot.teams, snapshot.barTeam, snapshot.runners);
-        if (shiftStatus === "closed" && changed) {
-            const confirmed = window.confirm(
-                "Discard your changes to this closed shift's money?\n\n" +
-                "Edits to a paid-out shift are only saved when you go to Review and " +
-                "Confirm & Save Shift. Discarding keeps the saved payouts unchanged."
-            );
-            if (!confirmed) return;
-        }
-        if (snapshot) {
-            setTeams(snapshot.teams);
-            setBarTeam(snapshot.barTeam);
-            setRunners(snapshot.runners);
-        }
-        setSaveStatus("");
-        setSettleEditable(false);
-    };
-
-    // Day rail step navigation (Floor -> Settle -> Review). Every step is one tap away
-    // in the editor, including Review: it derives from the live inputs, so there is
-    // nothing to unlock. (The old "Pay out" pill that exited to the landing was removed
-    // - the side nav / save flows already return there.)
+    // Day rail step navigation (Floor -> Settle -> Review). Every step is directly
+    // editable and one tap away, including Review: it derives from the live inputs,
+    // so there is nothing to unlock or commit first. The only exit that needs
+    // confirming is leaving the EDITOR entirely on a dirty closed shift - see
+    // confirmLeaveEditor above; switching steps within it never does.
     const goToStep = (key) => {
-        // Leaving Settle by the rail abandons an in-progress money edit's UNLOCKED state
-        // but keeps the typed values, which is what the rail's other jumps already do.
         setStep(key);
-    };
-
-    // Review as a destination: used by the closed-shift Done buttons, which route the
-    // paid-out edit through Review -> Confirm & Save rather than saving in place.
-    const goToReview = () => {
-        if (isSaving) return;
-        setValidationMessages([]);
-        setSaveStatus("");
-        setSaveFailure(null);
-        setSettleEditable(false);
-        setStep("review");
     };
 
     const handleConfirmSave = async () => {
@@ -863,28 +725,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         </div>
     ) : (
         <div className="p-3 sm:p-6">
-            {/* The Day Rail above names the active step, so no duplicate
-                step heading is rendered here. */}
-
-            {/* Not on Review. There the messages are the engine's own validations,
-                which the captain already passed through on the way here, and the
-                block is tall enough to push the spot-check card - the one thing
-                Review exists for - off the top of a phone screen. Floor and Settle
-                up still show it, because there it carries the errors that block a
-                save and it sits above the fields those errors name. Review's own
-                save progress/failure surfaces inline next to its save button. */}
-            {validationMessages.length > 0 && effectiveStep !== "review" ? (
-                <div role="alert" className="mb-4 px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
-                    <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
-                        Review before saving
-                    </div>
-                    <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
-                        {validationMessages.map((message, index) => (
-                            <li key={`${message}-${index}`}>{message}</li>
-                        ))}
-                    </ul>
-                </div>
-            ) : null}
+            {/* The Day Rail above names the active step, so no duplicate step heading
+                is rendered here. Floor and Settle no longer block on their own
+                validation - both are directly editable and autosave (or, on a closed
+                shift, wait for Review), so incomplete input just shows up as an
+                incomplete number rather than a separate warning block. Review is the
+                one place invalid/incomplete input is named, from the engine's own
+                validations, right where the save button lives. */}
 
             {effectiveStep === "floor" ? (
                 <FloorStep
@@ -895,11 +742,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     setBarTeam={setBarTeam}
                     runners={runners}
                     setRunners={setRunners}
-                    shiftStatus={shiftStatus}
-                    isSaving={isSaving}
-                    onCancel={handleCancelEdit}
-                    onDoneFloor={handleDoneFloor}
-                    onGoToReview={goToReview}
                 />
             ) : effectiveStep === "settle" ? (
                 <SettleStep
@@ -912,9 +754,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     teams={teams}
                     barTeam={barTeam}
                     runners={runners}
-                    settleEditable={settleEditable}
-                    shiftStatus={shiftStatus}
-                    isSaving={isSaving}
                     saveStatus={saveStatus}
                     draftStatus={draftStatus}
                     onPoolChange={updatePool}
@@ -929,10 +768,6 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     onBarMemberPointsChange={updateBarMemberPoints}
                     onBarMemberPointsAdjust={adjustBarMemberPoints}
                     onRunnerPayoutChange={updateRunnerPayout}
-                    onEditSettle={handleEditSettle}
-                    onCancelSettle={handleCancelSettle}
-                    onDoneSettle={handleDoneSettle}
-                    onGoToReview={goToReview}
                 />
             ) : (
                 <ReviewStep
@@ -960,15 +795,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     return (
         <div className={"space-y-3 sm:space-y-4"
             + (effectiveStep === "settle" ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
-            {/* The day rail: an ordered, day-level step spine. Status is always
-                shown; earlier/reachable steps are one tap away (order never forced).
-                Every step - Floor plan, Settle up, Review - keeps the rail as its own
-                separate, fully-rounded floating card above a gap: each step floats on
-                the page background rather than sitting inside an outer white panel.
-                Review used to fuse the rail into a "Shift Workspace" Card below it
-                (square corners, no gap); that outer panel is gone, so the rail no
-                longer has anything to fuse against. */}
-            <DayRail steps={railSteps} onStepClick={goToStep} bleed />
+            {/* The day rail: an ordered, day-level step trail (see DayRail.jsx).
+                Status is always shown; earlier/reachable steps are one tap away
+                (order never forced). */}
+            <DayRail steps={railSteps} onStepClick={goToStep} />
 
             <div>
                 {stepContent}

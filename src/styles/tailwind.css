@@ -29,6 +29,16 @@
      whatever stacks below it. */
   --rail-stack-top: 114px;
 
+  /* Everything above the Shifts tab's "no floor plan yet" hero (DayRailLanding.jsx's
+     Hero), which fills the rest of the phone viewport rather than leaving a
+     half-empty card - measured: the app bar (56px) + main's own pt-5 (20px) + the
+     day-chip strip (58px, DayChipStrip.jsx) + its mb-3 (12px) = 146px. This drifted
+     once already (a stale 6rem/96px guess, from before the day-chip strip existed,
+     left the hero overflowing the viewport by ~50px and forcing a scrollbar on a
+     screen meant to fit exactly) - keep it in step with whatever actually renders
+     above the hero on that tab. */
+  --landing-fill-offset: 146px;
+
   /* Text — green-cast near-black, never pure black */
   --color-ink: #101512;           /* primary text */
   --color-ink-soft: #4c544f;      /* secondary text */

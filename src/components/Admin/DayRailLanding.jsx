@@ -45,10 +45,15 @@ function EditFab({ onClick, label = "✎ Edit", disabled = false }) {
 }
 
 // Floor built, not yet settled: there is no landing for this state. Compared
-// live against "summarise" and "kit list" directions on 2026-08-16 (see the
-// exploration board); the captain chose skipping straight into the floor plan
-// so the floor is the first thing you see, rather than a read-only echo of it,
-// before any money is touched. Real navigation via `onEditFloor` - the same
+// live against "summarise" and "kit list" directions on 2026-08-16, then again
+// against a "peek first" and a "peek on browse" direction after the day-chip
+// strip exposed a friction the first round could not have seen (browsing the
+// week yanked you into the floor editor on every unsettled day). The captain
+// chose skipping straight into the floor plan both times, so the floor is the
+// first thing you see, rather than a read-only echo of it, before any money is
+// touched - and picked keeping the day-chip strip usable during the floor
+// step itself (`AdminDashboard.jsx`) to resolve the browsing friction, rather
+// than dropping the redirect. Real navigation via `onEditFloor` - the same
 // call the read-only view's old "✎ Edit" FAB used to make - not a placeholder;
 // FloorStep is always directly editable for a setup shift, so "viewing" and
 // "editing" the floor are the same screen.
@@ -205,15 +210,18 @@ function OrphanedPayouts({ entries, onBuildFloor, onRemoveShift, removingShift }
 
 function Hero({ title, body, tall = false, children }) {
     return (
-        // Phone: the hero is the first screen of every new day, so it takes the
-        // landing's full-height column (flex-1) instead of shrinking to its three
-        // lines and leaving the lower half of the screen blank - measured at
-        // 390x844 the card ended at y=430 and wasted 414px, 49% of the viewport.
-        // This is the same fill treatment the closed-day panel already uses:
-        // the card fills, its content stays snug at the top (shrink-0,
-        // never stretched or spread apart), and the leftover height is one clean
-        // band at the bottom. Desktop keeps its natural height.
-        <Card
+        // No card box - it's the first thing on the Shifts tab, sitting directly on
+        // the page like the title/day-chips/breadcrumb above it, not a boxed panel
+        // of its own. (It used to be a Card; a boxed panel ending partway down the
+        // phone screen, with page background visible below its border, read as
+        // broken/half-loaded - measured at 390x844 the card ended at y=430 and
+        // wasted 414px, 49% of the viewport. Removing the box resolves that
+        // directly: with no border/fill distinguishing it from the page, there's no
+        // edge left to look like it stopped short. The fill-to-bottom layout below
+        // is kept anyway, matching the closed-day panel's same treatment - content
+        // stays snug at the top (shrink-0), any leftover height is a plain
+        // continuation of the page, never a gap. Desktop keeps its natural height.)
+        <div
             className={
                 "px-6 text-center max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0 max-[560px]:py-10 " +
                 (tall ? "py-16 sm:py-24" : "py-10 sm:py-14")
@@ -226,7 +234,7 @@ function Hero({ title, body, tall = false, children }) {
                 {body ? <p className="text-sm text-[var(--color-ink-soft)]">{body}</p> : null}
                 <div className="flex flex-col items-center gap-2 pt-2">{children}</div>
             </div>
-        </Card>
+        </div>
     );
 }
 
@@ -270,7 +278,7 @@ function DayRailLanding({ date, status, summary, lineup, orphanedEntries = [], s
         // packs snug at the top (content-start) - any leftover height is one clean band
         // above the pinned actions, never gaps between the rows. Desktop keeps its
         // natural top-aligned height.
-        <div className="space-y-3 sm:space-y-4 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-6rem)]">
+        <div className="space-y-3 sm:space-y-4 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-var(--landing-fill-offset))]">
             {/* Prototype fix #3: once a shift is fully settled + saved (closed) the
                 process is complete, so the step rail is hidden - no steps left to show. */}
             {stage === "closed" ? null : <DayRail steps={railSteps} onStepClick={onStepClick} />}
