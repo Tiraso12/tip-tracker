@@ -1,14 +1,17 @@
+import { useEffect } from "react";
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRail from "./DayRail";
 import FloatingActions from "./FloatingActions";
 import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
 import { getPayoutTotal } from "../../utils/payoutLedger";
-import { roleInitial, roleLabel } from "../../utils/roleLabels";
+import { roleLabel } from "../../utils/roleLabels";
 import { Button, Card } from "../ui";
 
 // Approach A landing. The day rail leads with its first incomplete step:
-//  - no floor plan yet  -> first-run hero into Floor plan (step 1)
-//  - floor built (setup) -> read-only card grid of the floor, then Settle up
+//  - no floor plan yet   -> first-run hero into Floor plan (step 1)
+//  - floor built (setup) -> no landing for this state; goes straight into the
+//                           (always-editable) Floor plan editor - see
+//                           `SkipToFloorPlan` below
 //  - closed / paid       -> the Pay out review (as today), rail all done
 //
 // The friendly date lives once in the app-bar Bar Date pill, so the heroes no
@@ -16,96 +19,10 @@ import { Button, Card } from "../ui";
 
 const plural = (count, one, many) => (count === 1 ? one : many);
 
-// Compact role badge for a roster chip, mirroring the editor's TeamDropZone
-// chips so the floor "reads the same" whether you are editing or reviewing.
-
 // The temp seed name is literally "Temp Staff (Temp)"; the saved lineup usually
 // stores the plain username, but strip a trailing "(Temp)" defensively so chips
 // read "Frankie Lee", not "Frankie Lee (Temp)".
 const cleanName = (name = "") => name.replace(/\s*\((?:temp)\)\s*$/i, "").trim() || name;
-
-// Role tag for a chip badge. One visual family for all chips: dining carries a
-// role letter + points ("S·4", "C·4"); bar and runners genuinely have no points,
-// so they read as a compact role label of the same size ("BAR", "RUN") - never a
-// faked "·0". Matches the editor's chips exactly.
-const memberTag = (member, kind) => {
-    if (kind === "runner") return roleInitial("runner");
-    if (kind === "bar") return roleInitial("bartender");
-    const badge = roleInitial(member.role);
-    const points = member.points;
-    return points === null || points === undefined || points === ""
-        ? badge
-        : `${badge}·${points}`;
-};
-
-// One read-only roster chip: name + compact role/points tag. The captain gets an
-// accent treatment so the team lead stays scannable, same as the editor card.
-function MemberChip({ member, kind }) {
-    const isCaptain = kind === "team" && member.role === "captain";
-    return (
-        <span
-            className={[
-                "inline-flex max-w-full items-center gap-1.5 rounded-full border pl-2 pr-1 py-0.5",
-                isCaptain
-                    ? "border-[var(--color-accent)]/30 bg-[var(--color-accent-soft)]"
-                    : "border-[var(--color-line)] bg-[var(--color-surface-muted)]",
-            ].join(" ")}
-        >
-            <span
-                className={[
-                    "max-w-[7rem] truncate text-[0.72rem] font-medium leading-none",
-                    isCaptain ? "text-[var(--color-accent)]" : "text-[var(--color-ink)]",
-                ].join(" ")}
-            >
-                {cleanName(member.name || "")}
-            </span>
-            <span
-                className={[
-                    "shrink-0 rounded-full px-1.5 py-0.5 text-[0.6rem] font-bold uppercase leading-none tracking-[0.02em]",
-                    isCaptain
-                        ? "bg-[var(--color-accent)] text-[var(--color-surface)]"
-                        : "bg-[var(--color-surface)] text-[var(--color-ink-muted)]",
-                ].join(" ")}
-            >
-                {memberTag(member, kind)}
-            </span>
-        </span>
-    );
-}
-
-// One read-only team card: header (title + count) then wrapped member chips.
-// Populated cards get a solid border; empty teams stay dashed and read "Empty",
-// mirroring the editor's TeamDropZone so the floor looks the same in both places.
-function FloorTeamCard({ title, members, kind }) {
-    const count = members.length;
-    const populated = count > 0;
-    return (
-        <div
-            className={[
-                "flex flex-col gap-[0.4rem] rounded-[var(--radius-md)] border-[1.5px] px-[0.65rem] py-[0.55rem] bg-[var(--color-surface)] max-[560px]:rounded-[var(--radius-sm)] max-[560px]:px-3 max-[560px]:py-2",
-                populated
-                    ? "border-solid border-[var(--color-line-strong)]"
-                    : "border-dashed border-[var(--color-line)]",
-            ].join(" ")}
-        >
-            <div className="flex items-center justify-between gap-2">
-                <h4 className="m-0 min-w-0 truncate text-[0.82rem] font-semibold text-[var(--color-ink)]">
-                    {title}
-                </h4>
-                <span className="shrink-0 text-[0.72rem] font-semibold text-[var(--color-ink-muted)]">
-                    {populated ? `${count} ${plural(count, "member", "members")}` : "Empty"}
-                </span>
-            </div>
-            {populated ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                    {members.map((member) => (
-                        <MemberChip key={member.uid} member={member} kind={kind} />
-                    ))}
-                </div>
-            ) : null}
-        </div>
-    );
-}
 
 // The read-only screens' single floating Edit button, pinned to the bottom-right
 // corner. Shared by the Floor plan and Settle up views (and the closed-shift view)
@@ -127,35 +44,24 @@ function EditFab({ onClick, label = "✎ Edit", disabled = false }) {
     );
 }
 
-// Read-only card grid of the saved floor, shown before Settle up. Same two-up
-// card layout and chips as the editor - just no drag/select/step controls - so
-// the floor is consistent to read whether building or confirming.
-function FloorLineup({ lineup, onEditFloor }) {
-    const teams = lineup?.teams || [];
-    const barMembers = lineup?.barTeam?.members || [];
-    const runners = lineup?.runners || [];
-
+// Floor built, not yet settled: there is no landing for this state. Compared
+// live against "summarise" and "kit list" directions on 2026-08-16 (see the
+// exploration board); the captain chose skipping straight into the floor plan
+// so the floor is the first thing you see, rather than a read-only echo of it,
+// before any money is touched. Real navigation via `onEditFloor` - the same
+// call the read-only view's old "✎ Edit" FAB used to make - not a placeholder;
+// FloorStep is always directly editable for a setup shift, so "viewing" and
+// "editing" the floor are the same screen.
+function SkipToFloorPlan({ onEditFloor }) {
+    useEffect(() => {
+        onEditFloor?.();
+        // Fire once, on mount - not on every render.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     return (
-        <>
-        <Card className="!p-0 max-[560px]:flex max-[560px]:flex-1 max-[560px]:flex-col max-[560px]:min-h-0">
-            <div className="grid grid-cols-2 items-start gap-2.5 p-5 max-[560px]:gap-2 max-[560px]:p-4 max-[560px]:flex-1 max-[560px]:min-h-0 max-[560px]:overflow-y-auto max-[560px]:content-start max-[560px]:pb-24">
-                {teams.map((team, index) => (
-                    <FloorTeamCard
-                        key={team.teamId || index}
-                        title={`Team ${index + 1}`}
-                        members={team.members || []}
-                        kind="team"
-                    />
-                ))}
-                <FloorTeamCard title="Bar Team" members={barMembers} kind="bar" />
-                <FloorTeamCard title="Runners" members={runners} kind="runner" />
-            </div>
-
+        <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">
+            Opening the floor plan…
         </Card>
-        {/* Floating Edit FAB - the floor is edited in place. Settle up is reached
-            from the day rail above and mirrors this same view/edit pattern. */}
-        <EditFab onClick={onEditFloor} />
-        </>
     );
 }
 
@@ -303,8 +209,8 @@ function Hero({ title, body, tall = false, children }) {
         // landing's full-height column (flex-1) instead of shrinking to its three
         // lines and leaving the lower half of the screen blank - measured at
         // 390x844 the card ended at y=430 and wasted 414px, 49% of the viewport.
-        // This is the same fill treatment FloorLineup and the closed-day panel
-        // already use: the card fills, its content stays snug at the top (shrink-0,
+        // This is the same fill treatment the closed-day panel already uses:
+        // the card fills, its content stays snug at the top (shrink-0,
         // never stretched or spread apart), and the leftover height is one clean
         // band at the bottom. Desktop keeps its natural height.
         <Card
@@ -330,9 +236,10 @@ function DayRailLanding({ date, status, summary, lineup, orphanedEntries = [], s
     // progress bar carries the wait. Only a load with nothing to show blanks, which
     // is a first load or a date change (AdminDashboard withholds another date's data).
     const showLoadingCard = loading && !summary && !lineup && !status;
-    // On the read-only floor view (settle stage) the rail's active step is Floor -
-    // you are looking at the floor. Settle is the reachable "next" pill you tap to
-    // advance into the (directly-editable) money screen.
+    // "settle" stage redirects straight into the floor editor (`SkipToFloorPlan`)
+    // rather than rendering here, but the rail steps are still computed for the
+    // one frame before that redirect fires: Floor active, Settle the reachable
+    // "next" pill into the (directly-editable) money screen.
     let railSteps = getRailSteps({ shiftStatus: status });
     if (stage === "settle") {
         railSteps = railSteps.map((s) =>
@@ -350,8 +257,9 @@ function DayRailLanding({ date, status, summary, lineup, orphanedEntries = [], s
     }
 
     const onStepClick = (key) => {
-        // Floor = the read-only view you are already on; Edit is entered via the
-        // floating ✎ Edit button. Settle and Review open the editor at that step.
+        // Floor has no click handler here - landing on this stage already redirects
+        // into the floor editor before a click is possible. Settle and Review open
+        // the editor at that step.
         if (key === "settle") onContinueSettle?.();
         if (key === "review") onOpenReview?.();
     };
@@ -411,7 +319,7 @@ function DayRailLanding({ date, status, summary, lineup, orphanedEntries = [], s
                     removingShift={removingShift}
                 />
             ) : stage === "settle" ? (
-                <FloorLineup lineup={lineup} onEditFloor={onEditFloor} />
+                <SkipToFloorPlan onEditFloor={onEditFloor} />
             ) : (
                 <Hero
                     tall

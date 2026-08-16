@@ -5,10 +5,11 @@ import { useAuth } from "../../context/AuthContext";
 import { canApproveAccounts, canReadRoster, canRemoveSettledDay, tierLabel } from "../../utils/permissions";
 import DayRailLanding from "./DayRailLanding";
 import BarDatePill from "./BarDatePill";
+import DayChipStrip from "./DayChipStrip";
 import AppBar from "../AppBar/AppBar";
 import { TopProgressBar } from "../ui";
 import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
-import { toDateKey } from "../../utils/dateUtils";
+import { toDateKey, getCurrentWeek, parseDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 import { removeShiftAtomically } from "../../utils/closeoutPersistence";
@@ -59,42 +60,43 @@ const NAV_ITEMS = [
     },
 ];
 
-function MenuIcon() {
-    return (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="4" y1="6" x2="20" y2="6" />
-            <line x1="4" y1="12" x2="20" y2="12" />
-            <line x1="4" y1="18" x2="20" y2="18" />
-        </svg>
-    );
-}
-
-function SideNavItem({ item, active, onClick, collapsed }) {
+// The kit's `WsNavItem` (WorkspaceScreen.jsx): a full-width dark row, icon +
+// label + an optional count pill, on the sidebar's own `--color-bar-*` skin
+// (the same dark-pine family the app bar already uses, so the two read as one
+// continuous surface where they meet). Overturns the previous light,
+// collapsible-to-icon-rail sidebar - that collapse toggle was this app's own
+// invention, not in the kit, and is gone along with it: the kit sidebar is a
+// fixed 224px, always showing icon and label.
+function SideNavItem({ item, active, onClick, count }) {
     return (
         <button
             type="button"
             onClick={onClick}
             aria-current={active ? "page" : undefined}
-            title={collapsed ? item.label : undefined}
             className={
-                // Desktop-only rows: the pointer here is a mouse, not a thumb, so
-                // the denser sidebar height is fine. 44px is the usual comfortable
-                // thumb target for the app bar and the Day Rail, which a phone
-                // still has - not a floor every control must hit; the Pullenberg
-                // kit wins where it specifies its own size (see BarDatePill's
-                // 36px pill).
-                "group relative w-full flex items-center gap-3 px-3 py-2 text-sm rounded-[var(--radius-sm)] " +
-                "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
-                (collapsed ? "justify-center px-0 h-10 " : "") +
+                "group w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-[var(--radius-sm)] text-left " +
+                "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-bar-mint)]/40 " +
                 (active
-                    ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium"
-                    : "text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)]")
+                    ? "bg-[var(--color-bar-hover)] text-[var(--color-bar-ink-soft)] font-semibold"
+                    : "text-[var(--color-bar-ink)]/60 hover:text-[var(--color-bar-ink)] hover:bg-[var(--color-bar-hover)]/60")
             }
         >
-            <span className={active ? "text-[var(--color-accent)]" : "text-[var(--color-ink-muted)] group-hover:text-[var(--color-ink-soft)]"}>
+            <span className={active ? "text-[var(--color-bar-mint)]" : "text-inherit"}>
                 {item.icon}
             </span>
-            <span className={collapsed ? "sr-only" : ""}>{item.label}</span>
+            <span className="flex-1">{item.label}</span>
+            {count != null ? (
+                <span
+                    className={
+                        "font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded-full " +
+                        (active
+                            ? "bg-[var(--color-bar-mint)]/15 text-[var(--color-bar-mint)]"
+                            : "bg-[var(--color-bar-hover)] text-[var(--color-bar-ink)]/55")
+                    }
+                >
+                    {count}
+                </span>
+            ) : null}
         </button>
     );
 }
@@ -138,11 +140,15 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     const [dayDataDate, setDayDataDate] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
     const dayFetchIdRef = useRef(0);
+    // Lightweight, status-only read for the kit's day-chip strip: which of the
+    // week's 7 days are settled (closed) vs still open (setup) vs untouched
+    // (no entry at all). Separate from `fetchDayPayouts`, which loads the full
+    // money for exactly one selected day - the strip only ever needs a status
+    // dot, never a figure, for the six days it is not currently showing.
+    const [weekStatuses, setWeekStatuses] = useState({});
     // uid -> display name, for the "saved by" line. Browsing a week of days is
     // usually the same one or two people, so this keeps it to one read each.
     const saverNameCacheRef = useRef(new Map());
-    // Desktop sidebar only: rail-width (icons) vs full-width (icons + labels).
-    const [navCollapsed, setNavCollapsed] = useState(true);
     const [removingShift, setRemovingShift] = useState(false);
     // Which day-step the shift editor opens on when entered from a landing CTA.
     const [editorStep, setEditorStep] = useState("floor");
@@ -272,6 +278,35 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         setShiftSaved(false);
         fetchDayPayouts(selectedDate);
     }, [selectedDate, fetchDayPayouts]);
+
+    // The work week `selectedDate` falls in - Friday-anchored, the same
+    // boundary the pay side already uses (`getCurrentWeek`), rather than a
+    // second Monday-start convention just for this strip.
+    const weekDays = useMemo(
+        () => getCurrentWeek(parseDateKey(selectedDate)).map((date) => ({ date, dateKey: toDateKey(date) })),
+        [selectedDate]
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+        const dateKeys = weekDays.map((d) => d.dateKey);
+        (async () => {
+            try {
+                const snapshot = await getDocs(query(collection(db, "shifts"), where("date", "in", dateKeys)));
+                if (cancelled) return;
+                const next = {};
+                snapshot.docs.forEach((d) => { next[d.id] = d.data().status || "closed"; });
+                setWeekStatuses(next);
+            } catch (e) {
+                // A glance indicator, not the record - the day itself still loads
+                // and reads correctly through `fetchDayPayouts` either way.
+                console.error("Failed to load week statuses:", e);
+                if (!cancelled) setWeekStatuses({});
+            }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [weekDays.map((d) => d.dateKey).join("|")]);
 
     // `shifts/{date}.updatedBy` is a uid, and a uid is not an answer to "who
     // saved this?" - so it is resolved to a name here, in one document read, and
@@ -550,6 +585,18 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
 
     const header = headerForTab();
 
+    // The kit's "Tonight's pool" sidebar card. Only meaningful once a day is
+    // actually settled - `daySummary.balances.totalAvailable` is the same
+    // finalized-pool figure `DayPayoutPanel`'s own audit summary already
+    // trusts, not a new derivation. A setup or empty day has no pool yet, so
+    // it reads as $0.00 / "Not settled" rather than inventing a number.
+    // Labeled off the calendar, not the browsed day, so glancing at a past
+    // date never claims to be reporting "tonight."
+    const todayKey = toDateKey(new Date());
+    const sidebarPoolSettled = dayDataIsCurrent && dayShiftStatus === "closed";
+    const sidebarPoolAmount = sidebarPoolSettled ? (daySummary?.balances?.totalAvailable ?? 0) : 0;
+    const sidebarPoolLabel = selectedDate === todayKey ? "Tonight's pool" : "This day's pool";
+
     return (
         <PendingActionsContext.Provider value={pendingActions}>
         <div className="min-h-screen bg-[var(--color-bg)]">
@@ -581,46 +628,57 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             />
 
             <div className="flex flex-col lg:flex-row min-h-[calc(100vh-3.5rem)]">
-                {/* Workspace sidebar - desktop only, and unchanged from what it has
-                    always been there. It used to double as the phone's top-level
-                    menu, folded down into a horizontal band behind a hamburger; that
-                    band is gone and this markup no longer carries any phone case. */}
-                <aside
-                    id="admin-workspace-nav"
-                    className={
-                        "hidden lg:block lg:shrink-0 lg:border-r border-[var(--color-line)] bg-[var(--color-bg)] transition-[width] duration-200 " +
-                        (navCollapsed ? "lg:w-16" : "lg:w-60")
-                    }
-                >
-                    <nav className="lg:sticky lg:top-14 p-3 lg:py-4">
-                        <div className={"flex mb-3 " + (navCollapsed ? "justify-center" : "px-1 justify-between items-center")}>
-                            {!navCollapsed ? (
-                                <p className="px-2 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                    Workspace
-                                </p>
-                            ) : null}
-                            <button
-                                type="button"
-                                onClick={() => setNavCollapsed(prev => !prev)}
-                                aria-expanded={!navCollapsed}
-                                aria-controls="admin-workspace-nav"
-                                aria-label={navCollapsed ? "Expand workspace navigation" : "Collapse workspace navigation"}
-                                title={navCollapsed ? "Expand workspace" : "Collapse workspace"}
-                                className="h-8 w-8 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                            >
-                                <MenuIcon />
-                            </button>
+                {/* Workspace sidebar - desktop only. Rebuilt on the kit's own shape:
+                    a fixed 224px dark-pine column (`WorkspaceScreen.jsx`'s `<aside>`),
+                    not the previous light, icon-rail-collapsible sidebar - that
+                    collapse toggle was this app's own invention and the kit has no
+                    equivalent, so it is gone rather than kept alongside. Phone still
+                    gets no top-level nav at all (unchanged): Team hangs off the
+                    account sheet, and the Day Rail is the only phone navigation. */}
+                <aside className="hidden lg:flex lg:w-56 lg:shrink-0 lg:flex-col bg-[var(--color-bar-bg)]">
+                    <nav className="lg:sticky lg:top-14 flex flex-col lg:min-h-[calc(100vh-3.5rem)]">
+                        <div className="px-4 pt-5 pb-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-bar-ink)]/40">
+                                Workspace
+                            </p>
                         </div>
-                        <div className="flex flex-col gap-1">
+                        <div className="px-2.5 flex flex-col gap-0.5">
                             {NAV_ITEMS.filter((item) => item.value !== "users" || canReachTeam).map((item) => (
                                 <SideNavItem
                                     key={item.value}
                                     item={item}
                                     active={sidebarValue === item.value}
                                     onClick={() => handleNavItemClick(item.value)}
-                                    collapsed={navCollapsed}
+                                    count={item.value === "users" && pendingApprovalCount > 0 ? pendingApprovalCount : null}
                                 />
                             ))}
+                        </div>
+                        {/* Kit's bottom block: the day's pool at a glance, then a
+                            direct link to the captain's own pay - present only for
+                            whoever is paid from the pool, same gate `onGoToMyPay`
+                            already carries everywhere else. Routed through the same
+                            leave-guarded handler the app-bar home button uses, not a
+                            bare call to `onGoToMyPay`, so a half-edited shift still
+                            confirms before this link abandons it. */}
+                        <div className="mt-auto px-2.5 pt-3 pb-3.5 border-t border-[var(--color-bar-hover)]">
+                            <div className="rounded-[var(--radius-sm)] bg-[var(--color-bar-hover)]/50 px-3 py-2.5 mb-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-bar-ink)]/40">
+                                    {sidebarPoolLabel}
+                                </p>
+                                <p className="font-mono tabular-nums text-lg text-[var(--color-bar-ink-soft)] mt-1">
+                                    ${sidebarPoolAmount.toFixed(2)}
+                                </p>
+                                <p className="text-[11px] text-[var(--color-bar-ink)]/50 mt-0.5">
+                                    {sidebarPoolSettled ? "Settled" : "Not settled"}
+                                </p>
+                            </div>
+                            {onGoToMyPay ? (
+                                <SideNavItem
+                                    item={{ value: "my-pay", label: "Go to my pay", icon: ACCOUNT_ICON }}
+                                    active={false}
+                                    onClick={handleHomeClick}
+                                />
+                            ) : null}
                         </div>
                     </nav>
                 </aside>
@@ -654,7 +712,9 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                     </span>
                                 ) : null}
                                 <h1 className={
-                                    "font-display text-2xl sm:text-4xl font-medium tracking-tight text-[var(--color-ink)] " +
+                                    // 34px at every width, matching the kit's own h1 exactly
+                                    // (WorkspaceScreen.jsx sets it once, not responsively).
+                                    "font-display text-[34px] leading-[1.1] font-medium tracking-tight text-[var(--color-ink)] " +
                                     (activeTab === "editor" ? "hidden sm:block" : "")
                                 }>
                                     {header.title}
@@ -669,6 +729,25 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                 <div className="flex items-center gap-2 shrink-0">{header.actions}</div>
                             ) : null}
                         </header>
+
+                        {/* Kit's week-at-a-glance day chips (WorkspaceScreen.jsx's
+                            `DayChip` row), shown only on Shifts - Team has no date and
+                            the editor keeps its date locked for the same reason
+                            `BarDatePill` goes read-only there: nothing may swap the
+                            date out from under a half-entered shift. Visible at every
+                            width, like the kit's own `compact` mode keeps it - unlike
+                            the eyebrow/h1 above, this is not hidden on a phone. */}
+                        {activeTab === "shifts" ? (
+                            <div className="mb-3 sm:mb-6">
+                                <DayChipStrip
+                                    days={weekDays}
+                                    statuses={weekStatuses}
+                                    selectedDate={selectedDate}
+                                    todayKey={todayKey}
+                                    onSelect={setSelectedDate}
+                                />
+                            </div>
+                        ) : null}
 
                         {activeTab === "shifts" ? (
                             <DayRailLanding
