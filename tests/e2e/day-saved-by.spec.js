@@ -179,8 +179,8 @@ async function crossToShifts(page) {
     await page.getByRole("menuitem", { name: /^Shifts/ }).click();
 }
 
-// The payout panel header, located by the action only a settled day carries.
-const panelHeader = (page) => page.locator("header").filter({ hasText: "Export PDF" });
+// The page header a settled day carries - the real date, above the day chips.
+const panelHeader = (page) => page.getByTestId("settled-day-header");
 const savedByLine = (page) => panelHeader(page).locator("p");
 const payoutPanel = (page) => panelHeader(page).locator("xpath=..");
 
@@ -190,7 +190,7 @@ const WHEN = String.raw`\w{3} \d{1,2}, \d{4}, \d{1,2}:\d{2} (AM|PM)`;
 
 async function openSettledDay(page, date) {
     await setShiftDate(page, date);
-    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+    await expect(panelHeader(page)).toBeVisible();
 }
 
 test.beforeAll(async () => {
@@ -242,7 +242,7 @@ test("settling a night through the UI leaves the day naming who saved it", async
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
 
     // Back on the day, with the money - and now with the attribution.
-    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+    await expect(panelHeader(page)).toBeVisible();
     await page.setViewportSize(PHONE);
     await expect(savedByLine(page)).toHaveText(new RegExp(`^Saved by Mika Alvarez · ${WHEN}$`));
 
@@ -318,7 +318,7 @@ test("older nights state only what was recorded, with nothing warning-toned abou
     // the shift doc carries both fields, but there is no settled day to caption.
     await setShiftDate(page, FLOOR_ONLY_DAY);
     await expect(page.getByText("Floor plan is set")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Export PDF" })).toHaveCount(0);
+    await expect(panelHeader(page)).toHaveCount(0);
     await expect(page.getByText(/^Saved by /)).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS_DIR}/floor-plan-only-phone.png`, fullPage: true });
 });

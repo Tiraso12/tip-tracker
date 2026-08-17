@@ -8,7 +8,7 @@ import { SavedByLine } from "./DayPayoutPanel";
 import BarDatePill from "./BarDatePill";
 import DayChipStrip from "./DayChipStrip";
 import AppBar from "../AppBar/AppBar";
-import { Button, TopProgressBar } from "../ui";
+import { TopProgressBar } from "../ui";
 import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
 import { toDateKey, getCurrentWeek, parseDateKey, formatFullDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
@@ -16,7 +16,6 @@ import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../u
 import { removeShiftAtomically } from "../../utils/closeoutPersistence";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 import { fullNameFor } from "../../utils/userNames";
-import { generateShiftReport } from "../../utils/pdfExport";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -575,8 +574,8 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     const headerForTab = () => {
         if (activeTab === "shifts") {
             const stage = getLandingStage(dayShiftStatus);
-            // A settled day gets the kit's real page header - the specific date,
-            // who saved it, and Export PDF - shown at EVERY width (not the usual
+            // A settled day gets the kit's real page header - the specific date
+            // and who saved it - shown at EVERY width (not the usual
             // desktop-only stage title) and sitting above the day-chip strip, not
             // buried in the payout card below it. Gated on `dayDataIsCurrent` for
             // the same reason every other read of `daySummary` is: a date change
@@ -586,15 +585,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                     eyebrow: "Shifts",
                     title: formatFullDateKey(selectedDate),
                     savedBy: daySavedByLine,
-                    actions: (
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => generateShiftReport(selectedDate, daySummary)}
-                        >
-                            Export PDF
-                        </Button>
-                    ),
+                    actions: null,
                     alwaysVisible: true,
                 };
             }
@@ -735,14 +726,16 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                     + (activeTab === "editor" ? "pt-2" : "pt-5")
                 }>
                     <div className="max-w-6xl mx-auto">
-                        <header className={
+                        <header
+                            data-testid={activeTab === "shifts" && header.alwaysVisible ? "settled-day-header" : undefined}
+                            className={
                             // On mobile Shifts and the editor the content header is
                             // usually hidden - the Day Rail names the step and sits
                             // flush under the app bar. Desktop keeps the page title
                             // for coherence. A settled day is the one exception:
-                            // `header.alwaysVisible` shows the real date, saved-by and
-                            // Export PDF at every width, above the day-chip strip, the
-                            // way the kit's own page header sits above its day chips.
+                            // `header.alwaysVisible` shows the real date and saved-by
+                            // at every width, above the day-chip strip, the way the
+                            // kit's own page header sits above its day chips.
                             ((activeTab === "shifts" && !header.alwaysVisible) || activeTab === "editor" ? "hidden sm:flex " : "flex ") +
                             "flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
                             (activeTab === "editor" || activeTab === "shifts" ? "pb-3 mb-3 sm:pb-6 sm:mb-6" : "pb-4 sm:pb-6 mb-4 sm:mb-6")

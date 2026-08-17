@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Badge, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
-import { roleShortLabel } from "../../utils/roleLabels";
+import { rolePluralLabel } from "../../utils/roleLabels";
 import NegativeNightNotice from "./NegativeNightNotice";
 import { withoutNegativePoolWarnings } from "./shiftEditorUtils";
 
@@ -187,36 +187,29 @@ function AuditSummary({ summary }) {
         </div>
     );
 
+    // No card box on the collapsed toggle itself - a bordered/tinted row here
+    // reads as one more card stacked against the payout card right above it.
+    // Just a quiet text row until opened; the detail grid below (`details`)
+    // keeps its own box only once there is something to bound.
     return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface-muted)]/45 overflow-hidden">
+        <div>
             <button
                 type="button"
                 onClick={() => setIsOpen(prev => !prev)}
-                className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left"
+                className="w-full flex items-center justify-between gap-3 text-left"
                 aria-expanded={isOpen}
             >
-                <div className="min-w-0">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                        Shift audit
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1.5 text-[0.72rem] text-[var(--color-ink-soft)]">
-                        <span className="rounded-full bg-[var(--color-surface)] px-2 py-1">
-                            Available {fmt(availableNonCash)}
-                        </span>
-                        <span className="rounded-full bg-[var(--color-surface)] px-2 py-1">
-                            Distributed {fmt(distributedNonCash)}
-                        </span>
-                    </div>
-                </div>
-                <div className="shrink-0 flex flex-col items-end gap-1">
-                    <span className="text-[10px] uppercase tracking-wide text-[var(--color-ink-muted)]">Balance</span>
+                <span className="text-xs text-[var(--color-ink-muted)]">
+                    Shift audit · Available {fmt(availableNonCash)} · Distributed {fmt(distributedNonCash)}
+                </span>
+                <span className="shrink-0 flex items-center gap-2">
                     <BalanceValue value={summary.balances?.overallBalance} />
                     <span className="text-xs text-[var(--color-accent)]">{isOpen ? "Hide" : "Details"}</span>
-                </div>
+                </span>
             </button>
 
             {isOpen ? (
-                <div className="px-4 pb-4">
+                <div className="mt-3">
                     {details}
                 </div>
             ) : null}
@@ -224,73 +217,78 @@ function AuditSummary({ summary }) {
     );
 }
 
-// Every payout on a saved night, flattened into ONE list in seniority order -
-// no grouped section bands. The kit's own table (WorkspaceScreen.jsx) is a
-// flat roster; role and points ride together in the row's own pill instead of
-// a banded header repeating the same word for every person under it.
-const flattenedPayoutRows = (summary) => {
+// Every payout on a saved night, flattened out of the engine's role buckets -
+// only for reading the night back as a whole (NegativeNightNotice). The
+// tables below still render group by group.
+const allPayoutRows = (summary) => {
     const roleGrouped = summary?.payouts?.roleGrouped || {};
-    return ROLE_GROUPS.flatMap(({ key, role, isRunner }) =>
-        (roleGrouped[key] || []).map((p) => ({ ...p, groupRole: role, isRunner }))
-    );
+    return ROLE_GROUPS.flatMap(({ key }) => roleGrouped[key] || []);
 };
 
-// The kit's own role tag (WorkspaceScreen.jsx `PayoutListRow`/desktop `TR`):
-// a small `radius-xs` chip, not the app's usual full-pill Badge - deliberately
-// a different, tighter shape reserved for this one in-row role+points tag.
-function RolePill({ children }) {
+// A small `radius-xs` chip - the kit's own role-tag shape (WorkspaceScreen.jsx
+// `PayoutListRow`/desktop `TR`), not the app's usual full-pill Badge. The
+// group band above each section already names the role, so this only ever
+// carries the points - repeating "Captain" here too was the redundant half
+// of "buried in other components": one more label saying the same word the
+// band just said.
+function PointsPill({ points }) {
+    if (points == null) return null;
     return (
         <span className="inline-flex items-center whitespace-nowrap rounded-[var(--radius-xs)] bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-accent)]">
-            {children}
+            {points} {plural(points, "pt", "pts")}
         </span>
     );
 }
 
-// "Captain · 4 pts" - role and points combined into the one tag, exactly the
-// kit's own pairing, rather than points living in a column of their own.
-function rolePillLabel(role, points, isRunner) {
-    const roleWord = roleShortLabel(role);
-    if (isRunner) return roleWord;
-    return points != null ? `${roleWord} · ${points} ${plural(points, "pt", "pts")}` : roleWord;
-}
-
 function PayoutMobileCards({ summary }) {
-    const rows = flattenedPayoutRows(summary);
+    const groupNames = summary.payouts?.roleGrouped || {};
     const totals = poolTotals(summary);
 
     return (
         <div className="hidden max-[560px]:block border border-[var(--color-line)] rounded-[var(--radius-md)] overflow-hidden bg-[var(--color-surface)]">
-            <div className="divide-y divide-[var(--color-line)]">
-                {rows.map((p) => {
-                    const total = fmt(p.isRunner ? p.payoutAmount : getNonCashPayoutTotal(p));
-                    const team = !p.isRunner && p.teamId ? p.teamId.replace("team-", "Team ") : null;
-                    const detail = p.isRunner
-                        ? Object.entries(p.breakdown || {}).map(([src, val]) => `${runnerSourceLabel(src)}: ${fmt(val)}`).join(" · ")
-                        : `CTP ${fmt(p.ctp)} · GRT ${fmt(p.grt)} · Cash ${fmt(p.cash)}`;
+            {ROLE_GROUPS.map(({ key, role, isRunner }) => {
+                const arr = groupNames[key];
+                if (!arr || arr.length === 0) return null;
 
-                    return (
-                        <article key={p.uid} className="px-4 py-3">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <h4 className="text-sm font-semibold text-[var(--color-ink)] leading-tight">
-                                        {p.name}
-                                    </h4>
-                                    <p className="mt-1 flex items-center gap-1.5 text-xs text-[var(--color-ink-soft)]">
-                                        <RolePill>{rolePillLabel(p.groupRole, p.points, p.isRunner)}</RolePill>
-                                        {team ? <span>{team}</span> : null}
-                                    </p>
-                                </div>
-                                <strong className="shrink-0 font-mono tabular-nums text-sm text-[var(--color-ink)]">
-                                    {total}
-                                </strong>
-                            </div>
-                            <p className="mt-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] leading-relaxed">
-                                {detail}
-                            </p>
-                        </article>
-                    );
-                })}
-            </div>
+                return (
+                    <section key={key} className="border-b border-[var(--color-line)] last:border-b-0">
+                        <div className="px-4 py-2 bg-[var(--color-surface-muted)]/65 text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
+                            {rolePluralLabel(role)}
+                        </div>
+                        <div className="divide-y divide-[var(--color-line)]">
+                            {arr.map((p) => {
+                                const total = fmt(isRunner ? p.payoutAmount : getNonCashPayoutTotal(p));
+                                const team = !isRunner && p.teamId ? p.teamId.replace("team-", "Team ") : null;
+                                const detail = isRunner
+                                    ? Object.entries(p.breakdown || {}).map(([src, val]) => `${runnerSourceLabel(src)}: ${fmt(val)}`).join(" · ")
+                                    : `CTP ${fmt(p.ctp)} · GRT ${fmt(p.grt)} · Cash ${fmt(p.cash)}`;
+
+                                return (
+                                    <article key={p.uid} className="px-4 py-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <h4 className="text-sm font-semibold text-[var(--color-ink)] leading-tight">
+                                                    {p.name}
+                                                </h4>
+                                                <p className="mt-1 flex items-center gap-1.5 text-xs text-[var(--color-ink-soft)]">
+                                                    {!isRunner ? <PointsPill points={p.points} /> : null}
+                                                    {team ? <span>{team}</span> : null}
+                                                </p>
+                                            </div>
+                                            <strong className="shrink-0 font-mono tabular-nums text-sm text-[var(--color-ink)]">
+                                                {total}
+                                            </strong>
+                                        </div>
+                                        <p className="mt-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] leading-relaxed">
+                                            {detail}
+                                        </p>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    </section>
+                );
+            })}
             <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-surface-muted)]/60 border-t border-[var(--color-line)]">
                 <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink)]">Everyone paid</span>
                 <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">{fmt(totals.everyonePaid)}</strong>
@@ -300,7 +298,7 @@ function PayoutMobileCards({ summary }) {
 }
 
 function PayoutTable({ summary }) {
-    const rows = flattenedPayoutRows(summary);
+    const groupNames = summary.payouts?.roleGrouped || {};
     const totals = poolTotals(summary);
 
     return (
@@ -309,7 +307,6 @@ function PayoutTable({ summary }) {
             <THead>
                 <tr>
                     <TH>Employee</TH>
-                    <TH>Role</TH>
                     <TH numeric>CTP</TH>
                     <TH numeric>GRT</TH>
                     <TH numeric>Cash</TH>
@@ -317,38 +314,51 @@ function PayoutTable({ summary }) {
                 </tr>
             </THead>
             <TBody>
-                {rows.map((p) => {
-                    const team = !p.isRunner && p.teamId ? p.teamId.replace("team-", "Team ") : null;
+                {ROLE_GROUPS.map(({ key, role, isRunner }) => {
+                    const arr = groupNames[key];
+                    if (!arr || arr.length === 0) return null;
                     return (
-                        <TR key={p.uid}>
-                            <TD>
-                                <span className="block font-medium text-[var(--color-ink)]">{p.name}</span>
-                                {team ? <span className="block text-xs text-[var(--color-ink-soft)]">{team}</span> : null}
-                            </TD>
-                            <TD>
-                                <RolePill>{rolePillLabel(p.groupRole, p.points, p.isRunner)}</RolePill>
-                            </TD>
-                            {p.isRunner ? (
-                                <td colSpan={3} className="px-4 py-3 text-xs text-[var(--color-ink-muted)] font-mono tabular-nums">
-                                    {Object.entries(p.breakdown || {})
-                                        .map(([src, val]) => `${runnerSourceLabel(src)}: ${fmt(val)}`)
-                                        .join("  ·  ")}
+                        <React.Fragment key={key}>
+                            <tr className="bg-[var(--color-surface-muted)]/60">
+                                <td colSpan={5} className="px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
+                                    {rolePluralLabel(role)}
                                 </td>
-                            ) : (
-                                <>
-                                    <TD numeric>{fmt(p.ctp)}</TD>
-                                    <TD numeric>{fmt(p.grt)}</TD>
-                                    <TD numeric>{fmt(p.cash)}</TD>
-                                </>
-                            )}
-                            <TD numeric className="font-semibold">
-                                {fmt(p.isRunner ? p.payoutAmount : getNonCashPayoutTotal(p))}
-                            </TD>
-                        </TR>
+                            </tr>
+                            {arr.map((p) => {
+                                const team = !isRunner && p.teamId ? p.teamId.replace("team-", "Team ") : null;
+                                return (
+                                    <TR key={p.uid}>
+                                        <TD>
+                                            <span className="flex items-center gap-2 font-medium text-[var(--color-ink)]">
+                                                {p.name}
+                                                {!isRunner ? <PointsPill points={p.points} /> : null}
+                                            </span>
+                                            {team ? <span className="block text-xs text-[var(--color-ink-soft)]">{team}</span> : null}
+                                        </TD>
+                                        {isRunner ? (
+                                            <td colSpan={3} className="px-4 py-3 text-xs text-[var(--color-ink-muted)] font-mono tabular-nums">
+                                                {Object.entries(p.breakdown || {})
+                                                    .map(([src, val]) => `${runnerSourceLabel(src)}: ${fmt(val)}`)
+                                                    .join("  ·  ")}
+                                            </td>
+                                        ) : (
+                                            <>
+                                                <TD numeric>{fmt(p.ctp)}</TD>
+                                                <TD numeric>{fmt(p.grt)}</TD>
+                                                <TD numeric>{fmt(p.cash)}</TD>
+                                            </>
+                                        )}
+                                        <TD numeric className="font-semibold">
+                                            {fmt(isRunner ? p.payoutAmount : getNonCashPayoutTotal(p))}
+                                        </TD>
+                                    </TR>
+                                );
+                            })}
+                        </React.Fragment>
                     );
                 })}
                 <tr className="border-t-2 border-[var(--color-line-strong)] bg-[var(--color-surface-muted)]/60">
-                    <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink)]">
+                    <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink)]">
                         Everyone paid
                     </td>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-sm font-semibold text-[var(--color-ink)]">
@@ -372,9 +382,9 @@ function PayoutTable({ summary }) {
 // for it. The people who reach this screen are the ones who ran the night, so
 // this is a quiet fact at the top of it, not a banner.
 //
-// Named export: AdminDashboard renders this itself, next to the real date and
-// the Export PDF button, in the page header above the day-chip strip - see
-// that component's header for why.
+// Named export: AdminDashboard renders this itself, next to the real date,
+// in the page header above the day-chip strip - see that component's header
+// for why.
 export function SavedByLine({ savedBy }) {
     if (!savedBy?.at) return null;
 
@@ -402,11 +412,11 @@ export function SavedByLine({ savedBy }) {
     );
 }
 
-// The date, saved-by line and Export PDF button live in AdminDashboard's own
-// page header now, above the day-chip strip - not in here. This component is
-// just the day's floating cards: the kit's `WorkspaceScreen.jsx` sits its pool
-// tiles and its "Tonight's payout" card directly on the page, not inside one
-// wrapping box, so nothing here is boxed a second time.
+// The date and saved-by line live in AdminDashboard's own page header now,
+// above the day-chip strip - not in here. This component is just the day's
+// floating cards: the kit's `WorkspaceScreen.jsx` sits its pool tiles and its
+// "Tonight's payout" card directly on the page, not inside one wrapping box,
+// so nothing here is boxed a second time.
 function DayPayoutPanel({ summary, status, loading }) {
     const visibleValidations = withoutNegativePoolWarnings(summary?.validations || []);
 
@@ -455,7 +465,7 @@ function DayPayoutPanel({ summary, status, loading }) {
     }
 
     return (
-        <div className="space-y-3 sm:space-y-4">
+        <div className="space-y-5 sm:space-y-7">
             {/* Kit's headline pool-summary cards - the glanceable numbers,
                 made honest for a real night's separate dining/bar pools. */}
             <PoolSummaryCards summary={summary} />
@@ -477,7 +487,7 @@ function DayPayoutPanel({ summary, status, loading }) {
                 Warnings block below: the same correct night was being stated
                 twice, the second time in the vocabulary of a fault. */}
             <NegativeNightNotice
-                payoutRows={flattenedPayoutRows(summary)}
+                payoutRows={allPayoutRows(summary)}
                 adjustedPools={summary.adjustedPools}
             />
 
