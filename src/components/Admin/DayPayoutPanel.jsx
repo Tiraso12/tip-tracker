@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { generateShiftReport } from "../../utils/pdfExport";
-import { Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
+import { Badge, Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
 import { rolePluralLabel, roleShortLabel } from "../../utils/roleLabels";
 import NegativeNightNotice from "./NegativeNightNotice";
 import { withoutNegativePoolWarnings } from "./shiftEditorUtils";
@@ -13,6 +13,63 @@ const plural = (count, one, many) => (count === 1 ? one : many);
 const RUNNER_SOURCE_LABELS = { "Manual Split": "Runner pay" };
 const runnerSourceLabel = (src) => RUNNER_SOURCE_LABELS[src] || src;
 const getNonCashPayoutTotal = (payout = {}) => (Number(payout.ctp) || 0) + (Number(payout.grt) || 0);
+const sumBy = (rows, key) => rows.reduce((sum, r) => sum + (Number(r[key]) || 0), 0);
+
+// The kit's headline pool-summary cards, made honest for a night that actually
+// has a bar team: dining and bar are SEPARATE pools (see the money rule in
+// AGENTS.md) so they get separate cards rather than the kit's single undivided
+// "Dining pool (CTP)" tile. Summed straight off the same role-grouped rows the
+// payout table below renders - never off the engine's pool-adjustment figures -
+// so the cards and the table can never disagree by a rounding penny.
+function poolTotals(summary) {
+    const roleGrouped = summary?.payouts?.roleGrouped || {};
+    const diningRows = ["captains", "servers", "backs", "assistants"].flatMap((key) => roleGrouped[key] || []);
+    const barRows = roleGrouped.bar || [];
+    const runnerRows = roleGrouped.runners || [];
+    const dining = { ctp: sumBy(diningRows, "ctp"), grt: sumBy(diningRows, "grt") };
+    const bar = { ctp: sumBy(barRows, "ctp"), grt: sumBy(barRows, "grt") };
+    const runnerPay = sumBy(runnerRows, "payoutAmount");
+    const cash = sumBy(diningRows, "cash") + sumBy(barRows, "cash");
+    // "Everyone paid": every pool's CTP + GRT, cash excluded (the money rule -
+    // cash is reported on its own line, never folded into a total). Matches the
+    // Review step's own "= Everyone paid" ledger row so the two screens agree.
+    const everyonePaid = dining.ctp + dining.grt + bar.ctp + bar.grt + runnerPay;
+    return { dining, bar, cash, runnerPay, everyonePaid };
+}
+
+function PoolCard({ label, value, detail }) {
+    return (
+        <Card className="!p-3.5 sm:!p-4">
+            <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
+                {label}
+            </p>
+            <p className="mt-1.5 font-mono tabular-nums text-xl sm:text-[22px] text-[var(--color-ink)]">
+                {fmt(value)}
+            </p>
+            {detail ? <p className="mt-0.5 truncate text-[11px] text-[var(--color-ink-soft)]">{detail}</p> : null}
+        </Card>
+    );
+}
+
+function PoolSummaryCards({ summary }) {
+    const totals = poolTotals(summary);
+    return (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+            <PoolCard
+                label="Dining pool"
+                value={totals.dining.ctp + totals.dining.grt}
+                detail={`CTP ${fmt(totals.dining.ctp)} · GRT ${fmt(totals.dining.grt)}`}
+            />
+            <PoolCard
+                label="Bar pool"
+                value={totals.bar.ctp + totals.bar.grt}
+                detail={`CTP ${fmt(totals.bar.ctp)} · GRT ${fmt(totals.bar.grt)}`}
+            />
+            <PoolCard label="Cash" value={totals.cash} detail="Paid separately" />
+            <PoolCard label="Runner pay" value={totals.runnerPay} detail="Off the top" />
+        </div>
+    );
+}
 
 function StatColumn({ label, children }) {
     return (
@@ -75,13 +132,19 @@ const allPayoutRows = (summary) => {
     return ROLE_GROUPS.flatMap(({ key }) => roleGrouped[key] || []);
 };
 
+// The full engine breakdown - inputs, house/bar allocations, balances - kept
+// as a single collapsed-by-default disclosure at every width. The pool-summary
+// cards above now cover the "glance" job the kit asks for, so this detail sits
+// tucked below the payout table as supporting evidence, same as Review's own
+// disclosure rows: "the card is the screen, these are where you look if it
+// disagrees" (CalculatedPayoutReview.jsx).
 function AuditSummary({ summary }) {
     const [isOpen, setIsOpen] = useState(false);
     const availableNonCash = (summary.balances?.totalAvailable || 0) - (summary.derivedValues?.baseTeamCash || 0);
     const distributedNonCash = (summary.balances?.totalDistributed || 0) - (summary.derivedValues?.baseTeamCash || 0);
 
     const details = (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-5 bg-[var(--color-surface-muted)]/50 border border-[var(--color-line)] rounded-[var(--radius-md)] max-[560px]:border-0 max-[560px]:p-0 max-[560px]:bg-transparent max-[560px]:gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-5 bg-[var(--color-surface-muted)]/50 border border-[var(--color-line)] rounded-[var(--radius-md)]">
             <StatColumn label="Inputs">
                 <StatLine label="Team Sales" value={fmt(summary.derivedValues?.totalTeamSales)} strong />
                 <StatLine label="Contract Grat" value={fmt(summary.derivedValues?.grtContractTotal)} />
@@ -132,50 +195,45 @@ function AuditSummary({ summary }) {
     );
 
     return (
-        <>
-            <div className="max-[560px]:hidden">
-                {details}
-            </div>
+        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface-muted)]/45 overflow-hidden">
+            <button
+                type="button"
+                onClick={() => setIsOpen(prev => !prev)}
+                className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left"
+                aria-expanded={isOpen}
+            >
+                <div className="min-w-0">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
+                        Shift audit
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1.5 text-[0.72rem] text-[var(--color-ink-soft)]">
+                        <span className="rounded-full bg-[var(--color-surface)] px-2 py-1">
+                            Available {fmt(availableNonCash)}
+                        </span>
+                        <span className="rounded-full bg-[var(--color-surface)] px-2 py-1">
+                            Distributed {fmt(distributedNonCash)}
+                        </span>
+                    </div>
+                </div>
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-[var(--color-ink-muted)]">Balance</span>
+                    <BalanceValue value={summary.balances?.overallBalance} />
+                    <span className="text-xs text-[var(--color-accent)]">{isOpen ? "Hide" : "Details"}</span>
+                </div>
+            </button>
 
-            <div className="hidden max-[560px]:block border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface-muted)]/45 overflow-hidden">
-                <button
-                    type="button"
-                    onClick={() => setIsOpen(prev => !prev)}
-                    className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left"
-                    aria-expanded={isOpen}
-                >
-                    <div className="min-w-0">
-                        <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                            Shift Audit
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-1.5 text-[0.72rem] text-[var(--color-ink-soft)]">
-                            <span className="rounded-full bg-[var(--color-surface)] px-2 py-1">
-                                Available {fmt(availableNonCash)}
-                            </span>
-                            <span className="rounded-full bg-[var(--color-surface)] px-2 py-1">
-                                Distributed {fmt(distributedNonCash)}
-                            </span>
-                        </div>
-                    </div>
-                    <div className="shrink-0 flex flex-col items-end gap-1">
-                        <span className="text-[10px] uppercase tracking-wide text-[var(--color-ink-muted)]">Balance</span>
-                        <BalanceValue value={summary.balances?.overallBalance} />
-                        <span className="text-xs text-[var(--color-accent)]">{isOpen ? "Hide" : "Details"}</span>
-                    </div>
-                </button>
-
-                {isOpen ? (
-                    <div className="px-4 pb-4">
-                        {details}
-                    </div>
-                ) : null}
-            </div>
-        </>
+            {isOpen ? (
+                <div className="px-4 pb-4">
+                    {details}
+                </div>
+            ) : null}
+        </div>
     );
 }
 
 function PayoutMobileCards({ summary }) {
     const groupNames = summary.payouts?.roleGrouped || {};
+    const totals = poolTotals(summary);
 
     return (
         <div className="hidden max-[560px]:block border border-[var(--color-line)] rounded-[var(--radius-md)] overflow-hidden bg-[var(--color-surface)]">
@@ -203,8 +261,9 @@ function PayoutMobileCards({ summary }) {
                                                 <h4 className="text-sm font-semibold text-[var(--color-ink)] leading-tight">
                                                     {p.name}
                                                 </h4>
-                                                <p className="mt-1 text-xs text-[var(--color-ink-soft)]">
-                                                    {isRunner ? team : `${team} · ${p.points ?? 0} ${plural(p.points ?? 0, 'pt', 'pts')}`}
+                                                <p className="mt-1 flex items-center gap-1.5 text-xs text-[var(--color-ink-soft)]">
+                                                    <Badge tone="accent" className="!py-0">{team}</Badge>
+                                                    {!isRunner ? `${p.points ?? 0} ${plural(p.points ?? 0, 'pt', 'pts')}` : null}
                                                 </p>
                                             </div>
                                             <strong className="shrink-0 font-mono tabular-nums text-sm text-[var(--color-ink)]">
@@ -221,12 +280,17 @@ function PayoutMobileCards({ summary }) {
                     </section>
                 );
             })}
+            <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-surface-muted)]/60">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-ink)]">Everyone paid</span>
+                <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">{fmt(totals.everyonePaid)}</strong>
+            </div>
         </div>
     );
 }
 
 function PayoutTable({ summary }) {
     const groupNames = summary.payouts?.roleGrouped || {};
+    const totals = poolTotals(summary);
 
     return (
         <div className="max-[560px]:hidden">
@@ -256,8 +320,10 @@ function PayoutTable({ summary }) {
                             {arr.map((p) => (
                                 <TR key={p.uid}>
                                     <TD className="font-medium">{p.name}</TD>
-                                    <TD className="text-[var(--color-ink-soft)]">
-                                        {isRunner ? roleShortLabel("runner") : p.teamId ? p.teamId.replace("team-", "Team ") : roleShortLabel("bartender")}
+                                    <TD>
+                                        <Badge tone="accent">
+                                            {isRunner ? roleShortLabel("runner") : p.teamId ? p.teamId.replace("team-", "Team ") : roleShortLabel("bartender")}
+                                        </Badge>
                                     </TD>
                                     {isRunner ? (
                                         <td colSpan={4} className="px-4 py-3 text-xs text-[var(--color-ink-muted)] font-mono tabular-nums">
@@ -281,6 +347,14 @@ function PayoutTable({ summary }) {
                         </React.Fragment>
                     );
                 })}
+                <tr className="border-t-2 border-[var(--color-line-strong)] bg-[var(--color-surface-muted)]/60">
+                    <td colSpan={6} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-ink)]">
+                        Everyone paid
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums text-sm font-semibold text-[var(--color-ink)]">
+                        {fmt(totals.everyonePaid)}
+                    </td>
+                </tr>
             </TBody>
             </Table>
         </div>
@@ -393,8 +467,9 @@ function DayPayoutPanel({ date, summary, status, savedBy = null, loading }) {
                 </div>
             ) : (
                 <div className="px-6 py-6 space-y-6 max-[560px]:px-4 max-[560px]:py-4 max-[560px]:space-y-4">
-                    {/* Summary bar */}
-                    <AuditSummary summary={summary} />
+                    {/* Kit's headline pool-summary cards - the glanceable numbers,
+                        made honest for a real night's separate dining/bar pools. */}
+                    <PoolSummaryCards summary={summary} />
 
                     {/* No "Reconciliation Warning" block here on purpose. It rendered
                         `summary.payoutReconciliation`, an internal self-consistency check that
@@ -436,9 +511,24 @@ function DayPayoutPanel({ date, summary, status, savedBy = null, loading }) {
                         </div>
                     ) : null}
 
-                    {/* Payout table */}
-                    <PayoutMobileCards summary={summary} />
-                    <PayoutTable summary={summary} />
+                    {/* Payout table, kit's "Tonight's payout" card shape - a title
+                        beside a status badge, then the roster. No nested Card here:
+                        the outer Card already bounds the whole day's record, and
+                        boxing this section again would read as a box inside a box. */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <h4 className="font-display text-[19px] font-medium tracking-tight text-[var(--color-ink)]">
+                                Payout
+                            </h4>
+                            <Badge tone="success">Settled</Badge>
+                        </div>
+                        <PayoutMobileCards summary={summary} />
+                        <PayoutTable summary={summary} />
+                    </div>
+
+                    {/* Full engine breakdown, tucked below the payout table as
+                        supporting evidence - see AuditSummary's own comment. */}
+                    <AuditSummary summary={summary} />
                 </div>
             )}
         </Card>
