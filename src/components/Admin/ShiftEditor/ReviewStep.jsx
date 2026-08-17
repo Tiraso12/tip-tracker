@@ -160,7 +160,11 @@ export function ReviewStep({
            There is no "Back to Settle up" button - the "Fix in Settle up"
            and "Fix on the Floor plan" jumps inside the rows below already
            do that, from the place that explains why you would go. */
-        <section className="space-y-4 pb-24">
+        // -mx-3 cancels the step content's own p-3 on phone, matching Settle up's
+        // entry card bleed (see SettleStep.jsx / ShiftSetupDnd.jsx) - otherwise
+        // Review's cards sit a padding layer further in than Settle's and read as
+        // a different width for the same reason Floor plan's did.
+        <section className="space-y-4 pb-24 max-[560px]:-mx-3">
             {/* Why this shift cannot be saved, above the numbers it is about.
                 Both blocks sit at the top of Review deliberately: a reason
                 below the fold is the same dead end as no reason at all. */}

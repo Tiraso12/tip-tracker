@@ -127,7 +127,7 @@ function TeamCard({
             onDragLeave={dragEnabled ? onDragLeave : undefined}
             onDrop={(e) => dragEnabled && onDrop(e, id)}
         >
-            <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-3 px-4 py-3.5">
                 <h3 className="m-0 min-w-0 truncate text-[13px] font-semibold text-[var(--color-ink)]">
                     {title}
                 </h3>
@@ -135,7 +135,7 @@ function TeamCard({
                     {members.length} {plural(members.length, 'person', 'people')}
                 </span>
             </div>
-            <div className="flex flex-wrap gap-1.5 px-3.5 pb-3">
+            <div className="flex flex-wrap gap-1.5 px-4 pb-4">
                 {populated ? members.map(member => (
                     <TeamMemberChip
                         key={member.uid}
@@ -520,7 +520,12 @@ function ShiftSetupDnd({
     }, [handleAddUnregistered, tempForm.name, tempForm.role]);
 
     return (
-        <div className="relative flex min-h-[420px] flex-col gap-3">
+        // -mx-3 cancels the step content's own p-3 on phone, same trick Settle up's
+        // entry card and its team switcher band use (see SettleStep.jsx) - without
+        // it this content sat a second layer of padding further in than Settle's
+        // and Review's cards, so the three steps' cards read as different widths
+        // when they were really just differently inset.
+        <div className="relative flex min-h-[420px] flex-col gap-3 max-[560px]:-mx-3">
             <div
                 className="hidden"
                 onDragOver={(e) => { e.preventDefault(); if (dragOverId !== 'pool') setDragOverId('pool'); }}
@@ -543,7 +548,11 @@ function ShiftSetupDnd({
                 )}
             </div>
 
-            <div className="grid flex-1 grid-cols-2 content-start gap-2.5 overflow-y-auto pb-32 pr-1 max-[900px]:grid-cols-1 max-[560px]:grid-cols-1 max-[560px]:gap-2 max-[560px]:flex-none max-[560px]:overflow-visible">
+            {/* One column at every width: a 2-up grid stopped each card halfway
+                across the screen, while Settle up's money card and Review's cards
+                run to the full content-column edge - the captain wants every step's
+                cards sharing that same edge, not a fixed pixel width. */}
+            <div className="grid flex-1 grid-cols-1 content-start gap-2.5 overflow-y-auto pb-32 pr-1 max-[560px]:gap-2 max-[560px]:flex-none max-[560px]:overflow-visible max-[560px]:pr-0">
                 {floorSections.map(section => (
                     <TeamCard
                         key={section.id}

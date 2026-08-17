@@ -50,24 +50,12 @@ export function SettleStep({
                 A status line + edge fade keep off-screen groups and their money status
                 discoverable instead of a blind sideways swipe.
 
-                On a phone the day's pool and the switcher are CONTEXT, not
-                entry, so they share one tinted band that runs edge to edge
-                (the negative margins cancel the Card's padding) and ends in a
-                single hairline. Below that hairline is plain paper carrying
-                nothing but the money fields. One line divides the two, instead
-                of three boxes dividing the context from itself. */}
-            {/* --color-band is barely a shade off --color-bg (page paper) - the kit
-                uses --color-surface-muted for this strip, which actually reads as a
-                tinted band instead of quietly matching the page underneath it.
-
-                -mx-7 (28px) bleeds past BOTH ancestor paddings between this band and
-                the true screen edge: the step content's own p-3 (12px) and, past
-                that, main's px-4 (16px). -mx-3 only canceled the first, landing the
-                band flush with the page's content column rather than the screen edge
-                - one padding layer short of running edge to edge like the Day Rail
-                above it does. px-3 re-establishes the band's own 12px inner padding
-                once the bleed clears both outer layers. */}
-            <div className="[--rail-fade:var(--color-surface)] max-[560px]:[--rail-fade:var(--color-surface-muted)] space-y-4 max-[560px]:space-y-0 max-[560px]:flex max-[560px]:flex-col max-[560px]:gap-2.5 max-[560px]:flex-none max-[560px]:-mx-7 max-[560px]:-mt-3 max-[560px]:px-3 max-[560px]:pt-3 max-[560px]:pb-2 max-[560px]:bg-[var(--color-surface-muted)] max-[560px]:border-b max-[560px]:border-[var(--color-line)]">
+                On a phone ONLY the tab strip itself carries the tinted band now - it
+                used to share that background with the "X groups · pool" summary line
+                below it, and a shared tint read as an invitation to tap the summary
+                too. Tint now means exactly one thing: this is where you tap. The
+                summary sits on the plain page, the same as the money fields below it. */}
+            <div className="space-y-4 max-[560px]:space-y-0 max-[560px]:flex max-[560px]:flex-col max-[560px]:gap-1.5 max-[560px]:flex-none">
             {/* On a phone the tabs come FIRST and this summary reads
                 underneath them: you pick the team, then the day's total
                 and what is still owed sit closest to the money they
@@ -104,6 +92,18 @@ export function SettleStep({
                     )
                 ) : null}
             </div>
+            {/* --color-band is barely a shade off --color-bg (page paper) - the kit
+                uses --color-surface-muted for this strip, which actually reads as a
+                tinted band instead of quietly matching the page underneath it.
+
+                -mx-7 (28px) bleeds past BOTH ancestor paddings between this strip and
+                the true screen edge: the step content's own p-3 (12px) and, past
+                that, main's px-4 (16px). -mx-3 only canceled the first, landing the
+                strip flush with the page's content column rather than the screen edge
+                - one padding layer short of running edge to edge like the Day Rail
+                above it does. px-4 re-establishes the strip's own inner padding once
+                the bleed clears both outer layers. */}
+            <div className="[--rail-fade:var(--color-surface)] max-[560px]:[--rail-fade:var(--color-surface-muted)] max-[560px]:-mx-7 max-[560px]:-mt-3 max-[560px]:px-4 max-[560px]:pt-1.5 max-[560px]:pb-1 max-[560px]:bg-[var(--color-surface-muted)] max-[560px]:border-b max-[560px]:border-[var(--color-line)]">
             {/* Phone only: justify-between spreads the tabs across the row's full
                 width, like the kit, when they fit. gap-2 is the floor, not the only
                 spacing - with few groups there is free space to distribute, and
@@ -118,7 +118,7 @@ export function SettleStep({
                 ariaLabel="Select a group to enter money"
                 depsKey={closeoutGroups.length}
                 fadeFrom="var(--rail-fade)"
-                className="flex max-[560px]:justify-between gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-2 pr-8 [scrollbar-width:thin]"
+                className="flex max-[560px]:justify-between gap-2 overflow-x-auto overflow-y-hidden px-0.5 pt-0.5 pb-0.5 pr-8 [scrollbar-width:thin]"
             >
                 {closeoutGroups.map(group => (
                     <RailPill
@@ -130,13 +130,14 @@ export function SettleStep({
                 ))}
             </ScrollRail>
             </div>
+            </div>
 
             {/* Locked view = these very same fields, disabled. A native
                 disabled fieldset switches every input/stepper off at once; Edit
                 flips it back on in place. The group switcher above stays outside
                 the fieldset so you can still page through each group while locked. */}
-            {/* -mx-3 matches the band above: both cancel the step content's own p-3
-                so the card's sides line up with the band's tinted strip instead of
+            {/* -mx-3 matches the tab strip above: both cancel the step content's own
+                p-3 so the card's sides line up with the strip's tinted edge instead of
                 sitting a second layer of padding further in. */}
             <div className="m-0 min-w-0 max-[560px]:!mt-3 max-[560px]:-mx-3">
             {activeGroup && (activeGroup.kind !== "dining" || diningTeam) ? (

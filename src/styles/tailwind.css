@@ -97,6 +97,22 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Real touch browsers already draw the page scrollbar as a thin overlay that
+   reserves no layout width - swiping is the obvious way to scroll on a phone, the
+   bar is just a fading hint. This only matters in environments that instead draw a
+   classic reserved-space bar at phone widths (desktop device-emulation, some
+   WebViews), where it was narrowing the content column by its own width. Same
+   hide-the-scrollbar approach the horizontal rails already use (DayRail, ScrollRail),
+   just applied to the page's own vertical scroll instead of a sideways one. */
+@media (max-width: 560px) {
+  html {
+    scrollbar-width: none;
+  }
+  html::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* Tabular numerals everywhere money may render */
 .font-mono, code, kbd, samp, pre {
   font-variant-numeric: tabular-nums;
