@@ -182,7 +182,7 @@ async function login(page, key) {
 // that a day's stage could hide. Both halves now carry the same app bar, so the
 // account sheet is no longer the line between them.
 const accountTrigger = (page) => page.getByRole("button", { name: /^Account:/ });
-const workspace = (page) => page.locator("#admin-workspace-nav");
+const workspace = (page) => page.locator("aside");
 const payStatement = (page) => page.getByTestId("pay-statement");
 const removeShift = (page) => page.getByRole("button", { name: "Remove this shift" });
 
@@ -211,6 +211,22 @@ async function openWorkspaceAndTeam(page) {
     await page.getByRole("menuitem", { name: /^Shifts/ }).click();
     await expect(workspace(page)).toBeAttached();
     await openTeamFromWorkspace(page);
+}
+
+async function openTeamPicker(page, teamName) {
+    await page.getByRole("button", { name: new RegExp(`Add employees to ${teamName}`, "i") }).click();
+    await expect(page.getByRole("dialog", { name: new RegExp(`Add employees to ${teamName}`, "i") })).toBeVisible();
+}
+
+async function assignFromPicker(page, name) {
+    const picker = page.getByRole("dialog", { name: /Add employees to/i });
+    await expect(picker).toBeVisible();
+    await picker.locator(`[title^="Assign ${name} to "]`).click();
+}
+
+async function closeTeamPicker(page) {
+    await page.getByRole("dialog", { name: /Add employees to/i }).getByRole("button", { name: "Close employee picker" }).click();
+    await expect(page.getByRole("dialog", { name: /Add employees to/i })).toHaveCount(0);
 }
 
 test.beforeAll(async () => {
@@ -251,7 +267,7 @@ test("a Supervisor-on captain holds both their own pay and the workspace, and ne
     await expect(removeShift(page)).toHaveCount(0);
 
     // And the way back: home means THIS person's home, which is their pay.
-    await page.getByRole("button", { name: "Go to my pay" }).click();
+    await page.locator("header").getByRole("button", { name: "Go to my pay" }).click();
     await expect(payStatement(page)).toBeVisible();
 });
 
@@ -267,10 +283,10 @@ test("prev/next on the pay side step one Friday-start work week", async ({ page 
     const weekPill = page.getByRole("button", { name: /^Pay week:/ });
     const pillWidth = async () => Math.round((await weekPill.boundingBox()).width);
 
-    // A step must not RESIZE the control: the thumb is still on the arrow when the
-    // label swaps. They land on the CURRENT week, so this compares the one state
-    // that used to be wider ("This week · ...") against an ordinary one.
-    await expect(weekPill).toHaveText(/^Week of /);
+    // The visible kit label is a compact range now; the full "Pay week" sentence
+    // survives in the accessible name where it does not cost width.
+    await expect(weekPill).toHaveAttribute("aria-label", /^Pay week: .+ this week/);
+    await expect(weekPill).toHaveText(/^[A-Z][a-z]{2} \d{1,2} \u2013 (?:[A-Z][a-z]{2} )?\d{1,2}$/);
     const currentWeekWidth = await pillWidth();
     await page.getByRole("button", { name: "Next week" }).click();
     await expect(weekPill).not.toHaveAttribute("aria-label", /this week/);
@@ -289,15 +305,15 @@ test("prev/next on the pay side step one Friday-start work week", async ({ page 
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await expect(weekPill).toHaveText(/Week of May 22/);
+    await expect(weekPill).toHaveText(/May 22 \u2013 28/);
 
     await page.getByRole("button", { name: "Next week" }).click();
-    await expect(weekPill).toHaveText(/Week of May 29/);
+    await expect(weekPill).toHaveText(/May 29 \u2013 Jun 4/);
     await expect(payStatement(page)).toContainText("May 29 - Jun 4");
 
     await page.getByRole("button", { name: "Previous week" }).click();
     await page.getByRole("button", { name: "Previous week" }).click();
-    await expect(weekPill).toHaveText(/Week of May 15/);
+    await expect(weekPill).toHaveText(/May 15 \u2013 21/);
 
     // The calendar is still the other way in - this was an addition, not a swap.
     await expect(page.locator('header input[type="date"]')).toHaveCount(1);
@@ -393,19 +409,18 @@ test("work names have one source while the login handle and Auth display name st
     await page.getByRole("button", { name: "Shifts", exact: true }).click();
     await setShiftDate(page, EMPTY_DAY);
     await page.getByRole("button", { name: /Build floor plan/i }).click();
-    const poolRows = page.locator('[title="Drag to assign"]');
-    await expect(poolRows.filter({ hasText: "Sonia" })).toHaveCount(1);
-    await expect(poolRows.filter({ hasText: "Alvarez Garcia" })).toHaveCount(0);
-    await expect(poolRows.filter({ hasText: "server-login" })).toHaveCount(0);
+    await openTeamPicker(page, "Team 1");
+    const picker = page.getByRole("dialog", { name: /Add employees to Team 1/i });
+    await expect(picker.locator('[title^="Assign Sonia to "]')).toHaveCount(1);
+    await expect(picker.getByText("Alvarez Garcia")).toHaveCount(0);
+    await expect(picker.getByText("server-login")).toHaveCount(0);
 
-    const teamZone = page.getByRole("heading", { name: "Team 1", exact: true }).locator("..").locator("..");
-    await teamZone.getByRole("button", { name: /Team 1/i }).click();
-    await page.getByRole("button", { name: "Sonia SERVER" }).click();
+    await assignFromPicker(page, "Sonia");
     await expect(page.getByText("Sonia", { exact: true }).first()).toBeVisible();
     await page.screenshot({ path: "artifacts/profile-name-split/manager-floor-desktop.png", fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: "artifacts/profile-name-split/manager-floor-phone.png", fullPage: true });
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await closeTeamPicker(page);
 
     await accountTrigger(page).click();
     await page.getByRole("menuitem", { name: "Log Out" }).click();
@@ -450,17 +465,17 @@ test("the manager is not on the floor - they never appear in the pool to assign"
     // A day with no shift yet, so the floor plan opens empty.
     await setShiftDate(page, EMPTY_DAY);
     await page.getByRole("button", { name: /Build floor plan/i }).click();
-    await expect(page.getByRole("heading", { name: "AVAILABLE EMPLOYEES" })).toBeVisible();
+    await openTeamPicker(page, "Team 1");
 
     // The assignable rows themselves, not the panel around them - the app bar
     // also says "Manager" (the tier badge), and that must not answer for the pool.
-    const poolRows = page.locator('[title="Drag to assign"]');
+    const picker = page.getByRole("dialog", { name: /Add employees to Team 1/i });
     // Both captains are assignable - a switch off changes nobody's pay - and the
     // manager is not, because they oversee the operation and work no section.
     // Assigning them would also pay them zero: ROLE_POINTS knows no manager.
-    await expect(poolRows.filter({ hasText: "Captain Supervisor" })).toHaveCount(1);
-    await expect(poolRows.filter({ hasText: "Captain One" })).toHaveCount(1);
-    await expect(poolRows.filter({ hasText: "Manager" })).toHaveCount(0);
+    await expect(picker.locator('[title^="Assign Captain Supervisor to "]')).toHaveCount(1);
+    await expect(picker.locator('[title^="Assign Captain One to "]')).toHaveCount(1);
+    await expect(picker.locator('[title^="Assign Manager to "]')).toHaveCount(0);
 });
 
 test("today's admin loses nothing when someone else is named manager", async ({ page }) => {
