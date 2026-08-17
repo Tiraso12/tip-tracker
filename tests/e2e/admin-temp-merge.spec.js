@@ -220,19 +220,16 @@ async function setShiftDate(page, date) {
 // Walk the saved floor plan through Settle up -> Review -> Confirm & Save, the way
 // a manager settles the night after the merge happened.
 async function settleSavedShift(page, { sales, tips, gratuity, cash }) {
-    // A saved-but-unsettled day lands on the read-only floor view; the rail's Settle
-    // pill opens the money screen (locked), and the floating Edit unlocks it in place.
-    await expect(page.getByText("Floor plan is set")).toBeVisible();
+    // A saved-but-unsettled day opens directly into the editable floor editor; the
+    // rail's Settle pill opens directly editable money fields.
+    await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
 
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
-    await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
     await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
-    await page.getByRole("button", { name: "✓ Done" }).click();
-    await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toBeVisible();
 
     await rail.getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();

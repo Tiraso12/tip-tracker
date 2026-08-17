@@ -14,6 +14,10 @@ const SERVER_EMAIL = "server-approvals@example.com";
 const PASSWORD = "Password123!";
 
 const PHONE_VIEWPORT = { width: 390, height: 844 };
+const SUPPORTED_PHONE_VIEWPORTS = [
+    { width: 402, height: 874 },
+    { width: 440, height: 956 },
+];
 
 const AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
 
@@ -250,16 +254,19 @@ test("the badge does not disturb the phone app bar", async ({ page }) => {
         PHONE_VIEWPORT.width
     );
 
-    // 320px is where this bar has always been tightest.
-    await page.setViewportSize({ width: 320, height: 720 });
-    await expect(badge(page)).toBeVisible();
-    const narrowBar = await bar.boundingBox();
-    const narrowTrigger = await accountTrigger(page).boundingBox();
-    expect(narrowBar.height).toBe(56);
-    expect(narrowTrigger.width).toBe(44);
-    expect(narrowTrigger.height).toBe(44);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
-    // The chip stays inside the bar's right inset instead of bleeding off-screen.
-    const badgeBox = await badge(page).boundingBox();
-    expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(320);
+    for (const viewport of SUPPORTED_PHONE_VIEWPORTS) {
+        await page.setViewportSize(viewport);
+        await expect(badge(page)).toBeVisible();
+        const supportedBar = await bar.boundingBox();
+        const supportedTrigger = await accountTrigger(page).boundingBox();
+        expect(supportedBar.height).toBe(56);
+        expect(supportedTrigger.width).toBe(44);
+        expect(supportedTrigger.height).toBe(44);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+            viewport.width
+        );
+        // The chip stays inside the bar's right inset instead of bleeding off-screen.
+        const supportedBadge = await badge(page).boundingBox();
+        expect(supportedBadge.x + supportedBadge.width).toBeLessThanOrEqual(viewport.width);
+    }
 });

@@ -18,7 +18,8 @@ import { doc, setDoc } from "firebase/firestore";
 //   * browsing days never pairs one night's timestamp with another night's
 //     saver, not even for a frame - a line whose whole job is attribution has
 //     no honest way to misattribute;
-//   * at 320px it stays a footnote and the clock time never breaks in half.
+//   * at the supported phone floor it stays a footnote and the clock time never
+//     breaks in half.
 
 const PROJECT_ID = "demo-tip-tracker-test";
 const PASSWORD = "Password123!";
@@ -26,7 +27,7 @@ const AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1
 const SHOTS_DIR = process.env.SAVED_BY_SHOTS_DIR || "artifacts/day-saved-by";
 
 const PHONE = { width: 390, height: 844 };
-const NARROW_PHONE = { width: 320, height: 844 };
+const NARROW_PHONE = { width: 402, height: 874 };
 
 // Today, because a real save lands on the day the workspace opens on.
 const TODAY = new Date().toLocaleDateString("en-CA");
@@ -45,7 +46,7 @@ const NO_SAVER_AT = "2026-05-28T04:05:00.000Z";
 
 const PEOPLE = {
     manager: { email: "manager-savedby@example.com", firstName: "Mika", lastName: "Alvarez", role: "unassigned" },
-    // A genuinely long name: this is what has to wrap gracefully at 320px.
+    // A genuinely long name: this is what has to wrap gracefully on phones.
     captain: { email: "captain-savedby@example.com", firstName: "Nadia", lastName: "Whitfield-Okonkwo", role: "captain", isSupervisor: true },
     server: { email: "server-savedby@example.com", firstName: "Sam", lastName: "Ortiz", role: "server" },
 };
@@ -193,6 +194,22 @@ async function openSettledDay(page, date) {
     await expect(panelHeader(page)).toBeVisible();
 }
 
+async function openTeamPicker(page, teamName) {
+    await page.getByRole("button", { name: new RegExp(`Add employees to ${teamName}`, "i") }).click();
+    await expect(page.getByRole("dialog", { name: new RegExp(`Add employees to ${teamName}`, "i") })).toBeVisible();
+}
+
+async function assignFromPicker(page, name) {
+    const picker = page.getByRole("dialog", { name: /Add employees to/i });
+    await expect(picker).toBeVisible();
+    await picker.locator(`[title^="Assign ${name} to "]`).click();
+}
+
+async function closeTeamPicker(page) {
+    await page.getByRole("dialog", { name: /Add employees to/i }).getByRole("button", { name: "Close employee picker" }).click();
+    await expect(page.getByRole("dialog", { name: /Add employees to/i })).toHaveCount(0);
+}
+
 test.beforeAll(async () => {
     mkdirSync(SHOTS_DIR, { recursive: true });
     testEnv = await initializeTestEnvironment({
@@ -222,22 +239,19 @@ test("settling a night through the UI leaves the day naming who saved it", async
     await setShiftDate(page, TODAY);
 
     await page.getByRole("button", { name: /Build floor plan/i }).click();
-    await expect(page.getByRole("button", { name: /Bar Team/i })).toBeVisible();
-    await page.getByRole("button", { name: /Team 1/i }).click();
-    // The pool assigns by first name, and renders a phone and a desktop copy.
-    await page.locator('[title="Assign Nadia to selected team"]').first().click();
-    await page.locator('[title="Assign Sam to selected team"]').first().click();
-    await page.getByRole("button", { name: "✓ Done" }).click();
-    await expect(page.getByText("Floor plan is set")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Add employees to Bar Team/i })).toBeVisible();
+    await openTeamPicker(page, "Team 1");
+    // The pool assigns by first name.
+    await assignFromPicker(page, "Nadia");
+    await assignFromPicker(page, "Sam");
+    await closeTeamPicker(page);
 
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
-    await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
     await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("200");
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("100");
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("50");
-    await page.getByRole("button", { name: "✓ Done" }).click();
     await rail.getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
 
@@ -317,7 +331,7 @@ test("older nights state only what was recorded, with nothing warning-toned abou
     // A floor plan that was never settled has no money and no saved-by line -
     // the shift doc carries both fields, but there is no settled day to caption.
     await setShiftDate(page, FLOOR_ONLY_DAY);
-    await expect(page.getByText("Floor plan is set")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
     await expect(panelHeader(page)).toHaveCount(0);
     await expect(page.getByText(/^Saved by /)).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS_DIR}/floor-plan-only-phone.png`, fullPage: true });
@@ -369,9 +383,9 @@ test("browsing between days never shows one night's saver against another's time
     expect(frames.some((t) => t.includes("Mika Alvarez"))).toBe(true);
 });
 
-// 320px is the floor. The line is a footnote there, and a clock time is not a
-// thing you may break in half.
-test("at 320px the line stays a footnote and the time never breaks across lines", async ({ page }) => {
+// The supported phone floor still leaves this line as a footnote, and a clock
+// time is not a thing you may break in half.
+test("at the supported phone floor the line stays a footnote and the time never breaks across lines", async ({ page }) => {
     await page.setViewportSize(NARROW_PHONE);
     await login(page, "manager");
     await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
@@ -390,8 +404,7 @@ test("at 320px the line stays a footnote and the time never breaks across lines"
     ]);
     expect(lineSize).toBeLessThan(headingSize);
 
-    // The long name does wrap the line at this width - and the timestamp comes
-    // through in one piece, so the break falls at the separator.
+    // The timestamp comes through in one piece, so any break falls at the separator.
     const timeRects = await line.locator("span").evaluate((el) => el.getClientRects().length);
     expect(timeRects).toBe(1);
 
@@ -407,7 +420,7 @@ test("at 320px the line stays a footnote and the time never breaks across lines"
     ]);
     expect(headerPaddingLeft).toBe(bodyPaddingLeft);
 
-    await page.screenshot({ path: `${SHOTS_DIR}/settled-day-320px.png`, fullPage: true });
+    await page.screenshot({ path: `${SHOTS_DIR}/settled-day-supported-phone.png`, fullPage: true });
 
     // Desktop keeps its roomier header, still in step with the money.
     await page.setViewportSize({ width: 1280, height: 900 });

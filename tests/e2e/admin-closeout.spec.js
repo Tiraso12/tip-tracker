@@ -7,8 +7,8 @@ import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 // the money Review shows and what it refuses to show while something is missing,
 // the payout ledger a save writes, and correcting or removing a day afterwards.
 // The mobile blocks below are part of the same job rather than decoration - the
-// floor is built and settled on a phone at 390px, so the in-place editor, the
-// leave guard on a half-finished edit, and the 320px bar are money-losing paths
+// floor is built and settled on a phone, so the in-place editor, the leave guard
+// on a half-finished edit, and the supported-width app bar are money-losing paths
 // when they break, not cosmetics.
 
 const PROJECT_ID = "demo-tip-tracker-test";
@@ -16,6 +16,10 @@ const ADMIN_EMAIL = "admin@example.com";
 const ADMIN_PASSWORD = "Password123!";
 const SHIFT_DATE = "2026-05-29";
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
+const SUPPORTED_PHONE_VIEWPORTS = [
+    { name: "iphone-17-pro", width: 402, height: 874 },
+    { name: "iphone-17-pro-max", width: 440, height: 956 },
+];
 
 // The Firebase CLI exports this for emulators:exec; fall back to the default auth port.
 const AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
@@ -209,34 +213,58 @@ async function openEditor(page) {
     } else {
         await edit.click();
     }
-    await expect(page.getByRole("button", { name: /Bar Team/i })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
 }
 
-// Assign a seeded pool employee to the currently selected team (click-to-assign).
+// Assign a seeded pool employee to the currently opened floor-plan picker.
 async function assignFromPool(page, name) {
-    await page.locator(`[title="Assign ${name} to selected team"]`).click();
+    const picker = page.getByRole("dialog", { name: /Add employees to/i });
+    await expect(picker).toBeVisible();
+    await picker.locator(`[title^="Assign ${name} to "]`).click();
 }
 
-// Setup-shift Settle up flow. Settle up lands LOCKED (the money form is visible but
-// its fields are disabled); the floating Edit unlocks the same fields in place and Done
-// saves and re-locks. Review is then reached from the day rail like any other step -
-// there is no Calculate button, because Review derives from the live inputs.
+async function openTeamPicker(page, teamName) {
+    await page.getByRole("button", { name: new RegExp(`Add employees to ${teamName}`, "i") }).click();
+    await expect(page.getByRole("dialog", { name: new RegExp(`Add employees to ${teamName}`, "i") })).toBeVisible();
+}
+
+async function closeTeamPicker(page) {
+    await page.getByRole("dialog", { name: /Add employees to/i }).getByRole("button", { name: "Close employee picker" }).click();
+    await expect(page.getByRole("dialog", { name: /Add employees to/i })).toHaveCount(0);
+}
+
+// Setup-shift Settle up flow. Floor and money are directly editable and autosave;
+// Review is reached from the day rail because it derives from the live inputs.
 async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
 
-    // Unlock the same fields in place, enter the money, then save + re-lock with Done.
-    await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
     await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
-    await page.getByRole("button", { name: "✓ Done" }).click();
-    await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toBeVisible();
 
-    // The rail walks to Review; the numbers are already derived from what was typed.
     await rail.getByRole("button", { name: "Review" }).click();
     await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
+}
+
+async function expectNoHorizontalOverflow(page, width) {
+    await expect.poll(() => page.evaluate(() => ({
+        documentWidth: document.documentElement.scrollWidth,
+        bodyWidth: document.body.scrollWidth,
+        appBarRight: Math.round(document.querySelector("header").getBoundingClientRect().right),
+    }))).toEqual({
+        documentWidth: width,
+        bodyWidth: width,
+        appBarRight: width,
+    });
+}
+
+async function expectSettledLanding(page) {
+    await expect(page.getByTestId("settled-day-header")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Payout" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit shift" })).toBeVisible();
 }
 
 test.beforeAll(async () => {
@@ -267,11 +295,10 @@ test("Review is reachable from the rail after a floor-plan edit, without revisit
     await setShiftDate(page, SHIFT_DATE);
     await openEditor(page);
 
-    await page.getByRole("button", { name: /Team 1/i }).click();
+    await openTeamPicker(page, "Team 1");
     await assignFromPool(page, "Captain One");
     await assignFromPool(page, "Server One");
-    await page.getByRole("button", { name: "✓ Done" }).click();
-    await expect(page.getByText("Floor plan is set")).toBeVisible();
+    await closeTeamPicker(page);
 
     await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
 
@@ -291,8 +318,9 @@ test("Review is reachable from the rail after a floor-plan edit, without revisit
 
     // Review -> Floor plan, add the missing person.
     await rail.getByRole("button", { name: "Floor" }).click();
-    await page.getByRole("button", { name: /Team 1/i }).click();
+    await openTeamPicker(page, "Team 1");
     await assignFromPool(page, "Back One");
+    await closeTeamPicker(page);
 
     // ...and straight back to Review from the rail. No Settle up detour, no Calculate.
     await rail.getByRole("button", { name: "Review" }).click();
@@ -319,8 +347,9 @@ test("Review names what is missing instead of showing a total, and offers no sav
     await setShiftDate(page, SHIFT_DATE);
     await openEditor(page);
 
-    await page.getByRole("button", { name: /Team 1/i }).click();
+    await openTeamPicker(page, "Team 1");
     await assignFromPool(page, "Captain One");
+    await closeTeamPicker(page);
 
     // Staff on the floor, no money entered: the rail still walks to Review.
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
@@ -339,7 +368,7 @@ test("Review lists no runners as entered money and shows their pay as a deductio
     await setShiftDate(page, SHIFT_DATE);
     await openEditor(page);
 
-    await page.getByRole("button", { name: /Team 1/i }).click();
+    await openTeamPicker(page, "Team 1");
     await assignFromPool(page, "Captain One");
     await assignFromPool(page, "Server One");
     // Back One as the runner: this spec seeds only Admin / Captain One / Server One /
@@ -349,10 +378,10 @@ test("Review lists no runners as entered money and shows their pay as a deductio
     // Servers / ... / Runners / Temp) whose "Runners" tab is a button with the same
     // bare name; hitting that filters the pool to role=runner - empty in this seed -
     // instead of selecting the group to assign into.
-    await page.getByRole("button", { name: /Runners \+ Add/i }).click();
+    await closeTeamPicker(page);
+    await openTeamPicker(page, "Runners");
     await assignFromPool(page, "Back One");
-    await page.getByRole("button", { name: "✓ Done" }).click();
-    await expect(page.getByText("Floor plan is set")).toBeVisible();
+    await closeTeamPicker(page);
 
     await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
 
@@ -387,17 +416,14 @@ test("admin can close out a simple dining room shift and create ledger payout re
     await openEditor(page);
 
     // Floor plan: select Team 1, then click-to-assign three dining employees.
-    await page.getByRole("button", { name: /Team 1/i }).click();
+    await openTeamPicker(page, "Team 1");
     await assignFromPool(page, "Captain One");
     await assignFromPool(page, "Server One");
     await assignFromPool(page, "Back One");
+    await closeTeamPicker(page);
 
-    // ✓ Done saves the floor and returns to the read-only floor view.
-    await page.getByRole("button", { name: "✓ Done" }).click();
-    await expect(page.getByText("Floor plan is set")).toBeVisible();
-
-    // Settle up mirrors the floor plan: open its read-only summary, edit the money in
-    // place, save with Done, then walk the rail to Review.
+    // Settle up mirrors the floor plan: enter the money in place, then walk the rail
+    // to Review.
     await settleMoneyAndReview(page, { sales: "1000", tips: "200", gratuity: "100", cash: "50" });
 
     // Review is a spot check on ONE person - the first captain at full points - not a
@@ -412,8 +438,8 @@ test("admin can close out a simple dining room shift and create ledger payout re
     await expect(page.getByText("Captain One · Server One · Back One")).toBeVisible();
 
     await page.getByRole("button", { name: /Confirm & Save Shift/ }).click();
-    // On save the editor returns to the paid-out landing (unique Export PDF action).
-    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+    // On save the editor returns to the paid-out landing.
+    await expectSettledLanding(page);
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
@@ -464,23 +490,21 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await setShiftDate(page, SHIFT_DATE);
     await openEditor(page);
 
-    await page.getByRole("button", { name: /Team 1/i }).click();
+    await openTeamPicker(page, "Team 1");
     await assignFromPool(page, "Captain One");
     await assignFromPool(page, "Server One");
     await assignFromPool(page, "Back One");
+    await closeTeamPicker(page);
 
-    // ✓ Done saves the floor; Settle up mirrors the floor plan (summary -> Edit -> money
-    // -> Done -> Calculate) to reach Review, then confirm to close the shift.
-    await page.getByRole("button", { name: "✓ Done" }).click();
-    await expect(page.getByText("Floor plan is set")).toBeVisible();
+    // Settle up mirrors the floor plan to reach Review, then confirm to close the shift.
     await settleMoneyAndReview(page, { sales: "1000", tips: "300", gratuity: "150", cash: "80" });
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
-    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+    await expectSettledLanding(page);
 
     // Reopen the settled shift via the floating "Edit shift" -> the SAME new in-place
     // editor (no old view-only / "Edit roster" gate). The floor is directly editable.
     await page.getByRole("button", { name: "Edit shift" }).click();
-    await expect(page.getByRole("button", { name: /Bar Team/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Add employees to Bar Team/i })).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit roster" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Remove Back One" })).toBeVisible();
     await page.getByRole("button", { name: "Remove Back One" }).click();
@@ -489,12 +513,11 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     // shift; roster edits go through Review -> Confirm & Save.
     await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
 
-    // Closed shift: Settle up lands locked; the rail reaches the overwrite-confirmed
-    // Review without unlocking anything.
+    // Closed shift roster edits go straight through Review without an old lock step.
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
-    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+    await expectSettledLanding(page);
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
@@ -595,52 +618,38 @@ test.describe("mobile floor polish", () => {
         await openEditor(page);
 
         // Tapping the whole card opens the bottom-sheet picker (F1).
-        await page.getByRole("button", { name: /Team 1/i }).click();
-        const sheet = page.getByRole("dialog", { name: /Add employees to Team 1/i });
-        await expect(sheet).toBeVisible();
+        await openTeamPicker(page, "Team 1");
 
-        // Assign a member, then close the sheet with Done.
-        await sheet.locator('[title="Assign Captain One to selected team"]').click();
-        await sheet.getByRole("button", { name: "Done" }).click();
-        await expect(page.getByRole("dialog")).toHaveCount(0);
+        // Assign a member, then close the picker with Done.
+        await assignFromPool(page, "Captain One");
+        await closeTeamPicker(page);
 
         // Regression: before the fix the selection lingered, so this first tap only
         // silently deselected and the sheet stayed closed (it took a second tap).
-        await page.getByRole("button", { name: /Team 1/i }).click();
+        await page.getByRole("button", { name: /Add employees to Team 1/i }).click();
         await expect(page.getByRole("dialog", { name: /Add employees to Team 1/i })).toBeVisible();
     });
 
-    test("floor view: Edit opens the in-place editor; Done returns to the floor view and stays on Floor", async ({ page }) => {
+    test("setup floor plans open directly editable, and the rail moves to editable Settle", async ({ page }) => {
         const date = "2026-05-27";
         await seedSetupShift(date);
         await login(page);
         await setShiftDate(page, date);
 
-        // Read-only floor view.
-        await expect(page.getByText("Floor plan is set")).toBeVisible();
+        // A saved setup shift opens straight into the editable floor plan.
+        await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
+        await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "✓ Done", exact: true })).toHaveCount(0);
         const rail = page.getByRole("navigation", { name: "Day steps" });
 
-        // Tapping "Floor" in the rail stays on the read-only view (does NOT open edit).
+        // Tapping Floor keeps the same directly editable floor step.
         await rail.getByRole("button", { name: "Floor" }).click();
-        await expect(page.getByText("Floor plan is set")).toBeVisible();
-        await expect(page.getByText("Editing floor plan")).toHaveCount(0);
-
-        // Edit is entered ONLY via the floating button -> in-place editor.
-        await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
-        await expect(page.getByText("Editing floor plan")).toBeVisible();
         await expect(page.getByRole("button", { name: "Add restaurant team" })).toBeVisible();
 
-        // ✓ Done returns to the read-only floor view and STAYS there (no jump to Settle).
-        await page.getByRole("button", { name: "✓ Done" }).click();
-        await expect(page.getByText("Floor plan is set")).toBeVisible();
-        await expect(page.getByText("Editing floor plan")).toHaveCount(0);
-        await expect(page.getByRole("tab", { name: /Team 1/ })).toHaveCount(0); // not the money step
-
-        // Advancing to Settle shows the money screen (locked); the group switcher is
-        // present and the floating Edit unlocks the fields in place.
+        // Advancing to Settle shows editable money fields immediately.
         await rail.getByRole("button", { name: "Settle" }).click();
         await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
-        await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toBeVisible();
+        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toBeEnabled();
     });
 
     test("the day-step rail is Floor -> Settle -> Review with no Pay out step", async ({ page }) => {
@@ -667,70 +676,65 @@ test.describe("mobile floor polish", () => {
         await page.getByRole("button", { name: "Edit shift" }).click();
 
         // The SAME new in-place editor - not the old view-only + "Edit roster" screen.
-        await expect(page.getByText("Editing floor plan")).toBeVisible();
         await expect(page.getByRole("button", { name: "Edit roster" })).toHaveCount(0);
         await expect(page.getByText("The roster is view-only.")).toHaveCount(0);
         await expect(page.getByRole("button", { name: "Add restaurant team" })).toBeVisible();
 
         // The team card is directly editable: tap opens the assign sheet; add a member.
-        await page.getByRole("button", { name: /Team 1/i }).click();
-        const sheet = page.getByRole("dialog", { name: /Add employees to Team 1/i });
-        await expect(sheet).toBeVisible();
-        await sheet.locator('[title="Assign Back One to selected team"]').click();
-        await sheet.getByRole("button", { name: "Done" }).click();
-        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await openTeamPicker(page, "Team 1");
+        await assignFromPool(page, "Back One");
+        await closeTeamPicker(page);
 
-        // ✓ Done on a paid shift routes into the EXISTING overwrite-confirmed save; the
-        // "Re-saving overwrites the saved payouts" warning + Confirm & Save appear
-        // before anything is written (we stop here, so nothing is overwritten).
-        await page.getByRole("button", { name: "✓ Done" }).click();
+        // The overwrite warning appears on Review before anything is written.
+        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
         await expect(page.getByText(/Re-saving overwrites the saved payouts/i)).toBeVisible();
         await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
     });
 
-    test("floor edit: Cancel leaves the in-place editor without saving and returns to the floor view", async ({ page }) => {
+    test("setup floor edits autosave the roster without a Done button", async ({ page }) => {
         const date = "2026-05-25";
         await seedSetupShift(date);
         await login(page);
         await setShiftDate(page, date);
 
-        await expect(page.getByText("Floor plan is set")).toBeVisible();
+        await openTeamPicker(page, "Team 1");
+        await assignFromPool(page, "Back One");
+        await closeTeamPicker(page);
 
-        // Enter edit via the floating ✎ Edit, then Cancel with no changes -> straight
-        // back to the read-only floor view (edit mode left, nothing committed).
-        await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
-        await expect(page.getByText("Editing floor plan")).toBeVisible();
-
-        await page.getByRole("button", { name: "Cancel", exact: true }).click();
-        await expect(page.getByText("Floor plan is set")).toBeVisible();
-        await expect(page.getByText("Editing floor plan")).toHaveCount(0);
+        await expect.poll(async () => {
+            let memberUids = [];
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+                const shiftDoc = await getDoc(doc(context.firestore(), `shifts/${date}`));
+                memberUids = shiftDoc.data().teams[0].members.map((member) => member.uid);
+            });
+            return memberUids;
+        }).toEqual(["captainUid", "serverUid", "backUid"]);
     });
 
-    test("closed shift edit: Cancel discards the in-progress roster change and keeps the saved shift", async ({ page }) => {
+    test("closed shift edit: leaving through Home with confirmed discard keeps the saved shift", async ({ page }) => {
         const date = "2026-05-24";
         await seedClosedShift(date);
 
         // A closed shift disables draft autosave, so an in-progress roster edit only
-        // persists through Confirm & Save. Cancel guards that with a discard confirm.
+        // persists through Confirm & Save. Leaving the editor guards that discard.
         page.on("dialog", (dialog) => dialog.accept());
 
         await login(page);
         await setShiftDate(page, date);
 
         await page.getByRole("button", { name: "Edit shift" }).click();
-        await expect(page.getByText("Editing floor plan")).toBeVisible();
+        await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
 
         // Add a member so there is an uncommitted change to discard.
-        await page.getByRole("button", { name: /Team 1/i }).click();
-        const sheet = page.getByRole("dialog", { name: /Add employees to Team 1/i });
-        await expect(sheet).toBeVisible();
-        await sheet.locator('[title="Assign Back One to selected team"]').click();
-        await sheet.getByRole("button", { name: "Done" }).click();
-        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await openTeamPicker(page, "Team 1");
+        await assignFromPool(page, "Back One");
+        await closeTeamPicker(page);
 
-        // Cancel -> accept the discard -> back on the settled landing, nothing written.
-        await page.getByRole("button", { name: "Cancel", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+        // Home -> accept the discard -> back on today's shifts, nothing written.
+        await page.getByRole("button", { name: "Go to today's shifts" }).click();
+        await expect(page.locator('input[type="date"]').first()).toHaveValue(
+            new Date().toLocaleDateString("en-CA")
+        );
 
         await testEnv.withSecurityRulesDisabled(async (context) => {
             const db = context.firestore();
@@ -757,7 +761,7 @@ test.describe("mobile floor polish", () => {
 
         // No hamburger, and the workspace sidebar does not render at this width.
         await expect(page.getByRole("button", { name: /workspace navigation/i })).toHaveCount(0);
-        await expect(page.locator("#admin-workspace-nav")).toBeHidden();
+        await expect(page.locator("aside")).toBeHidden();
         await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
 
         // Team is still two taps away - through the account sheet, not a menu band.
@@ -789,19 +793,16 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
         await page.getByRole("button", { name: "Edit shift" }).click();
-        await expect(page.getByText("Editing floor plan")).toBeVisible();
+        await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
 
         // Add a member so there is uncommitted work that leaving would drop.
-        await page.getByRole("button", { name: /Team 1/i }).click();
-        const sheet = page.getByRole("dialog", { name: /Add employees to Team 1/i });
-        await expect(sheet).toBeVisible();
-        await sheet.locator('[title="Assign Back One to selected team"]').click();
-        await sheet.getByRole("button", { name: "Done" }).click();
-        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await openTeamPicker(page, "Team 1");
+        await assignFromPool(page, "Back One");
+        await closeTeamPicker(page);
 
         // Home, dismissed: the edit survives and the editor stays open.
         await page.getByRole("button", { name: "Go to today's shifts" }).click();
-        await expect(page.getByText("Editing floor plan")).toBeVisible();
+        await expect(page.getByRole("button", { name: /Remove Back One/i })).toBeVisible();
         expect(dialogs).toBe(1);
 
         // Account sheet -> Team, dismissed: same guard, same outcome. This is the
@@ -809,14 +810,14 @@ test.describe("mobile floor polish", () => {
         // gone, so it is the path that has to keep clearing the guard.
         await page.getByRole("button", { name: /Open account menu/ }).click();
         await page.getByRole("menuitem", { name: "Team" }).click();
-        await expect(page.getByText("Editing floor plan")).toBeVisible();
+        await expect(page.getByRole("button", { name: /Remove Back One/i })).toBeVisible();
         expect(dialogs).toBe(2);
 
         // Home, confirmed: the edit is discarded and home lands on TODAY's shifts,
         // not the closed day that was being edited.
         answer = "accept";
         await page.getByRole("button", { name: "Go to today's shifts" }).click();
-        await expect(page.getByText("Editing floor plan")).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /Remove Back One/i })).toHaveCount(0);
         await expect(page.locator('input[type="date"]').first()).toHaveValue(
             new Date().toLocaleDateString("en-CA")
         );
@@ -831,59 +832,53 @@ test.describe("mobile floor polish", () => {
         });
     });
 
-    test("Settle up lands locked: the money fields are disabled until Edit, and Done re-locks them in place", async ({ page }) => {
+    test("Settle up is directly editable and the typed draft persists", async ({ page }) => {
         const date = "2026-05-23";
         await seedSetupShift(date);
         await login(page);
         await setShiftDate(page, date);
 
-        // Lands showing the REAL money fields, but locked (disabled) - not a separate
-        // read-only representation.
         await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
         const sales = page.getByRole("spinbutton", { name: "Sales", exact: true });
         await expect(sales).toBeVisible();
-        await expect(sales).toBeDisabled();
-        await expect(page.getByText(/Editing · Settle up/)).toHaveCount(0);
-
-        // Edit unlocks the very same fields in place.
-        await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
-        await expect(page.getByText(/Editing · Settle up/)).toBeVisible();
         await expect(sales).toBeEnabled();
         await sales.fill("500");
-
-        // Done saves and re-locks in place (stays on Settle up; the value persists).
-        await page.getByRole("button", { name: "✓ Done" }).click();
-        await expect(page.getByText(/Editing · Settle up/)).toHaveCount(0);
-        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toBeDisabled();
         await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toHaveValue("500");
+
+        await expect.poll(async () => {
+            let value = "";
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+                const shiftDoc = await getDoc(doc(context.firestore(), `shifts/${date}`));
+                value = shiftDoc.data().teams[0].pools.sales;
+            });
+            return value;
+        }).toBe("500");
     });
 
-    test("Settle up: Cancel discards the in-progress money edit and re-locks in place", async ({ page }) => {
+    test("Settle up edits feed Review without Calculate or Done", async ({ page }) => {
         const date = "2026-05-22";
         await seedSetupShift(date);
         await login(page);
         await setShiftDate(page, date);
 
         await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
-        await page.getByRole("button", { name: "✎ Edit", exact: true }).click();
-        await expect(page.getByText(/Editing · Settle up/)).toBeVisible();
         const tips = page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true });
         await tips.fill("500");
 
-        // Cancel discards the typed value (reverts to the pre-edit snapshot) and re-locks.
-        await page.getByRole("button", { name: "Cancel", exact: true }).click();
-        await expect(page.getByText(/Editing · Settle up/)).toHaveCount(0);
-        await expect(page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true })).toBeDisabled();
-        await expect(page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true })).toHaveValue("");
+        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
+        await expect(page.getByText("No payouts to review yet")).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
+        await expect(page.getByRole("button", { name: /Calculate/i })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "✓ Done", exact: true })).toHaveCount(0);
     });
 });
 
-// The app bar at the narrowest phone width the app supports. Log Out used to take
-// 17.7% of a 390px bar for a once-a-shift action and, on the money screen, was the
-// only word-labelled control on screen; the day being edited was not rendered at
-// all on a phone while desktop showed it.
-test.describe("app bar at 320px", () => {
-    test.use({ viewport: { width: 320, height: 568 } });
+// The app bar at the supported phone widths. Log Out used to take too much room
+// for a once-a-shift action and, on the money screen, was the only word-labelled
+// control on screen; the day being edited was not rendered at all on a phone
+// while desktop showed it.
+test.describe("app bar at supported phone widths", () => {
+    test.use({ viewport: SUPPORTED_PHONE_VIEWPORTS[0] });
 
     test("the date pill dispatches the native input click before showPicker", async ({ page }) => {
         await login(page);
@@ -906,7 +901,7 @@ test.describe("app bar at 320px", () => {
             .toEqual(["focus", "click", "showPicker"]);
     });
 
-    test("prev/next step the day beside the pill, and the three still fit at 320px", async ({ page }) => {
+    test("prev/next step the day beside the pill, and the three still fit at the phone floor", async ({ page }) => {
         await login(page);
         await setShiftDate(page, "2026-05-24");
 
@@ -921,9 +916,8 @@ test.describe("app bar at 320px", () => {
         // The calendar is an ADDITION-free survivor: stepping never replaced it.
         await expect(page.locator('header input[type="date"]')).toHaveCount(1);
 
-        // 320px is the width the bar already fights for. Three segments plus home
-        // plus the account avatar must not push the page sideways.
-        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+        // Three segments plus home plus the account avatar must not push the page sideways.
+        await expectNoHorizontalOverflow(page, SUPPORTED_PHONE_VIEWPORTS[0].width);
     });
 
     test("the editor shows the day being edited, as a label the bar cannot change mid-edit", async ({ page }) => {
@@ -973,37 +967,68 @@ test.describe("app bar at 320px", () => {
         await expect(page.getByRole("menu", { name: "Account" })).toHaveCount(0);
     });
 
-    test("every app-bar control clears the 44px target guideline, and the bar does not overflow", async ({ page }) => {
-        const date = "2026-05-24"; // not today: the bar carries its widest date label
-        await login(page);
-        await setShiftDate(page, date);
+    for (const viewport of SUPPORTED_PHONE_VIEWPORTS) {
+        test(`the floor chrome does not crop or overflow at ${viewport.width}px`, async ({ page }) => {
+            const date = "2026-05-24"; // not today: the bar carries a wider warning-state date shell
+            await page.setViewportSize(viewport);
+            await login(page);
+            await setShiftDate(page, date);
+            await openEditor(page);
 
-        const bar = await page.evaluate(() => {
-            const el = document.querySelector("header.sticky");
-            return {
-                controls: [...el.querySelectorAll("button")].map((b) => ({
-                    label: b.getAttribute("aria-label"),
-                    w: b.getBoundingClientRect().width,
-                    h: b.getBoundingClientRect().height,
-                })),
-                barOverflows: el.scrollWidth > el.clientWidth + 1,
-                docOverflows: document.documentElement.scrollWidth > window.innerWidth + 1,
-            };
-        });
+            await expectNoHorizontalOverflow(page, viewport.width);
 
-        expect(bar.controls.length).toBeGreaterThanOrEqual(3);
-        // Prev/next on the date pill are w-8 (32px) below sm - a measured 320px
-        // concession. Height stays 44px; the other bar controls stay 44x44.
-        const stepControl = /^(Previous|Next) (day|week)$/;
-        for (const control of bar.controls) {
-            expect(control.h, `${control.label} height`).toBeGreaterThanOrEqual(44);
-            if (stepControl.test(control.label || "")) {
-                expect(control.w, `${control.label} width`).toBe(32);
-            } else {
-                expect(control.w, `${control.label} width`).toBeGreaterThanOrEqual(44);
+            const chrome = await page.evaluate(() => {
+                const viewportWidth = document.documentElement.clientWidth;
+                const rectFor = (el) => {
+                    const rect = el.getBoundingClientRect();
+                    return {
+                        left: Math.round(rect.left),
+                        right: Math.round(rect.right),
+                        width: Math.round(rect.width),
+                    };
+                };
+                const appBar = document.querySelector("header.sticky");
+                const dayChips = [...document.querySelectorAll('[aria-label="Select a day this week"] button')];
+                const dayRail = document.querySelector('[aria-label="Day steps"]');
+                const railButtons = [...dayRail.querySelectorAll("button")];
+                return {
+                    viewportWidth,
+                    appBar: rectFor(appBar),
+                    appBarOverflows: appBar.scrollWidth > appBar.clientWidth + 1,
+                    firstDayChip: rectFor(dayChips[0]),
+                    lastDayChip: rectFor(dayChips[dayChips.length - 1]),
+                    dayRail: rectFor(dayRail),
+                    firstRailButton: {
+                        ...rectFor(railButtons[0]),
+                        text: railButtons[0].innerText,
+                    },
+                    controls: [...appBar.querySelectorAll("button")].map((button) => ({
+                        label: button.getAttribute("aria-label"),
+                        width: Math.round(button.getBoundingClientRect().width),
+                        height: Math.round(button.getBoundingClientRect().height),
+                    })),
+                };
+            });
+
+            expect(chrome.appBar.right).toBe(viewport.width);
+            expect(chrome.appBarOverflows).toBe(false);
+            expect(chrome.firstDayChip.left).toBeGreaterThanOrEqual(0);
+            expect(chrome.lastDayChip.right).toBeLessThanOrEqual(viewport.width);
+            expect(chrome.dayRail.left).toBeGreaterThanOrEqual(0);
+            expect(chrome.dayRail.right).toBeLessThanOrEqual(viewport.width);
+            expect(chrome.firstRailButton.left).toBeGreaterThanOrEqual(0);
+            expect(chrome.firstRailButton.text).toBe("Floor plan");
+
+            const stepControl = /^(Previous|Next) (day|week)$/;
+            const dateControl = /^Shift date:/;
+            for (const control of chrome.controls) {
+                if (stepControl.test(control.label || "") || dateControl.test(control.label || "")) {
+                    expect(control.height, `${control.label} height`).toBe(36);
+                } else {
+                    expect(control.width, `${control.label} width`).toBeGreaterThanOrEqual(44);
+                    expect(control.height, `${control.label} height`).toBeGreaterThanOrEqual(44);
+                }
             }
-        }
-        expect(bar.barOverflows).toBe(false);
-        expect(bar.docOverflows).toBe(false);
-    });
+        });
+    }
 });
