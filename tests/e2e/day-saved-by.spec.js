@@ -381,7 +381,9 @@ test("at 320px the line stays a footnote and the time never breaks across lines"
     await expect(line).toContainText("Nadia Whitfield-Okonkwo");
 
     // Quieter than the date it sits under, and not competing with the money.
-    const dateHeading = panelHeader(page).getByRole("heading", { level: 3 });
+    // The date moved into AdminDashboard's own page header (above the day-chip
+    // strip, not inside the payout card) and is that header's real <h1> now.
+    const dateHeading = panelHeader(page).getByRole("heading", { level: 1 });
     const [lineSize, headingSize] = await Promise.all([
         line.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
         dateHeading.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
@@ -393,17 +395,26 @@ test("at 320px the line stays a footnote and the time never breaks across lines"
     const timeRects = await line.locator("span").evaluate((el) => el.getClientRects().length);
     expect(timeRects).toBe(1);
 
-    // The drive-by fix: the header used to sit at px-6 at every width while the
-    // money below it drops to px-4 on phones, so the date hung 8px right of it.
+    // The drive-by fix this pinned: the header used to carry its own px-6/px-4
+    // padding while the money below it used a different value, so the date hung
+    // 8px right of it. Both now inherit the SAME shared padding from the page's
+    // `main` wrapper instead of setting their own - so this checks they agree
+    // with each other rather than pinning one hardcoded pixel value.
     const panelBody = panelHeader(page).locator("xpath=following-sibling::div[1]");
-    await expect(panelHeader(page)).toHaveCSS("padding-left", "16px");
-    await expect(panelBody).toHaveCSS("padding-left", "16px");
+    const [headerPaddingLeft, bodyPaddingLeft] = await Promise.all([
+        panelHeader(page).evaluate((el) => getComputedStyle(el).paddingLeft),
+        panelBody.evaluate((el) => getComputedStyle(el).paddingLeft),
+    ]);
+    expect(headerPaddingLeft).toBe(bodyPaddingLeft);
 
     await page.screenshot({ path: `${SHOTS_DIR}/settled-day-320px.png`, fullPage: true });
 
     // Desktop keeps its roomier header, still in step with the money.
     await page.setViewportSize({ width: 1280, height: 900 });
-    await expect(panelHeader(page)).toHaveCSS("padding-left", "24px");
-    await expect(panelBody).toHaveCSS("padding-left", "24px");
+    const [desktopHeaderPaddingLeft, desktopBodyPaddingLeft] = await Promise.all([
+        panelHeader(page).evaluate((el) => getComputedStyle(el).paddingLeft),
+        panelBody.evaluate((el) => getComputedStyle(el).paddingLeft),
+    ]);
+    expect(desktopHeaderPaddingLeft).toBe(desktopBodyPaddingLeft);
     await page.screenshot({ path: `${SHOTS_DIR}/settled-day-desktop.png`, fullPage: true });
 });

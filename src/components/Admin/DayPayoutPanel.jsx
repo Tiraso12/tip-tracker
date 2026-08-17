@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { generateShiftReport } from "../../utils/pdfExport";
-import { Badge, Button, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
+import { Badge, Card, Table, THead, TBody, TR, TH, TD } from "../ui";
 import { rolePluralLabel, roleShortLabel } from "../../utils/roleLabels";
 import NegativeNightNotice from "./NegativeNightNotice";
 import { withoutNegativePoolWarnings } from "./shiftEditorUtils";
@@ -371,7 +370,11 @@ function PayoutTable({ summary }) {
 // alone; a night with no timestamp at all shows nothing rather than an apology
 // for it. The people who reach this screen are the ones who ran the night, so
 // this is a quiet fact at the top of it, not a banner.
-function SavedByLine({ savedBy }) {
+//
+// Named export: AdminDashboard renders this itself, next to the real date and
+// the Export PDF button, in the page header above the day-chip strip - see
+// that component's header for why.
+export function SavedByLine({ savedBy }) {
     if (!savedBy?.at) return null;
 
     const savedAt = new Date(savedBy.at);
@@ -398,140 +401,122 @@ function SavedByLine({ savedBy }) {
     );
 }
 
-function DayPayoutPanel({ date, summary, status, savedBy = null, loading }) {
-    const displayDate = (() => {
-        const [y, m, d] = date.split("-");
-        return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-        });
-    })();
+// The date, saved-by line and Export PDF button live in AdminDashboard's own
+// page header now, above the day-chip strip - not in here. This component is
+// just the day's floating cards: the kit's `WorkspaceScreen.jsx` sits its pool
+// tiles and its "Tonight's payout" card directly on the page, not inside one
+// wrapping box, so nothing here is boxed a second time.
+function DayPayoutPanel({ summary, status, loading }) {
     const visibleValidations = withoutNegativePoolWarnings(summary?.validations || []);
 
+    if (loading) {
+        return (
+            <Card className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
+                Loading…
+            </Card>
+        );
+    }
+
+    if (!summary && status === "setup") {
+        return (
+            <Card className="px-6 py-16 text-center">
+                <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                </div>
+                <p className="text-sm text-[var(--color-ink)]">Floor plan saved for this date.</p>
+                <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                    Continue to Settle up to enter the money and calculate the pay out.
+                </p>
+            </Card>
+        );
+    }
+
+    if (!summary) {
+        return (
+            <Card className="px-6 py-16 text-center">
+                <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-surface-muted)] text-[var(--color-ink-muted)]">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                </div>
+                <p className="text-sm text-[var(--color-ink)]">No shift saved for this date.</p>
+                <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                    Build the Floor plan to start the day.
+                </p>
+            </Card>
+        );
+    }
+
     return (
-        <Card className="!p-0">
-            <header className="flex items-start justify-between gap-3 px-6 py-5 border-b border-[var(--color-line)] max-[560px]:px-4">
-                <div className="min-w-0">
-                    <h3 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                        {displayDate}
-                    </h3>
-                    {/* Only on a settled day: before the money is saved there is
-                        nothing to have saved, and the empty states below say so. */}
-                    {summary ? <SavedByLine savedBy={savedBy} /> : null}
+        <div className="space-y-3 sm:space-y-4">
+            {/* Kit's headline pool-summary cards - the glanceable numbers,
+                made honest for a real night's separate dining/bar pools. */}
+            <PoolSummaryCards summary={summary} />
+
+            {/* No "Reconciliation Warning" block here on purpose. It rendered
+                `summary.payoutReconciliation`, an internal self-consistency check that
+                the save path already hard-throws on with the same function and the same
+                tolerance (closeoutPersistence.js `reconcilePayoutLedger`), so a shift
+                that would trip it can never be written in the first place. It also
+                competed for the word "reconciliation" with the captain's real one -
+                comparing the app against the restaurant's spreadsheet, which lives in
+                the pre-save Review spot check. */}
+
+            {/* A saved night that records a negative amount says so in plain
+                words, above the table where the minus sign appears - see the
+                notice itself for why a negative is right and how it nets out
+                weekly. It now reports the negative POOLS too, which is what let
+                the engine's "…CTP pool is negative" strings come out of the red
+                Warnings block below: the same correct night was being stated
+                twice, the second time in the vocabulary of a fault. */}
+            <NegativeNightNotice
+                payoutRows={allPayoutRows(summary)}
+                adjustedPools={summary.adjustedPools}
+            />
+
+            {/* Validations, minus the two negative-CTP-pool lines the notice
+                above now states neutrally. Filtered for DISPLAY only: they are
+                still in `summary.validations` on the saved document and the
+                engine still emits them. Everything else this block ever carried
+                it still carries, the negative RUNNER PAYOUT warning included -
+                that is a different condition and belongs in red. */}
+            {visibleValidations.length > 0 ? (
+                <div className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
+                    <h4 className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-2">
+                        Warnings
+                    </h4>
+                    <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
+                        {visibleValidations.map((v, i) => (
+                            <li key={i}>{v}</li>
+                        ))}
+                    </ul>
                 </div>
-                {summary ? (
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        className="shrink-0"
-                        onClick={() => generateShiftReport(date, summary)}
-                    >
-                        Export PDF
-                    </Button>
-                ) : null}
-            </header>
+            ) : null}
 
-            {loading ? (
-                <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
-                    Loading…
+            {/* Kit's own "Tonight's payout" card - a title beside a status
+                badge, then the roster, floating on its own like the pool
+                cards above it. */}
+            <Card className="!p-0">
+                <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-4">
+                    <h4 className="font-display text-[19px] font-medium tracking-tight text-[var(--color-ink)]">
+                        Payout
+                    </h4>
+                    <Badge tone="success">Settled</Badge>
                 </div>
-            ) : !summary && status === "setup" ? (
-                <div className="px-6 py-16 text-center">
-                    <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                            <circle cx="9" cy="7" r="4" />
-                            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                        </svg>
-                    </div>
-                    <p className="text-sm text-[var(--color-ink)]">Floor plan saved for this date.</p>
-                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                        Continue to Settle up to enter the money and calculate the pay out.
-                    </p>
-                </div>
-            ) : !summary ? (
-                <div className="px-6 py-16 text-center">
-                    <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-surface-muted)] text-[var(--color-ink-muted)]">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                        </svg>
-                    </div>
-                    <p className="text-sm text-[var(--color-ink)]">No shift saved for this date.</p>
-                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                        Build the Floor plan to start the day.
-                    </p>
-                </div>
-            ) : (
-                <div className="px-6 py-6 space-y-6 max-[560px]:px-4 max-[560px]:py-4 max-[560px]:space-y-4">
-                    {/* Kit's headline pool-summary cards - the glanceable numbers,
-                        made honest for a real night's separate dining/bar pools. */}
-                    <PoolSummaryCards summary={summary} />
+                <PayoutMobileCards summary={summary} />
+                <PayoutTable summary={summary} />
+            </Card>
 
-                    {/* No "Reconciliation Warning" block here on purpose. It rendered
-                        `summary.payoutReconciliation`, an internal self-consistency check that
-                        the save path already hard-throws on with the same function and the same
-                        tolerance (closeoutPersistence.js `reconcilePayoutLedger`), so a shift
-                        that would trip it can never be written in the first place. It also
-                        competed for the word "reconciliation" with the captain's real one -
-                        comparing the app against the restaurant's spreadsheet, which lives in
-                        the pre-save Review spot check. */}
-
-                    {/* A saved night that records a negative amount says so in plain
-                        words, above the table where the minus sign appears - see the
-                        notice itself for why a negative is right and how it nets out
-                        weekly. It now reports the negative POOLS too, which is what let
-                        the engine's "…CTP pool is negative" strings come out of the red
-                        Warnings block below: the same correct night was being stated
-                        twice, the second time in the vocabulary of a fault. */}
-                    <NegativeNightNotice
-                        payoutRows={allPayoutRows(summary)}
-                        adjustedPools={summary.adjustedPools}
-                    />
-
-                    {/* Validations, minus the two negative-CTP-pool lines the notice
-                        above now states neutrally. Filtered for DISPLAY only: they are
-                        still in `summary.validations` on the saved document and the
-                        engine still emits them. Everything else this block ever carried
-                        it still carries, the negative RUNNER PAYOUT warning included -
-                        that is a different condition and belongs in red. */}
-                    {visibleValidations.length > 0 ? (
-                        <div className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
-                            <h4 className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-2">
-                                Warnings
-                            </h4>
-                            <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
-                                {visibleValidations.map((v, i) => (
-                                    <li key={i}>{v}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    ) : null}
-
-                    {/* Payout table, kit's "Tonight's payout" card shape - a title
-                        beside a status badge, then the roster. No nested Card here:
-                        the outer Card already bounds the whole day's record, and
-                        boxing this section again would read as a box inside a box. */}
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between gap-3">
-                            <h4 className="font-display text-[19px] font-medium tracking-tight text-[var(--color-ink)]">
-                                Payout
-                            </h4>
-                            <Badge tone="success">Settled</Badge>
-                        </div>
-                        <PayoutMobileCards summary={summary} />
-                        <PayoutTable summary={summary} />
-                    </div>
-
-                    {/* Full engine breakdown, tucked below the payout table as
-                        supporting evidence - see AuditSummary's own comment. */}
-                    <AuditSummary summary={summary} />
-                </div>
-            )}
-        </Card>
+            {/* Full engine breakdown, tucked below the payout card as
+                supporting evidence - see AuditSummary's own comment. */}
+            <AuditSummary summary={summary} />
+        </div>
     );
 }
 

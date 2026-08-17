@@ -47,6 +47,21 @@ export function formatDate(date) {
 }
 
 /**
+ * Formats a "YYYY-MM-DD" date key as "Sunday, May 31, 2026" - local calendar
+ * date, never parsed through `new Date(dateKey)` directly (that reads as UTC
+ * midnight and can print the wrong day near a timezone boundary).
+ */
+export function formatFullDateKey(dateKey) {
+    const [y, m, d] = dateKey.split("-");
+    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+    });
+}
+
+/**
  * Formats a date as "May 22".
  */
 export function formatMonthDay(date) {

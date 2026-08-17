@@ -4,17 +4,19 @@ import { collection, getDocs, doc, getDoc, onSnapshot, query, where } from "fire
 import { useAuth } from "../../context/AuthContext";
 import { canApproveAccounts, canReadRoster, canRemoveSettledDay, tierLabel } from "../../utils/permissions";
 import DayRailLanding from "./DayRailLanding";
+import { SavedByLine } from "./DayPayoutPanel";
 import BarDatePill from "./BarDatePill";
 import DayChipStrip from "./DayChipStrip";
 import AppBar from "../AppBar/AppBar";
-import { TopProgressBar } from "../ui";
+import { Button, TopProgressBar } from "../ui";
 import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
-import { toDateKey, getCurrentWeek, parseDateKey } from "../../utils/dateUtils";
+import { toDateKey, getCurrentWeek, parseDateKey, formatFullDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
 import { removeShiftAtomically } from "../../utils/closeoutPersistence";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 import { fullNameFor } from "../../utils/userNames";
+import { generateShiftReport } from "../../utils/pdfExport";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -572,9 +574,33 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
 
     const headerForTab = () => {
         if (activeTab === "shifts") {
+            const stage = getLandingStage(dayShiftStatus);
+            // A settled day gets the kit's real page header - the specific date,
+            // who saved it, and Export PDF - shown at EVERY width (not the usual
+            // desktop-only stage title) and sitting above the day-chip strip, not
+            // buried in the payout card below it. Gated on `dayDataIsCurrent` for
+            // the same reason every other read of `daySummary` is: a date change
+            // must never show the previous day's title for one frame.
+            if (stage === "closed" && dayDataIsCurrent && daySummary) {
+                return {
+                    eyebrow: "Shifts",
+                    title: formatFullDateKey(selectedDate),
+                    savedBy: daySavedByLine,
+                    actions: (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => generateShiftReport(selectedDate, daySummary)}
+                        >
+                            Export PDF
+                        </Button>
+                    ),
+                    alwaysVisible: true,
+                };
+            }
             return {
                 eyebrow: "Shifts",
-                title: SHIFTS_STAGE_TITLE[getLandingStage(dayShiftStatus)] || "Shifts",
+                title: SHIFTS_STAGE_TITLE[stage] || "Shifts",
                 subtitle: null,
                 actions: null,
             };
@@ -711,15 +737,19 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                     <div className="max-w-6xl mx-auto">
                         <header className={
                             // On mobile Shifts and the editor the content header is
-                            // hidden - the Day Rail names the step and sits flush under
-                            // the app bar. Desktop keeps the page title for coherence.
-                            (activeTab === "shifts" || activeTab === "editor" ? "hidden sm:flex " : "flex ") +
+                            // usually hidden - the Day Rail names the step and sits
+                            // flush under the app bar. Desktop keeps the page title
+                            // for coherence. A settled day is the one exception:
+                            // `header.alwaysVisible` shows the real date, saved-by and
+                            // Export PDF at every width, above the day-chip strip, the
+                            // way the kit's own page header sits above its day chips.
+                            ((activeTab === "shifts" && !header.alwaysVisible) || activeTab === "editor" ? "hidden sm:flex " : "flex ") +
                             "flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
                             (activeTab === "editor" || activeTab === "shifts" ? "pb-3 mb-3 sm:pb-6 sm:mb-6" : "pb-4 sm:pb-6 mb-4 sm:mb-6")
                         }>
                             <div className={
                                 "flex flex-col gap-1.5 " +
-                                (activeTab === "shifts" ? "hidden sm:flex" : "")
+                                (activeTab === "shifts" && !header.alwaysVisible ? "hidden sm:flex" : "")
                             }>
                                 {header.eyebrow ? (
                                     <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
@@ -739,6 +769,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                         {header.subtitle}
                                     </p>
                                 ) : null}
+                                {header.savedBy ? <SavedByLine savedBy={header.savedBy} /> : null}
                             </div>
                             {header.actions ? (
                                 <div className="flex items-center gap-2 shrink-0">{header.actions}</div>
@@ -769,12 +800,10 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
 
                         {activeTab === "shifts" ? (
                             <DayRailLanding
-                                date={selectedDate}
                                 summary={dayDataIsCurrent ? daySummary : null}
                                 lineup={dayDataIsCurrent ? dayLineup : null}
                                 status={dayDataIsCurrent ? dayShiftStatus : null}
                                 orphanedEntries={dayDataIsCurrent ? dayOrphanedEntries : []}
-                                savedBy={daySavedByLine}
                                 loading={dayLoading || !dayDataIsCurrent}
                                 savedNotice={shiftSaved}
                                 onBuildFloor={() => enterEditor("floor")}

@@ -238,7 +238,7 @@ function Hero({ title, body, tall = false, children }) {
     );
 }
 
-function DayRailLanding({ date, status, summary, lineup, orphanedEntries = [], savedBy = null, loading, savedNotice = false, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
+function DayRailLanding({ status, summary, lineup, orphanedEntries = [], loading, savedNotice = false, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
     const stage = getLandingStage(status);
     // A refetch of the day already on screen keeps that day on screen - the top
     // progress bar carries the wait. Only a load with nothing to show blanks, which
@@ -304,7 +304,7 @@ function DayRailLanding({ date, status, summary, lineup, orphanedEntries = [], s
             ) : stage === "closed" ? (
                 <>
                 <div className="space-y-3 pb-24">
-                    <DayPayoutPanel date={date} summary={summary} status={status} savedBy={savedBy} loading={false} />
+                    <DayPayoutPanel summary={summary} status={status} loading={false} />
                     {onRemoveShift ? (
                         <RemoveDangerZone
                             body="Removing this shift permanently deletes it and every payout on it. This cannot be undone."
