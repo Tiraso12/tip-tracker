@@ -4,8 +4,8 @@ For managers. No technical knowledge needed.
 
 ## What a temporary staff profile is
 
-When someone works a shift before they have an account in the app, you add them during
-shift setup with **+ Add Temporary Staff**. They get a temporary profile: a name and a
+When someone works a shift before they have an account in the app, you add them on the
+**Floor plan** with **+ Add temp staff**. They get a temporary profile: a name and a
 role, enough for the tip pool to count them in and pay everybody accurately.
 
 Their shifts and payouts are saved under that temporary profile, not under a real account.
@@ -21,7 +21,7 @@ them is a night that can permanently block the merge.
 
 ## How to merge
 
-1. Open **Team** from the account menu. That is the team roster: a search box, status
+1. Open **Team** from the account sheet. That is the team roster: a search box, status
    filters, and one row per person. Tapping a row opens that person.
 2. If you have not approved the employee's sign-up yet, filter to **Pending**, open them,
    give them a job title, and tap **Approve account**. They have to be an active employee

@@ -23,17 +23,17 @@ Read the two consequences below before you start. They are the whole reason this
 The pointer changes what people are allowed to do, and the screens now follow it. `src/App.jsx` asks
 `canOpenShiftWorkspace(user)`, so once you name a manager and turn Supervisor on:
 
-- **The manager** opens the shift workspace, and has no pay page. They oversee the operation, work no
+- **The manager** opens the shift workspace, and has no My pay. They oversee the operation, work no
   section and take no share of the pool, so there is no pay record to show them.
-- **A Supervisor-on captain** lands on **their own pay**, and reaches the workspace from the account
-  menu - the same sheet Team lives in. They are two things at once: someone who enters the
+- **A Supervisor-on captain** lands on **My pay**, and reaches Shifts from the account
+  sheet - the same sheet Team lives in. They are two things at once: someone who enters the
   restaurant's money, and someone the restaurant pays out of the pool.
-- **A Supervisor-off captain**, and every other employee, sees their own pay and nothing else.
-- **Today's admin** is unchanged: workspace, Team, Remove, exactly as before.
+- **A Supervisor-off captain**, and every other employee, sees My pay and nothing else.
+- **Today's admin** is unchanged: Shifts, Team, and Remove this shift, exactly as before.
 
 Home means **the viewer's own home**, and that is not the same place for everyone: today's shifts for
-the manager, their own pay for a captain. That is deliberate and the captain chose it knowing the
-cost - reaching tonight's shift takes the extra tap through the account menu.
+the manager, My pay for a captain. That is deliberate and the captain chose it knowing the
+cost - reaching tonight's shift takes the extra tap through the account sheet.
 
 The two halves are coupled and must stay coupled: route a captain to the workspace with no way back
 and they silently lose their week; leave the gate on the legacy `role === "admin"` test and nobody
@@ -123,9 +123,9 @@ the original admin account was created.
 2. Sign in as the admin account and open a settled day. Everything is exactly where it was: the
    floor plan, settle up, Team, and the Remove control. **This is the check that matters** - the
    whole promise of this release is that nothing shrinks for the person running the restaurant.
-3. Sign in as the manager. They open the shift workspace and have no pay page, which is correct -
+3. Sign in as the manager. They open the shift workspace and have no My pay, which is correct -
    the manager takes no share of the pool.
-4. Sign in as anyone whose switch is still off. They see their own pay screen and no workspace.
+4. Sign in as anyone whose switch is still off. They see My pay and no workspace.
 
 If step 2 shows anything missing, the fastest fix is to reverse the change (below) and look again;
 the pointer takes nothing from the admin, so a difference there means something else is wrong.
