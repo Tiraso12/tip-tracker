@@ -79,8 +79,9 @@ To run the suite anyway, point every layer at free ports:
 
 - a `firebase.json` copy with different `firestore`, `auth`, `hub`, and `logging`
   ports, passed via `firebase emulators:exec --config`
-- a `playwright.config.js` copy with a different `baseURL` and a `webServer`
-  command of `npm run dev:test -- --port <port> --strictPort`
+- `E2E_PORT`, `PLAYWRIGHT_BASE_URL`, and `E2E_WEB_SERVER_COMMAND` exported so
+  Playwright starts and checks Vite on the alternate port, for example
+  `E2E_WEB_SERVER_COMMAND='npm run dev:test -- --port 5183 --strictPort'`
 - `VITE_FIRESTORE_EMULATOR_PORT` and `VITE_AUTH_EMULATOR_PORT` exported so the
   app connects to the alternate emulators
 
