@@ -270,9 +270,6 @@ function ShiftSetupDnd({
             title: `Team ${index + 1}`,
             members: team.members,
             canEditRole: true,
-            canAddTeam: index === teams.length - 1 && teams.length < 6,
-            canRemoveTeam: index === teams.length - 1,
-            removeTeamDisabled: teams.length <= 1,
         })),
         {
             id: "bar",

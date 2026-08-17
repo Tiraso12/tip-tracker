@@ -6,7 +6,7 @@ import NegativeNightNotice from "./NegativeNightNotice";
 import { withoutNegativePoolWarnings } from "./shiftEditorUtils";
 
 const fmt = (n) => `$${(Number(n) || 0).toFixed(2)}`;
-// singular/plural helper, matching the `member`/`members` pattern in TeamDropZone.
+// singular/plural helper, matching the `member`/`members` pattern in ShiftSetupDnd.
 const plural = (count, one, many) => (count === 1 ? one : many);
 // Display-only relabel of the engine's internal breakdown keys into captain
 // vocabulary (the engine key stays "Manual Split"; only the shown label changes).
