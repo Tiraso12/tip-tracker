@@ -1,15 +1,40 @@
-# Before you deploy the Firestore rules
+# Before you change production data
 
 This project has no deploy procedure written down, and this document does not invent one. It records
-**one prerequisite** that is invisible from the outside and expensive to skip, so that the person
-deploying finds it before they need it rather than after.
+the two captain-run steps that are invisible from the outside and expensive to skip: a live backup
+before any payroll mutation, then the user profile name backfill before the rules go out.
 
-## The prerequisite
+## Take a live backup first
+
+Name backfill and payout-ledger migration are one-way writes against real pay records. There is no
+in-app undo. A screenshot, a dry-run log, and a git tag cannot put the old documents back. The save
+point is a point-in-time export of production, taken **before** either mutation.
+
+```bash
+TIP_TRACKER_ALLOW_LIVE_MIGRATION=true TIP_TRACKER_BACKUP_BUCKET=<locked-backup-bucket> npm run backup:live
+```
+
+That command exports the whole production Firestore (every collection and subcollection) to a
+timestamped path in the locked bucket, and writes a dated Firebase Auth user JSON under `backups/`
+in this repo. It prints the Firestore URI, the Auth file path, and the timestamp when it finishes.
+
+It refuses the emulator, refuses a demo project, and refuses to run without
+`TIP_TRACKER_ALLOW_LIVE_MIGRATION=true`. It does not restore, migrate, backfill names, deploy
+hosting, or deploy rules.
+
+The bucket is not created for you. If `gcloud` is missing, or the bucket does not exist, the script
+stops and prints the next step. Do not point `TIP_TRACKER_BACKUP_BUCKET` at the public Firebase app
+bucket.
+
+Save the printed path and timestamp with the dry-run output of whatever you run next.
+
+## The name backfill is still manual
 
 **Before deploying `firestore.rules` to a project whose rules require a non-empty `firstName`, run
-the user profile name backfill against that project: dry run, read it, then apply.**
+the user profile name backfill against that project: dry run, captain reads, then apply.**
 
 It is a one-time fix per project, and it must land **before** the rules do. Nothing runs it for you.
+Do not run it until the live backup above has printed its path and timestamp.
 
 ## Why skipping it breaks settle up
 
@@ -89,4 +114,7 @@ value of the dry run is that a person looks at the "cannot fix here" list and de
 run has no one to decide, and its most likely failure - refusing to write and failing the deploy - is
 a worse outcome than the problem it was added to prevent.
 
-Run it by hand, once, immediately before the rules go out.
+The live backup is the same kind of command: captain-run, once, immediately before the first
+mutation. It is not a predeploy hook either.
+
+Run the backfill by hand, once, immediately before the rules go out.

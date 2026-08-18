@@ -30,6 +30,9 @@ artifacts
 .env
 .env.local
 
+# Dated live Auth exports from `npm run backup:live`
+backups/
+
 # Local test credentials - keep off GitHub
 TEST_CREDENTIALS.md
 ENGINE_LOGIC.md
