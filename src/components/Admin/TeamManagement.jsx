@@ -177,7 +177,11 @@ function RosterList({ people, search, setSearch, statusFilter, setStatusFilter, 
                 />
             </div>
 
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Filter team by status">
+            <div
+                className="flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                role="group"
+                aria-label="Filter team by status"
+            >
                 {STATUS_FILTERS.map((filter) => {
                     const selected = statusFilter === filter.value;
                     const count = filter.value === "all" ? people.length : counts[filter.value] || 0;
@@ -188,7 +192,7 @@ function RosterList({ people, search, setSearch, statusFilter, setStatusFilter, 
                             onClick={() => setStatusFilter(filter.value)}
                             aria-pressed={selected}
                             className={
-                                "inline-flex h-10 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+                                "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
                                 (selected
                                     ? "border-[var(--color-accent)]/20 bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                                     : "border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:border-[var(--color-line-strong)]")
@@ -509,7 +513,7 @@ function PersonView({
                             <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Pay history</span>
                             <h3 id="person-pay-heading" className="mt-1 font-display text-xl font-medium tracking-tight text-[var(--color-ink)]">{personName(person)}'s pay</h3>
                         </div>
-                        <BarDatePill selectedDate={anchorDate} onSelectDate={setAnchorDate} unit="week" />
+                        <BarDatePill selectedDate={anchorDate} onSelectDate={setAnchorDate} unit="week" surface="card" />
                     </div>
                     <PayStatement
                         person={person}
@@ -525,7 +529,7 @@ function PersonView({
     );
 }
 
-function TeamManagement({ allEmployees, refreshEmployees }) {
+function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
     const { user } = useAuth();
     const [loadingId, setLoadingId] = useState(null);
     const [unregisteredStaff, setUnregisteredStaff] = useState([]);
@@ -579,6 +583,15 @@ function TeamManagement({ allEmployees, refreshEmployees }) {
     useEffect(() => {
         if (selectedKey && !selectedPerson) setSelectedKey(null);
     }, [selectedKey, selectedPerson]);
+
+    // Reports whether a person is open so the shared page header (redundant
+    // once "Team roster" back control is on screen) can hide on mobile - see
+    // AdminDashboard's teamDetailOpen. Reset on unmount so a later mount of a
+    // fresh roster never inherits a stale "detail open" chrome state.
+    useEffect(() => {
+        onDetailChange?.(Boolean(selectedPerson));
+        return () => onDetailChange?.(false);
+    }, [selectedPerson, onDetailChange]);
 
     const updateUser = async (uid, updates) => {
         setLoadingId(uid);

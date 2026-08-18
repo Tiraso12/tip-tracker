@@ -79,7 +79,15 @@ import { formatWeekRange, getCurrentWeek, parseDateKey, stepDateKey, toDateKey }
 // label carries NO step controls: prev/next must not become a back door around
 // the one rule this pill exists to enforce.
 
-const ICON_TONE = "text-[var(--color-bar-mint)]";
+// `--color-bar-ink` / `--color-bar-mint` are tuned to read against the dark
+// app bar (`--color-bar-bg`) - correct for the bar's own date pill, but
+// invisible where `unit="week"` embeds this same control in a light card
+// (Team's person view pay history, PayView's "My pay"): near-white text on
+// the page's near-white surface. `surface="card"` swaps in the light-page
+// equivalents (`--color-ink`, `--color-accent`) instead of re-theming the bar.
+function iconTone(surface) {
+    return surface === "card" ? "text-[var(--color-accent)]" : "text-[var(--color-bar-mint)]";
+}
 
 function CalendarIcon() {
     return (
@@ -100,8 +108,9 @@ function StepIcon({ direction }) {
     );
 }
 
-function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day" }) {
+function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day", surface = "bar" }) {
     const inputRef = useRef(null);
+    const iconToneClass = iconTone(surface);
     const todayKey = toDateKey(new Date());
     const isWeek = unit === "week";
     const weekDates = isWeek ? getCurrentWeek(parseDateKey(selectedDate)) : null;
@@ -121,12 +130,20 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
     const pillLabel = isWeek ? formatWeekRange(weekDates[0], weekDates[6]) : `${weekday}, ${monthDay}`;
 
     // Shared between the interactive control and the read-only label so the day
-    // reads identically wherever it appears in the bar. The kit's transparent,
-    // thin-border shell: bg-transparent always, text stays the bar's ink white,
-    // and only the border carries which day/week this is.
-    const toneClass = isToday
-        ? "border-[var(--color-bar-mint)]/60 bg-transparent text-[var(--color-bar-ink)]"
-        : "border-[var(--color-warning)]/50 bg-transparent text-[var(--color-bar-ink)]";
+    // reads identically wherever it appears. The kit's transparent, thin-border
+    // shell: bg-transparent always, and only the border carries which day/week
+    // this is. Text and the "current" border both switch with `surface` - the
+    // bar's near-white ink and bright mint would be invisible on a light card.
+    // Every branch is a complete literal class string (not built from an
+    // interpolated variable) because Tailwind's build-time scanner can only
+    // find arbitrary-value classes it can read whole out of the source.
+    const toneClass = surface === "card"
+        ? (isToday
+            ? "border-[var(--color-accent)]/60 bg-transparent text-[var(--color-ink)]"
+            : "border-[var(--color-warning)]/50 bg-transparent text-[var(--color-ink)]")
+        : (isToday
+            ? "border-[var(--color-bar-mint)]/60 bg-transparent text-[var(--color-bar-ink)]"
+            : "border-[var(--color-warning)]/50 bg-transparent text-[var(--color-bar-ink)]");
     const shellClass =
         "relative inline-flex items-center gap-1.5 h-9 rounded-full border px-3 text-xs font-medium tabular-nums transition-colors " +
         toneClass;
@@ -142,7 +159,7 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
             // label is the sighted read; the full sentence is what gets announced, so
             // "Mon, Jun 1" is never read as a bare fragment next to the controls.
             <span className={shellClass} data-testid="editor-day-label">
-                <span className={ICON_TONE}>
+                <span className={iconToneClass}>
                     <CalendarIcon />
                 </span>
                 <span className="sr-only">{`Editing the shift for ${spokenDate}`}</span>
@@ -178,7 +195,7 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
     // only on the outer edge so the three segments read as one pill rather than
     // three buttons in a row.
     const stepClass =
-        "h-9 w-8 sm:w-9 inline-flex items-center justify-center " + ICON_TONE + " transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
+        "h-9 w-8 sm:w-9 inline-flex items-center justify-center " + iconToneClass + " transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
         (isToday ? "hover:bg-[var(--color-accent)]/10" : "hover:bg-[var(--color-warning)]/10");
 
     return (
@@ -229,12 +246,22 @@ function BarDatePill({ selectedDate, onSelectDate, readOnly = false, unit = "day
                     dropped when the step chevrons arrived: three chevrons in one
                     control read as ambiguous, and it was already the first thing
                     scheduled to go under 340px. */}
-                <span className={ICON_TONE}>
+                <span className={iconToneClass}>
                     <CalendarIcon />
                 </span>
                 {/* nowrap: at 320px the label would otherwise wrap inside the
-                    fixed-height pill and spill out of it. */}
-                <span className="whitespace-nowrap">{pillLabel}</span>
+                    fixed-height pill and spill out of it. The week range's
+                    width depends on the days themselves (a single-digit day
+                    like "Aug 7" is narrower than "Aug 14", and a month
+                    boundary repeats the month name entirely - "Aug 28 – Sep
+                    3"), so without a reserved width the whole pill resized on
+                    every step, sliding the flanking arrows with it. min-w
+                    fits the widest case (a cross-month range) so the control
+                    holds one width regardless of which week is showing - the
+                    same "a step must not resize the control" rule the day
+                    pill already ships under, just a wider reservation for a
+                    label that swings further. */}
+                <span className={"whitespace-nowrap" + (isWeek ? " inline-block min-w-[92px]" : "")}>{pillLabel}</span>
             </button>
             <button
                 type="button"

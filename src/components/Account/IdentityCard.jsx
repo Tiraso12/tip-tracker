@@ -22,11 +22,11 @@ function memberSinceLabel(value) {
     return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-function Detail({ label, value, note }) {
+function Detail({ label, value, note, truncate = false }) {
     return (
         <div className="min-w-0 px-5 py-4 sm:px-6">
             <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">{label}</dt>
-            <dd className="mt-1 break-words text-sm font-medium text-[var(--color-ink)]">{value}</dd>
+            <dd className={"mt-1 text-sm font-medium text-[var(--color-ink)] " + (truncate ? "truncate" : "break-words")}>{value}</dd>
             {note ? <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">{note}</p> : null}
         </div>
     );
@@ -63,12 +63,13 @@ function IdentityCard({ person, mode = "manage", managerUid = person?.managerUid
                 </div>
             </div>
 
-            <dl className="grid grid-cols-1 divide-y divide-[var(--color-line)] border-t border-[var(--color-line)] sm:grid-cols-2 sm:divide-y-0">
+            <dl className="grid grid-cols-2 border-t border-[var(--color-line)]">
                 <Detail label="Login handle" value={handle} />
                 <Detail
                     label="Email"
                     value={person?.email || "Not recorded"}
                     note={mode === "own" ? "Ask your manager to change this email." : undefined}
+                    truncate
                 />
                 <Detail label="Job title" value={jobTitle} />
                 <Detail label="Tier" value={tier || "Employee"} />

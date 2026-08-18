@@ -436,6 +436,14 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         editorLeaveGuardRef.current = guard;
     }, []);
 
+    // Team's own page header ("Team" / find-a-person subtitle) is redundant
+    // once a person is open - the sticky "Team roster" back control and the
+    // identity card's own name already say where you are, the same way the
+    // Day Rail replaces the editor's title. Mirrors the editor's mobile-hide
+    // treatment below so a phone's short viewport spends its height on the
+    // person, not a repeated title.
+    const [teamDetailOpen, setTeamDetailOpen] = useState(false);
+
     // True when it is safe to navigate away right now.
     const confirmLeaveEditor = useCallback(() => {
         const guard = editorLeaveGuardRef.current;
@@ -736,7 +744,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                             // `header.alwaysVisible` shows the real date and saved-by
                             // at every width, above the day-chip strip, the way the
                             // kit's own page header sits above its day chips.
-                            ((activeTab === "shifts" && !header.alwaysVisible) || activeTab === "editor" ? "hidden sm:flex " : "flex ") +
+                            ((activeTab === "shifts" && !header.alwaysVisible) || activeTab === "editor" || (activeTab === "users" && teamDetailOpen) ? "hidden sm:flex " : "flex ") +
                             "flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
                             (activeTab === "editor" || activeTab === "shifts" ? "pb-3 mb-3 sm:pb-6 sm:mb-6" : "pb-4 sm:pb-6 mb-4 sm:mb-6")
                         }>
@@ -830,6 +838,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                             <Suspense fallback={<PanelLoading label="Loading team management..." />}>
                                 <TeamManagement
                                     allEmployees={allEmployees}
+                                    onDetailChange={setTeamDetailOpen}
                                     refreshEmployees={() => loadEmployeesIfNeeded({ force: true })}
                                 />
                             </Suspense>
