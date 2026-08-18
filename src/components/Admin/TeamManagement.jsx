@@ -508,7 +508,7 @@ function PersonView({
 
             {capabilities.canReadPay ? (
                 <section className="space-y-3" aria-labelledby="person-pay-heading">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                             <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Pay history</span>
                             <h3 id="person-pay-heading" className="mt-1 font-display text-xl font-medium tracking-tight text-[var(--color-ink)]">{personName(person)}'s pay</h3>
