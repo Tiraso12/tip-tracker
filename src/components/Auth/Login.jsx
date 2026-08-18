@@ -28,7 +28,7 @@ function PasswordField({ id, label, name, value, onChange, showPassword, onToggl
                     onChange={onChange}
                     placeholder={placeholder}
                     autoComplete={autoComplete}
-                    className="block w-full h-10 pl-3 pr-10 text-sm bg-[var(--color-surface)] text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] border border-[var(--color-line)] rounded-[var(--radius-sm)] transition-colors duration-150 hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15"
+                    className="block w-full h-10 pl-3 pr-10 text-base bg-[var(--color-surface)] text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] border border-[var(--color-line)] rounded-[var(--radius-sm)] transition-colors duration-150 hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15"
                 />
                 <button
                     type="button"
