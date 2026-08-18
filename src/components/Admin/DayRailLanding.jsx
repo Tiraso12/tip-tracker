@@ -280,8 +280,13 @@ function DayRailLanding({ status, summary, lineup, orphanedEntries = [], loading
         // natural top-aligned height.
         <div className="space-y-3 sm:space-y-4 max-[560px]:flex max-[560px]:flex-col max-[560px]:min-h-[calc(100dvh-var(--landing-fill-offset))]">
             {/* Prototype fix #3: once a shift is fully settled + saved (closed) the
-                process is complete, so the step rail is hidden - no steps left to show. */}
-            {stage === "closed" ? null : <DayRail steps={railSteps} onStepClick={onStepClick} />}
+                process is complete, so the step rail is hidden - no steps left to show.
+                Also hidden before a floor plan exists ("build-floor"): every step but
+                Floor plan itself is unclickable at that point, so the rail read as three
+                mostly-greyed-out labels above a screen already saying "let's set up the
+                floor" - the same words twice, once as a breadcrumb no tap does anything
+                on. */}
+            {stage === "closed" || stage === "build-floor" ? null : <DayRail steps={railSteps} onStepClick={onStepClick} />}
 
             {/* The Confirm & Save confirmation lands here, on the day it is about,
                 rather than on the editor screen the admin has just left. Inside the
