@@ -42,6 +42,11 @@ function IdentityCard({ person, mode = "manage", managerUid = person?.managerUid
     const tier = isTemp ? null : tierLabel({ ...person, managerUid });
     const jobTitle = person?.role === "unassigned" ? "Not assigned" : roleLabel(person?.role);
     const handle = person?.username || "Not recorded";
+    // The switch is only ever offered to a captain-titled person - see
+    // canOfferSupervisor in permissions.js. Showing "Off" on everyone else's
+    // identity states a fact that can never change for them, so the row is
+    // shown by job title alone, independent of active status.
+    const showSupervisor = !isTemp && person?.role === "captain";
 
     return (
         <Card className="!p-0 overflow-hidden" data-testid="person-identity" data-mode={mode}>
@@ -67,7 +72,9 @@ function IdentityCard({ person, mode = "manage", managerUid = person?.managerUid
                 />
                 <Detail label="Job title" value={jobTitle} />
                 <Detail label="Tier" value={tier || "Employee"} />
-                <Detail label="Supervisor" value={person?.isSupervisor === true ? "On" : "Off"} />
+                {showSupervisor ? (
+                    <Detail label="Supervisor" value={person?.isSupervisor === true ? "On" : "Off"} />
+                ) : null}
                 <Detail label="Account status" value={statusLabel(status)} />
                 {mode === "own" ? <Detail label="Member since" value={memberSinceLabel(person?.createdAt)} /> : null}
             </dl>

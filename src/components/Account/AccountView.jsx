@@ -249,7 +249,9 @@ function AccountView({ onHome, homeLabel, homeTitle, onOpenWorkspace }) {
                         </div>
                     </Card>
 
-                    <p className="px-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">Your manager controls job title, account status, Supervisor rights, and email changes.</p>
+                    <p className="px-1 text-xs leading-relaxed text-[var(--color-ink-muted)]">
+                        Your manager controls job title, account status{user.role === "captain" ? ", Supervisor rights," : ","} and email changes.
+                    </p>
                 </div>
             </main>
 

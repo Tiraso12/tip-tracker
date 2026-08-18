@@ -134,11 +134,15 @@ test.beforeEach(seed);
 test.afterAll(async () => testEnv.cleanup());
 
 test("all four account kinds reach the same complete identity surface on phone and desktop", async ({ page }) => {
+    // The Supervisor fact is only ever true for a captain-titled person - see
+    // canOfferSupervisor in permissions.js - so the identity card shows the row
+    // for captain and supervisor only, and omits it entirely for a manager or
+    // an ordinary employee rather than stating a dead "Off".
     const expected = {
-        manager: { title: "Not assigned", tier: "Manager", supervisor: "Off" },
+        manager: { title: "Not assigned", tier: "Manager", supervisor: null },
         supervisor: { title: "Captain", tier: "Captain", supervisor: "On" },
         captain: { title: "Captain", tier: "Employee", supervisor: "Off" },
-        employee: { title: "Server", tier: "Employee", supervisor: "Off" },
+        employee: { title: "Server", tier: "Employee", supervisor: null },
     };
 
     for (const viewport of [{ name: "phone", width: 390, height: 844 }, { name: "desktop", width: 1440, height: 900 }]) {
@@ -152,7 +156,12 @@ test("all four account kinds reach the same complete identity surface on phone a
             await expect(card).toContainText(PEOPLE[key].email);
             await expect(card).toContainText(expected[key].title);
             await expect(card).toContainText(expected[key].tier);
-            await expect(card).toContainText(expected[key].supervisor);
+            if (expected[key].supervisor) {
+                await expect(card).toContainText(expected[key].supervisor);
+                await expect(card).toContainText("Supervisor");
+            } else {
+                await expect(card).not.toContainText("Supervisor");
+            }
             await expect(card).toContainText("Active");
             await expect(card).toContainText("January 15, 2026");
             await page.screenshot({ path: `${SHOTS_DIR}/${key}-${viewport.name}.png`, fullPage: true });
