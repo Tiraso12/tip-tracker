@@ -298,7 +298,7 @@ test("PROPOSED: a supervisor can read ANOTHER person's pay history, employees st
     await assertFails(getDoc(doc(server, "users/captainUid")));
 });
 
-test("PROPOSED: a supervisor cannot approve accounts, assign roles, merge, or remove a day", async () => {
+test("PROPOSED: a supervisor cannot approve accounts, assign roles, merge, or remove a settled day", async () => {
     const db = authedDb("supervisorUid");
 
     // Approvals and role assignment are the manager's.
@@ -324,7 +324,8 @@ test("PROPOSED: a supervisor cannot approve accounts, assign roles, merge, or re
         type: "temp_staff_merged",
     })));
 
-    // Removing the settled day.
+    // Removing the settled day. Discarding a setup-stage day is a different
+    // act - see the test below.
     await assertFails(deleteDoc(doc(db, "shifts/" + CLOSED_DATE)));
     await assertFails(deleteDoc(doc(db, "payouts/" + CLOSED_DATE)));
     await assertFails(setDoc(doc(db, "auditEvents/removalOperation"), validAuditEvent({
@@ -537,6 +538,24 @@ test("PROPOSED: an inactive manager has no power at all", async () => {
     await assertFails(setDoc(doc(inactiveSupervisor, "shifts/" + OPEN_DATE), validShift()));
 });
 
+test("PROPOSED: a supervisor can discard a setup-stage day and cannot remove a settled one", async () => {
+    const db = authedDb("supervisorUid");
+
+    await assertSucceeds(setDoc(doc(db, "shifts/" + OPEN_DATE), validShift(OPEN_DATE, { status: "setup" })));
+    await assertSucceeds(deleteDoc(doc(db, "shifts/" + OPEN_DATE)));
+    await assertSucceeds(setDoc(doc(db, "auditEvents/setupRemoval"), validAuditEvent({
+        operationId: "setupRemoval",
+        type: "setup_shift_removed",
+    })));
+
+    await assertFails(deleteDoc(doc(db, "shifts/" + CLOSED_DATE)));
+    await assertFails(deleteDoc(doc(db, "payouts/" + CLOSED_DATE)));
+    await assertFails(setDoc(doc(db, "auditEvents/removalBySupervisor"), validAuditEvent({
+        operationId: "removalBySupervisor",
+        type: "shift_removed",
+    })));
+});
+
 test("PROPOSED: correcting a settled day is captain work; removing it is not, and the paths do not leak", async () => {
     const supervisor = authedDb("supervisorUid");
 
@@ -709,7 +728,9 @@ test("PROPOSED: the cutover state - the pointer names today's admin - takes noth
     // keys, so a probe that rewrites a value with itself proves nothing.
     await assertFails(updateDoc(doc(switchedOn, "users/inactiveUid"), { status: "active" }));
     await assertFails(updateDoc(doc(switchedOn, "users/serverUid"), { role: "captain" }));
-    await assertFails(deleteDoc(doc(switchedOn, "shifts/" + OPEN_DATE)));
+    await assertFails(deleteDoc(doc(switchedOn, "shifts/" + CLOSED_DATE)));
+    // A setup-stage day they just created is theirs to discard.
+    await assertSucceeds(deleteDoc(doc(switchedOn, "shifts/" + OPEN_DATE)));
 });
 
 // The deploy-order hazard `validUserProfile()` carries, pinned so a future edit to

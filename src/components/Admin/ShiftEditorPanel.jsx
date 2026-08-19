@@ -55,7 +55,7 @@ const DISCARD_EDIT_CONFIRMATION =
     "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
     "current payouts unchanged.";
 
-function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", onRegisterLeaveGuard }) {
+function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
     const { user } = useAuth();
     const { beginPendingAction } = usePendingActions();
     const [teams, setTeams] = useState([
@@ -530,7 +530,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         // both are directly editable with no lock/Cancel/Done, so this is the only
         // thing that saves either. Stays off for a closed shift: edits there persist
         // only through Review -> Confirm & Save (see handleConfirmSave below).
-        if (!hasLoadedShift || loading || isSaving || shiftStatus === "closed") return undefined;
+        if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
         let cancelled = false;
@@ -575,6 +575,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         isSaving,
         loading,
         markUserHistoryFlags,
+        removingSetupDay,
         runners,
         shiftStatus,
         teams,
@@ -742,6 +743,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     setBarTeam={setBarTeam}
                     runners={runners}
                     setRunners={setRunners}
+                    onRemoveSetupDay={shiftStatus === "setup" ? onRemoveSetupDay : undefined}
+                    removingSetupDay={removingSetupDay}
                 />
             ) : effectiveStep === "settle" ? (
                 <SettleStep

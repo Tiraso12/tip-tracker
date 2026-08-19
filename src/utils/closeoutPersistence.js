@@ -243,3 +243,72 @@ export async function removeShiftAtomically({
         removedPayoutCount: removedPayoutUids.length,
     };
 }
+
+function buildSetupRemovalAuditEvent({
+    date,
+    operationId,
+    actorUid,
+    createdAt,
+}) {
+    // Same key schema as shift_removed, distinct type so a captain cannot
+    // assemble the settled-day removal batch. firestore.rules must whitelist
+    // setup_shift_removed on validAuditEvent and isCaptainAuditType.
+    return {
+        type: "setup_shift_removed",
+        date,
+        shiftId: date,
+        operationId,
+        actorUid: actorUid || null,
+        createdAt,
+        ledgerVersion: PAYOUT_LEDGER_VERSION,
+        removedPayoutUids: [],
+        previousPayoutCount: 0,
+    };
+}
+
+// Discard a setup-stage day: the shifts/{date} doc only. Not the settled
+// removal - that is removeShiftAtomically, manager-only, and it also clears
+// the payout ledger. This path refuses a closed shift and refuses a date that
+// already has payout entries, so it cannot be used to un-pay anyone.
+export async function removeSetupShiftAtomically({
+    db,
+    date,
+    updatedBy = null,
+    now,
+    operationId = createRemovalOperationId(date),
+    refs = firestoreCloseoutRefs,
+    batchFactory = writeBatch,
+    readShift = async () => getDocData(await getDoc(refs.shift(db, date))),
+    readPayoutEntries = async () => fetchPayoutEntriesForDate(db, date),
+}) {
+    const loaded = await readShift(refs.shift(db, date));
+    const shift = loaded && typeof loaded.exists === "function" ? getDocData(loaded) : loaded;
+    if (!shift || shift.status !== "setup") {
+        throw new Error("Only an unsettled setup day can be removed this way.");
+    }
+
+    const previousPayoutEntries = await readPayoutEntries();
+    if (previousPayoutEntries.length > 0) {
+        throw new Error("This date has saved pay. Only the manager can remove it.");
+    }
+
+    const removedAt = timestamp(now);
+    const batch = batchFactory(db);
+
+    batch.delete(refs.shift(db, date));
+    batch.set(refs.auditEvent(db, operationId), buildSetupRemovalAuditEvent({
+        date,
+        operationId,
+        actorUid: updatedBy,
+        createdAt: removedAt,
+    }));
+
+    await batch.commit();
+
+    return {
+        operationId,
+        removedAt,
+        removedPayoutUids: [],
+        removedPayoutCount: 0,
+    };
+}

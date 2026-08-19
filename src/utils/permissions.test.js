@@ -14,6 +14,7 @@ import {
     canReadColleaguePay,
     canReadRoster,
     canRemoveSettledDay,
+    canRemoveSetupDay,
     canSetSupervisor,
     canSettleUp,
     canTransferManagerTier,
@@ -63,6 +64,7 @@ const MANAGER_CAPABILITIES = {
 const CAPTAIN_CAPABILITIES = {
     canOpenShiftWorkspace,
     canBuildFloorPlan,
+    canRemoveSetupDay,
     canAddTempStaff,
     canSettleUp,
     canCorrectSettledDay,
@@ -172,6 +174,7 @@ test("a supervisor gains the workspace but none of the manager-only capabilities
     assert.equal(canAssignRoles(supervisor), false);
     assert.equal(canMergeTempStaff(supervisor), false);
     assert.equal(canRemoveSettledDay(supervisor), false);
+    assert.equal(canRemoveSetupDay(supervisor), true);
     assert.equal(canTransferManagerTier(supervisor), false);
 
     // Above all, a supervisor cannot hand the switch on - not to a colleague and
@@ -180,6 +183,8 @@ test("a supervisor gains the workspace but none of the manager-only capabilities
 
     // Correcting a settled day and removing one are deliberately different acts.
     assert.notEqual(canCorrectSettledDay(supervisor), canRemoveSettledDay(supervisor));
+    // Discarding a setup-stage day is captain work; removing a paid day is not.
+    assert.notEqual(canRemoveSetupDay(supervisor), canRemoveSettledDay(supervisor));
 });
 
 test("nobody but manager authority may move the Supervisor switch", () => {

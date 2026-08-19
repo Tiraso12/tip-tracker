@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { saveClosedShiftAtomically, removeShiftAtomically } from "./closeoutPersistence.js";
+import { saveClosedShiftAtomically, removeShiftAtomically, removeSetupShiftAtomically } from "./closeoutPersistence.js";
 
 const ref = (path) => ({ path });
 
@@ -112,6 +112,20 @@ function removeWithFakeStore(store, options = {}) {
         updatedBy: "adminUid",
         now: "2026-05-30T02:00:00.000Z",
         operationId: "removal-operation",
+        refs: fakeRefs,
+        batchFactory: () => new FakeBatch(store, options.batchOptions),
+        readShift: async (shiftRef) => snapshot(store.get(shiftRef.path)),
+        readPayoutEntries: async () => store.payoutEntries("2026-05-29"),
+    });
+}
+
+function removeSetupWithFakeStore(store, options = {}) {
+    return removeSetupShiftAtomically({
+        db: {},
+        date: "2026-05-29",
+        updatedBy: "supervisorUid",
+        now: "2026-05-30T02:00:00.000Z",
+        operationId: "setup-removal-operation",
         refs: fakeRefs,
         batchFactory: () => new FakeBatch(store, options.batchOptions),
         readShift: async (shiftRef) => snapshot(store.get(shiftRef.path)),
@@ -341,6 +355,65 @@ test("removeShiftAtomically clears a date whose payout entries have no shift doc
     assert.equal(audit.date, "2026-05-29");
     assert.deepEqual(audit.removedPayoutUids, ["backUid"]);
     assert.equal(audit.previousPayoutCount, 1);
+});
+
+test("removeSetupShiftAtomically deletes the setup shift and writes a setup_shift_removed audit", async () => {
+    const store = new FakeStore({
+        "shifts/2026-05-29": {
+            status: "setup",
+            teams: [{ teamId: "team-1", members: [] }],
+        },
+        "shifts/2026-05-30": { status: "setup" },
+    });
+
+    const result = await removeSetupWithFakeStore(store);
+
+    assert.equal(result.operationId, "setup-removal-operation");
+    assert.equal(result.removedPayoutCount, 0);
+    assert.equal(store.has("shifts/2026-05-29"), false);
+    assert.equal(store.has("shifts/2026-05-30"), true);
+
+    const audit = store.get("auditEvents/setup-removal-operation");
+    assert.equal(audit.type, "setup_shift_removed");
+    assert.equal(audit.date, "2026-05-29");
+    assert.equal(audit.actorUid, "supervisorUid");
+    assert.deepEqual(audit.removedPayoutUids, []);
+    assert.equal(audit.previousPayoutCount, 0);
+});
+
+test("removeSetupShiftAtomically refuses a closed shift and leaves it untouched", async () => {
+    const store = new FakeStore({
+        "shifts/2026-05-29": { status: "closed" },
+        "payouts/2026-05-29": { date: "2026-05-29", ledgerVersion: 1 },
+        "payouts/2026-05-29/entries/serverUid": {
+            uid: "serverUid", date: "2026-05-29", tips: 120, gratuity: 40, cash: 20, total: 180,
+        },
+    });
+    const before = clone(Object.fromEntries(store.docs));
+
+    await assert.rejects(
+        () => removeSetupWithFakeStore(store),
+        /Only an unsettled setup day/
+    );
+
+    assert.deepEqual(Object.fromEntries(store.docs), before);
+});
+
+test("removeSetupShiftAtomically refuses a setup date that already has payout entries", async () => {
+    const store = new FakeStore({
+        "shifts/2026-05-29": { status: "setup" },
+        "payouts/2026-05-29/entries/serverUid": {
+            uid: "serverUid", date: "2026-05-29", tips: 10, gratuity: 5, cash: 0, total: 15,
+        },
+    });
+    const before = clone(Object.fromEntries(store.docs));
+
+    await assert.rejects(
+        () => removeSetupWithFakeStore(store),
+        /This date has saved pay/
+    );
+
+    assert.deepEqual(Object.fromEntries(store.docs), before);
 });
 
 test("removeShiftAtomically leaves all state unchanged when the batch commit fails", async () => {

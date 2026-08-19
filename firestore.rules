@@ -128,10 +128,11 @@ service cloud.firestore {
       return hasManagerAccess() && request.auth.uid != uid;
     }
 
-    // Closing and recalculating a night are captain work; merging a temporary
-    // profile and removing a settled day are not.
+    // Closing, recalculating, and discarding a setup-stage day are captain work.
+    // Merging a temporary profile and removing a settled day are not - those
+    // stay on shift_removed / temp_staff_merged, which only the manager may write.
     function isCaptainAuditType() {
-      return request.resource.data.type in ["shift_closed", "shift_recalculated"];
+      return request.resource.data.type in ["shift_closed", "shift_recalculated", "setup_shift_removed"];
     }
 
     function isRole(role) {
@@ -457,7 +458,7 @@ service cloud.firestore {
           "collisionDates"
         ]) &&
         request.resource.data.keys().hasAll(["type", "operationId", "createdAt", "ledgerVersion"]) &&
-        request.resource.data.type in ["shift_closed", "shift_recalculated", "temp_staff_merged", "shift_removed"] &&
+        request.resource.data.type in ["shift_closed", "shift_recalculated", "temp_staff_merged", "shift_removed", "setup_shift_removed"] &&
         request.resource.data.operationId is string &&
         isStringOrTimestamp(request.resource.data.createdAt) &&
         request.resource.data.ledgerVersion == 1 &&
@@ -525,8 +526,9 @@ service cloud.firestore {
         (request.auth != null && resource.data.uid == request.auth.uid);
     }
 
-    // Shifts. Building a floor plan, settling up, and correcting an already
-    // settled day are captain work; removing the day outright is not.
+    // Shifts. Building a floor plan, settling up, correcting an already settled
+    // day, and discarding a setup-stage day (no saved pay) are captain work.
+    // Removing a settled day outright is not - that stays with the manager.
     match /shifts/{shiftId} {
       allow get: if hasCaptainAccess();
       allow list: if hasCaptainAccess() ||
@@ -534,7 +536,8 @@ service cloud.firestore {
       allow create: if hasCaptainAccess() && validShift(shiftId);
       allow update: if validShift(shiftId) &&
         (hasCaptainAccess() || isSelfServiceShiftNameRestamp());
-      allow delete: if hasManagerAccess();
+      allow delete: if hasManagerAccess() ||
+        (hasCaptainAccess() && resource.data.status == "setup");
     }
 
     // Canonical payout ledger. Employees can read only their own exact entry doc.

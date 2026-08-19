@@ -197,8 +197,13 @@ async function login(page) {
     await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
     await page.getByRole("textbox", { name: "Password" }).fill(ADMIN_PASSWORD);
     await page.getByRole("button", { name: "Log In" }).click();
-    // Landing (Shifts tab) is ready once the day-step spine renders.
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    // Today is usually a blank day, so the rail is hidden (build-floor and
+    // closed landings both drop it). Wait for the workspace itself.
+    await expect(
+        page.getByRole("heading", { name: "Let's set up the floor" })
+            .or(page.getByRole("navigation", { name: "Day steps" }))
+            .or(page.getByRole("button", { name: "Edit shift" }))
+    ).toBeVisible();
 }
 
 // Open the shift editor from the Shifts landing: a fresh day offers "Build floor
@@ -547,6 +552,43 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
 // never shift docs) and unfinished writes leave this shape - the app's own settle
 // path always writes both. It is real payroll data the employee can see, and it
 // used to be unreachable in the admin UI: with no shift doc the day read as blank.
+test("an accidental setup day can be removed from the floor plan", async ({ page }) => {
+    const date = "2026-05-26";
+    await seedSetupShift(date);
+
+    let confirmMessage = "";
+    page.on("dialog", (dialog) => {
+        confirmMessage = dialog.message();
+        return dialog.accept();
+    });
+
+    await page.goto("/");
+    await page.getByLabel("Username or Email").fill(ADMIN_EMAIL);
+    await page.getByRole("textbox", { name: "Password" }).fill(ADMIN_PASSWORD);
+    await page.getByRole("button", { name: "Log In" }).click();
+    await expect(page.getByRole("heading", { name: "Let's set up the floor" })).toBeVisible();
+
+    await setShiftDate(page, date);
+
+    // Setup days skip into the floor editor. The discard lives there, not on
+    // the closed-day danger zone, and its confirm is the lighter copy.
+    await expect(page.getByRole("button", { name: "Remove this day" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove this shift" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Remove this day" }).click();
+    expect(confirmMessage).toContain("has not been paid out");
+    expect(confirmMessage).not.toContain("This cannot be undone.");
+
+    await expect(page.getByRole("heading", { name: "Let's set up the floor" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Build floor plan/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove this day" })).toHaveCount(0);
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const shiftDoc = await getDoc(doc(context.firestore(), `shifts/${date}`));
+        expect(shiftDoc.exists()).toBe(false);
+    });
+});
+
 test("a date with payout entries and no shift doc can be cleaned up from the day landing", async ({ page }) => {
     const date = "2026-05-25";
     await seedOrphanedPayouts(date);

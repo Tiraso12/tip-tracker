@@ -13,8 +13,9 @@
 //             paid from the pool.
 //   Captain   everyone the manager has given the "Supervisor" switch to. Enters
 //             money at settle-up, builds and edits the floor plan, adds
-//             temporary staff mid-setup, corrects an already-settled day, and
-//             reads the whole roster and colleagues' pay history.
+//             temporary staff mid-setup, discards an accidental setup-stage
+//             day, corrects an already-settled day, and reads the whole roster
+//             and colleagues' pay history.
 //   Employee  everyone else. Reads their own pay and nothing more.
 //
 // A JOB TITLE GRANTS NOTHING. users.role - captain, server, back, assistant,
@@ -147,6 +148,13 @@ export function canOpenShiftWorkspace(user) {
 
 // Build and edit a night's floor plan.
 export function canBuildFloorPlan(user) {
+    return hasCaptainAccess(user);
+}
+
+// Discard a setup-stage day that was started by accident (wrong date, touch
+// the floor, autosave). Whoever can create one can undo it. A day with saved
+// pay stays on canRemoveSettledDay - this does not grant that.
+export function canRemoveSetupDay(user) {
     return hasCaptainAccess(user);
 }
 

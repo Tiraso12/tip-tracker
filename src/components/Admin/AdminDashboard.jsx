@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useState, useEffect, useCallback, useMemo, useRe
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
-import { canApproveAccounts, canReadRoster, canRemoveSettledDay, tierLabel } from "../../utils/permissions";
+import { canApproveAccounts, canReadRoster, canRemoveSettledDay, canRemoveSetupDay, tierLabel } from "../../utils/permissions";
 import DayRailLanding from "./DayRailLanding";
 import { SavedByLine } from "./DayPayoutPanel";
 import BarDatePill from "./BarDatePill";
@@ -13,7 +13,7 @@ import { PendingActionsContext, usePendingActionsState } from "../../context/Pen
 import { toDateKey, getCurrentWeek, parseDateKey, formatFullDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
 import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
-import { removeShiftAtomically } from "../../utils/closeoutPersistence";
+import { removeShiftAtomically, removeSetupShiftAtomically } from "../../utils/closeoutPersistence";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 import { fullNameFor } from "../../utils/userNames";
 
@@ -147,6 +147,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // money for exactly one selected day - the strip only ever needs a status
     // dot, never a figure, for the six days it is not currently showing.
     const [weekStatuses, setWeekStatuses] = useState({});
+    const [weekStatusTick, setWeekStatusTick] = useState(0);
     // uid -> display name, for the "saved by" line. Browsing a week of days is
     // usually the same one or two people, so this keeps it to one read each.
     const saverNameCacheRef = useRef(new Map());
@@ -171,6 +172,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // so it never reaches the workspace or this destination.
     const canReachTeam = canReadRoster(user);
     const canRemoveDay = canRemoveSettledDay(user);
+    const canDiscardSetupDay = canRemoveSetupDay(user);
     const workspaceTier = tierLabel(user);
 
     // Live, because approving or denying someone has to take them off the count
@@ -307,7 +309,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         })();
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [weekDays.map((d) => d.dateKey).join("|")]);
+    }, [weekDays.map((d) => d.dateKey).join("|"), weekStatusTick]);
 
     // `shifts/{date}.updatedBy` is a uid, and a uid is not an answer to "who
     // saved this?" - so it is resolved to a name here, in one document read, and
@@ -366,6 +368,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         setActiveTab("shifts");
         setShiftSaved(options?.saved === true);
         fetchDayPayouts(selectedDate);
+        setWeekStatusTick((n) => n + 1);
     };
 
     // Hard-delete a settled shift for the selected date. This permanently removes
@@ -403,9 +406,60 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                 updatedBy: user?.uid || null,
             });
             await fetchDayPayouts(selectedDate);
+            setWeekStatusTick((n) => n + 1);
         } catch (e) {
             console.error("Failed to remove shift:", e);
             alert("Could not remove the shift. Please try again.");
+        } finally {
+            setRemovingShift(false);
+            endPendingAction();
+        }
+    }, [removingShift, selectedDate, user, fetchDayPayouts, beginPendingAction]);
+
+    // Discard an accidental setup-stage day. Lighter than handleRemoveShift:
+    // no payouts, a different confirm, and whoever can create the leftover
+    // (captain) can undo it. Null the landing status BEFORE leaving the
+    // editor so SkipToFloorPlan cannot bounce us back into it.
+    const handleRemoveSetupDay = useCallback(async () => {
+        if (removingShift) return;
+
+        const [y, m, d] = selectedDate.split("-");
+        const friendlyDate = new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+        });
+        const confirmed = window.confirm(
+            `Remove the floor plan for ${friendlyDate}?\n\n` +
+            "This day has not been paid out. Removing it deletes the floor plan " +
+            "and the date will look as if nothing was started."
+        );
+        if (!confirmed) return;
+
+        setRemovingShift(true);
+        const endPendingAction = beginPendingAction();
+        try {
+            await removeSetupShiftAtomically({
+                db,
+                date: selectedDate,
+                updatedBy: user?.uid || null,
+            });
+            setDayShiftStatus(null);
+            setDayLineup(null);
+            setDaySummary(null);
+            setDayOrphanedEntries([]);
+            setWeekStatuses((prev) => {
+                const next = { ...prev };
+                delete next[selectedDate];
+                return next;
+            });
+            setActiveTab("shifts");
+            await fetchDayPayouts(selectedDate);
+            setWeekStatusTick((n) => n + 1);
+        } catch (e) {
+            console.error("Failed to remove setup day:", e);
+            alert("Could not remove this day. Please try again.");
         } finally {
             setRemovingShift(false);
             endPendingAction();
@@ -827,6 +881,8 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                         onClose={handleEditorClose}
                                         initialStep={editorStep}
                                         onRegisterLeaveGuard={registerEditorLeaveGuard}
+                                        onRemoveSetupDay={canDiscardSetupDay ? handleRemoveSetupDay : undefined}
+                                        removingSetupDay={removingShift}
                                     />
                                 </Suspense>
                             )

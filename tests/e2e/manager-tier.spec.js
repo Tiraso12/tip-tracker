@@ -264,11 +264,58 @@ test("a Supervisor-on captain holds both their own pay and the workspace, and ne
     await expect(payStatement(page)).toHaveCount(0);
 
     // Removing a settled day is manager-only, and stays that way in here.
+    // Discarding a setup-stage day is a different control, on the floor editor.
     await expect(removeShift(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Remove this day" })).toHaveCount(0);
 
     // And the way back: home means THIS person's home, which is their pay.
     await page.locator("header").getByRole("button", { name: "Go to my pay" }).click();
     await expect(payStatement(page)).toBeVisible();
+});
+
+test("a Supervisor-on captain can discard an accidental setup day and still cannot remove a settled one", async ({ page }) => {
+    await seedRestaurant();
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        await setDoc(doc(db, `shifts/${EMPTY_DAY}`), {
+            date: EMPTY_DAY,
+            status: "setup",
+            teams: [{ teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "" } }],
+            barTeam: { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } },
+            runners: [],
+        });
+    });
+
+    let confirmMessage = "";
+    page.on("dialog", (dialog) => {
+        confirmMessage = dialog.message();
+        return dialog.accept();
+    });
+
+    await login(page, "supervisor");
+    await accountTrigger(page).click();
+    await page.getByRole("menuitem", { name: /^Shifts/ }).click();
+    await expect(workspace(page)).toBeAttached();
+
+    // Today is settled. The manager-only danger zone must stay hidden.
+    await expect(removeShift(page)).toHaveCount(0);
+
+    await setShiftDate(page, EMPTY_DAY);
+    await expect(page.getByRole("button", { name: "Remove this day" })).toBeVisible();
+    await expect(removeShift(page)).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Remove this day" }).click();
+    expect(confirmMessage).toContain("has not been paid out");
+    expect(confirmMessage).not.toContain("This cannot be undone.");
+
+    await expect(page.getByRole("heading", { name: "Let's set up the floor" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Build floor plan/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove this day" })).toHaveCount(0);
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const shiftDoc = await getDoc(doc(context.firestore(), `shifts/${EMPTY_DAY}`));
+        expect(shiftDoc.exists()).toBe(false);
+    });
 });
 
 // The pay side reads a WEEK, so its prev/next step one Friday-start work week -
