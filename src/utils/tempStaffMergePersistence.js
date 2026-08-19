@@ -18,6 +18,12 @@ import { firstNameFor, fullNameFor } from "./userNames.js";
 
 const LEGACY_TIP_COLLECTION = "tips";
 const MAX_TRANSACTION_WRITES = 450;
+// One click used to stuff every date into a single transaction. A long history
+// (Jeff-scale: 50+ nights) times out or blows the write cap before the temp
+// profile is deleted. 12 dates is a proven browser-safe piece; each piece stays
+// well under the 450-write safety cap, and the temp profile is deleted only
+// after the last piece lands.
+export const MERGE_DATES_PER_CHUNK = 12;
 
 const timestamp = (now) => now || new Date().toISOString();
 
@@ -218,6 +224,81 @@ function buildCollision({ date, sources }) {
     };
 }
 
+// A date already written by this same temp-profile merge is not a clash. A
+// naive retry after a partial success would otherwise treat our own
+// `mergedFromTempStaff` stamps as a same-date collision and stop the rest.
+export function isMergedFromThisTempStaff(data, tempUid) {
+    return Boolean(tempUid) && data?.mergedFromTempStaff?.uid === tempUid;
+}
+
+export const firestoreTempStaffMergeRefs = {
+    payoutEntry: (db, date, uid) => payoutLedgerEntryRef(db, date, uid),
+    payoutMeta: (db, date) => payoutLedgerMetaRef(db, date),
+    legacyTip: (db, uid, date) => legacyTipRef(db, uid, date),
+    shift: (db, date) => shiftRef(db, date),
+    user: (db, uid) => userRef(db, uid),
+    tempStaff: (db, uid) => tempStaffRef(db, uid),
+    auditEvent: (db, operationId) => auditEventRef(db, operationId),
+};
+
+export function countTempStaffMergeWrites({
+    ledgerWrites = [],
+    ledgerDeletes = [],
+    legacyTipWrites = [],
+    legacyTipDeletes = [],
+    shiftUpdates = [],
+    finalize = false,
+} = {}) {
+    return ledgerWrites.length
+        + ledgerDeletes.length
+        + ledgerWrites.length
+        + legacyTipWrites.length
+        + legacyTipDeletes.length
+        + shiftUpdates.length
+        + (finalize ? 3 : 0);
+}
+
+export function chunkTempStaffMergePlan(plan, datesPerChunk = MERGE_DATES_PER_CHUNK) {
+    const dates = sortDates([
+        ...plan.ledgerWrites.map(write => write.date),
+        ...plan.ledgerDeletes.map(entry => entry.date),
+        ...plan.legacyTipWrites.map(write => write.date),
+        ...plan.legacyTipDeletes.map(entry => entry.date),
+        ...plan.shiftUpdates.map(update => update.date),
+    ]);
+
+    const chunks = [];
+    for (let index = 0; index < dates.length; index += datesPerChunk) {
+        const slice = dates.slice(index, index + datesPerChunk);
+        const inSlice = (item) => slice.includes(item.date);
+        chunks.push({
+            dates: slice,
+            ledgerWrites: plan.ledgerWrites.filter(inSlice),
+            ledgerDeletes: plan.ledgerDeletes.filter(inSlice),
+            legacyTipWrites: plan.legacyTipWrites.filter(inSlice),
+            legacyTipDeletes: plan.legacyTipDeletes.filter(inSlice),
+            shiftUpdates: plan.shiftUpdates.filter(inSlice),
+        });
+    }
+
+    return chunks;
+}
+
+function emptyMergePlan() {
+    return {
+        canMerge: false,
+        collisions: [],
+        migratedDates: [],
+        resumedDates: [],
+        rosterOnlyShiftDates: [],
+        ledgerWrites: [],
+        ledgerDeletes: [],
+        legacyTipWrites: [],
+        legacyTipDeletes: [],
+        shiftUpdates: [],
+    };
+}
+
 export function buildTempStaffMergePlan({
     tempUser,
     realUser,
@@ -251,10 +332,18 @@ export function buildTempStaffMergePlan({
         .map((date) => {
             const sources = [];
             const shiftPayouts = shiftByDate.get(date)?.data?.payouts || {};
+            const targetLedger = targetLedgerByDate.get(date)?.data;
+            const targetTip = targetTipByDate.get(date)?.data;
 
-            if (targetLedgerByDate.has(date)) sources.push("canonical ledger");
-            if (targetTipByDate.has(date)) sources.push("legacy tip doc");
-            if (shiftPayouts[realUser.uid]) sources.push("legacy shift payout");
+            if (targetLedger && !isMergedFromThisTempStaff(targetLedger, tempUser.uid)) {
+                sources.push("canonical ledger");
+            }
+            if (targetTip && !isMergedFromThisTempStaff(targetTip, tempUser.uid)) {
+                sources.push("legacy tip doc");
+            }
+            if (shiftPayouts[realUser.uid] && !isMergedFromThisTempStaff(shiftPayouts[realUser.uid], tempUser.uid)) {
+                sources.push("legacy shift payout");
+            }
 
             return sources.length > 0 ? buildCollision({ date, sources }) : null;
         })
@@ -262,15 +351,8 @@ export function buildTempStaffMergePlan({
 
     if (collisions.length > 0) {
         return {
-            canMerge: false,
+            ...emptyMergePlan(),
             collisions,
-            migratedDates: [],
-            rosterOnlyShiftDates: [],
-            ledgerWrites: [],
-            ledgerDeletes: [],
-            legacyTipWrites: [],
-            legacyTipDeletes: [],
-            shiftUpdates: [],
         };
     }
 
@@ -278,40 +360,58 @@ export function buildTempStaffMergePlan({
     const ledgerDeletes = [];
     const legacyTipWrites = [];
     const legacyTipDeletes = [];
+    const resumedDates = [];
 
     dates.forEach((date) => {
         const tempLedger = tempLedgerByDate.get(date);
+        const targetLedger = targetLedgerByDate.get(date)?.data;
+        const ledgerAlreadyMoved = isMergedFromThisTempStaff(targetLedger, tempUser.uid);
         if (tempLedger) {
-            ledgerWrites.push({
-                date,
-                data: buildMergedLedgerEntry({
+            if (ledgerAlreadyMoved) {
+                resumedDates.push(date);
+            } else {
+                ledgerWrites.push({
                     date,
-                    tempEntry: tempLedger.data,
-                    tempUser,
-                    realUser,
-                    operationId,
-                    updatedAt,
-                    updatedBy,
-                }),
-            });
+                    data: buildMergedLedgerEntry({
+                        date,
+                        tempEntry: tempLedger.data,
+                        tempUser,
+                        realUser,
+                        operationId,
+                        updatedAt,
+                        updatedBy,
+                    }),
+                });
+            }
             ledgerDeletes.push({ date });
         }
 
         const tempTip = tempTipByDate.get(date);
+        const targetTip = targetTipByDate.get(date)?.data;
+        const tipAlreadyMoved = isMergedFromThisTempStaff(targetTip, tempUser.uid);
         if (tempTip) {
-            legacyTipWrites.push({
-                date,
-                data: buildMergedLegacyTip({
+            if (tipAlreadyMoved) {
+                resumedDates.push(date);
+            } else {
+                legacyTipWrites.push({
                     date,
-                    tempTip: tempTip.data,
-                    tempUser,
-                    realUser,
-                    operationId,
-                    updatedAt,
-                    updatedBy,
-                }),
-            });
+                    data: buildMergedLegacyTip({
+                        date,
+                        tempTip: tempTip.data,
+                        tempUser,
+                        realUser,
+                        operationId,
+                        updatedAt,
+                        updatedBy,
+                    }),
+                });
+            }
             legacyTipDeletes.push({ date });
+        }
+
+        const shiftPayouts = shiftByDate.get(date)?.data?.payouts || {};
+        if (isMergedFromThisTempStaff(shiftPayouts[realUser.uid], tempUser.uid)) {
+            resumedDates.push(date);
         }
     });
 
@@ -342,6 +442,7 @@ export function buildTempStaffMergePlan({
         canMerge: true,
         collisions: [],
         migratedDates: dates,
+        resumedDates: sortDates(resumedDates),
         rosterOnlyShiftDates,
         ledgerWrites,
         ledgerDeletes,
@@ -430,8 +531,113 @@ export async function discoverUnsettledShiftDates(db, tempUid) {
         .map(shift => shift.id);
 }
 
-function transactionRead(tx, ref) {
-    return tx.get(ref);
+function docsFromSnapshots(dates, snapshots) {
+    return dates
+        .map((date, index) => {
+            const data = snapshotData(snapshots[index]);
+            return data ? { date, data } : null;
+        })
+        .filter(Boolean);
+}
+
+function applyPlanWrites(transaction, {
+    db,
+    refs,
+    plan,
+    tempUser,
+    realUser,
+    operationId,
+    updatedAt,
+    updatedBy,
+}) {
+    const writeCount = countTempStaffMergeWrites(plan);
+    if (writeCount > MAX_TRANSACTION_WRITES) {
+        throw new Error(`Temp staff merge would write ${writeCount} documents, above the ${MAX_TRANSACTION_WRITES} transaction safety limit.`);
+    }
+
+    plan.ledgerWrites.forEach(({ date, data }) => {
+        transaction.set(refs.payoutMeta(db, date), {
+            date,
+            ledgerVersion: PAYOUT_LEDGER_VERSION,
+            updatedAt,
+            updatedBy,
+            operationId,
+        }, { merge: true });
+        transaction.set(refs.payoutEntry(db, date, realUser.uid), data);
+    });
+
+    plan.ledgerDeletes.forEach(({ date }) => {
+        transaction.delete(refs.payoutEntry(db, date, tempUser.uid));
+    });
+
+    plan.legacyTipWrites.forEach(({ date, data }) => {
+        transaction.set(refs.legacyTip(db, realUser.uid, date), data);
+    });
+
+    plan.legacyTipDeletes.forEach(({ date }) => {
+        transaction.delete(refs.legacyTip(db, tempUser.uid, date));
+    });
+
+    plan.shiftUpdates.forEach(({ date, data }) => {
+        transaction.update(refs.shift(db, date), data);
+    });
+}
+
+function applyMergeFinalize(transaction, {
+    db,
+    refs,
+    tempUser,
+    realUser,
+    operationId,
+    updatedAt,
+    updatedBy,
+    plan,
+}) {
+    transaction.update(refs.user(db, realUser.uid), {
+        hasShiftHistory: true,
+        hasTipHistory: plan.migratedDates.length > 0 || plan.legacyTipWrites.length > 0 || plan.ledgerWrites.length > 0,
+    });
+    transaction.delete(refs.tempStaff(db, tempUser.uid));
+    transaction.set(refs.auditEvent(db, operationId), buildMergeAuditEvent({
+        tempUser,
+        realUser,
+        operationId,
+        updatedAt,
+        updatedBy,
+        plan,
+    }));
+}
+
+async function readMergeDocsForDates({
+    readSnapshot,
+    db,
+    refs,
+    dates,
+    tempUser,
+    realUser,
+}) {
+    const [
+        tempLedgerSnapshots,
+        targetLedgerSnapshots,
+        tempLegacySnapshots,
+        targetLegacySnapshots,
+        shiftSnapshots,
+    ] = await Promise.all([
+        Promise.all(dates.map(date => readSnapshot(refs.payoutEntry(db, date, tempUser.uid)))),
+        Promise.all(dates.map(date => readSnapshot(refs.payoutEntry(db, date, realUser.uid)))),
+        Promise.all(dates.map(date => readSnapshot(refs.legacyTip(db, tempUser.uid, date)))),
+        Promise.all(dates.map(date => readSnapshot(refs.legacyTip(db, realUser.uid, date)))),
+        Promise.all(dates.map(date => readSnapshot(refs.shift(db, date)))),
+    ]);
+
+    return {
+        tempLedgerEntries: docsFromSnapshots(dates, tempLedgerSnapshots)
+            .map(entry => ({ ...entry, data: { uid: tempUser.uid, ...entry.data } })),
+        targetLedgerEntries: docsFromSnapshots(dates, targetLedgerSnapshots),
+        tempLegacyTips: docsFromSnapshots(dates, tempLegacySnapshots),
+        targetLegacyTips: docsFromSnapshots(dates, targetLegacySnapshots),
+        shiftDocs: docsFromSnapshots(dates, shiftSnapshots),
+    };
 }
 
 export async function mergeTempStaffIntoAccount({
@@ -441,12 +647,19 @@ export async function mergeTempStaffIntoAccount({
     updatedBy = null,
     now,
     operationId = createTempStaffMergeOperationId(tempUser.uid, realUser.uid),
+    runTransaction: runTransactionFn = runTransaction,
+    refs = firestoreTempStaffMergeRefs,
+    readDoc = getDoc,
+    discoverLedgerEntries = discoverTempLedgerEntries,
+    discoverLegacyTips = discoverTempLegacyTips,
+    discoverUnsettledDates = discoverUnsettledShiftDates,
+    onProgress,
 }) {
     const updatedAt = timestamp(now);
     const [discoveredLedgerEntries, discoveredLegacyTips, unsettledShiftDates] = await Promise.all([
-        discoverTempLedgerEntries(db, tempUser.uid),
-        discoverTempLegacyTips(db, tempUser.uid),
-        discoverUnsettledShiftDates(db, tempUser.uid),
+        discoverLedgerEntries(db, tempUser.uid),
+        discoverLegacyTips(db, tempUser.uid),
+        discoverUnsettledDates(db, tempUser.uid),
     ]);
     // Both the money dates and the open nights the profile is still rostered on. The
     // merge has to rewrite all of them before deleting the profile, or settling one
@@ -456,139 +669,116 @@ export async function mergeTempStaffIntoAccount({
         ...discoveredLegacyTips.map(entry => entry.date),
         ...unsettledShiftDates,
     ]);
-    const auditRef = auditEventRef(db, operationId);
 
-    const result = await runTransaction(db, async (transaction) => {
-        const tempLedgerSnapshots = await Promise.all(discoveredLedgerEntries.map(entry => transactionRead(transaction, entry.ref)));
-        const tempLegacySnapshots = await Promise.all(discoveredLegacyTips.map(entry => transactionRead(transaction, entry.ref)));
-        const targetLedgerSnapshots = await Promise.all(discoveredDates.map(date =>
-            transactionRead(transaction, payoutLedgerEntryRef(db, date, realUser.uid))
-        ));
-        const targetLegacySnapshots = await Promise.all(discoveredDates.map(date =>
-            transactionRead(transaction, legacyTipRef(db, realUser.uid, date))
-        ));
-        const shiftSnapshots = await Promise.all(discoveredDates.map(date =>
-            transactionRead(transaction, shiftRef(db, date))
-        ));
+    const preflight = await readMergeDocsForDates({
+        readSnapshot: readDoc,
+        db,
+        refs,
+        dates: discoveredDates,
+        tempUser,
+        realUser,
+    });
 
-        const tempLedgerEntries = discoveredLedgerEntries
-            .map((entry, index) => {
-                const data = snapshotData(tempLedgerSnapshots[index]);
-                return data ? { date: entry.date, ref: entry.ref, data: { uid: tempUser.uid, ...data } } : null;
-            })
-            .filter(Boolean);
-        const tempLegacyTips = discoveredLegacyTips
-            .map((entry, index) => {
-                const data = snapshotData(tempLegacySnapshots[index]);
-                return data ? { date: entry.date, ref: entry.ref, data } : null;
-            })
-            .filter(Boolean);
-        const targetLedgerEntries = discoveredDates
-            .map((date, index) => {
-                const data = snapshotData(targetLedgerSnapshots[index]);
-                return data ? { date, data } : null;
-            })
-            .filter(Boolean);
-        const targetLegacyTips = discoveredDates
-            .map((date, index) => {
-                const data = snapshotData(targetLegacySnapshots[index]);
-                return data ? { date, data } : null;
-            })
-            .filter(Boolean);
-        const shiftDocs = discoveredDates
-            .map((date, index) => {
-                const data = snapshotData(shiftSnapshots[index]);
-                return data ? { date, data } : null;
-            })
-            .filter(Boolean);
+    const plan = buildTempStaffMergePlan({
+        tempUser,
+        realUser,
+        ...preflight,
+        operationId,
+        updatedAt,
+        updatedBy,
+    });
 
-        const plan = buildTempStaffMergePlan({
-            tempUser,
-            realUser,
-            tempLedgerEntries,
-            targetLedgerEntries,
-            tempLegacyTips,
-            targetLegacyTips,
-            shiftDocs,
-            operationId,
-            updatedAt,
-            updatedBy,
-        });
+    if (!plan.canMerge) {
+        throw new TempStaffMergeCollisionError(plan.collisions);
+    }
 
-        if (!plan.canMerge) {
-            throw new TempStaffMergeCollisionError(plan.collisions);
-        }
+    const chunks = chunkTempStaffMergePlan(plan);
+    const totalDates = chunks.reduce((sum, chunk) => sum + chunk.dates.length, 0);
+    let completedDates = 0;
 
-        const writeCount = plan.ledgerWrites.length
-            + plan.ledgerDeletes.length
-            + plan.ledgerWrites.length
-            + plan.legacyTipWrites.length
-            + plan.legacyTipDeletes.length
-            + plan.shiftUpdates.length
-            + 3;
+    onProgress?.({
+        phase: "moving",
+        completedChunks: 0,
+        totalChunks: chunks.length,
+        completedDates: 0,
+        totalDates,
+    });
 
-        if (writeCount > MAX_TRANSACTION_WRITES) {
-            throw new Error(`Temp staff merge would write ${writeCount} documents, above the ${MAX_TRANSACTION_WRITES} transaction safety limit.`);
-        }
-
-        plan.ledgerWrites.forEach(({ date, data }) => {
-            transaction.set(payoutLedgerMetaRef(db, date), {
-                date,
-                ledgerVersion: PAYOUT_LEDGER_VERSION,
+    for (let index = 0; index < chunks.length; index += 1) {
+        const chunk = chunks[index];
+        await runTransactionFn(db, async (transaction) => {
+            const liveDocs = await readMergeDocsForDates({
+                readSnapshot: (ref) => transaction.get(ref),
+                db,
+                refs,
+                dates: chunk.dates,
+                tempUser,
+                realUser,
+            });
+            const livePlan = buildTempStaffMergePlan({
+                tempUser,
+                realUser,
+                ...liveDocs,
+                operationId,
                 updatedAt,
                 updatedBy,
+            });
+
+            if (!livePlan.canMerge) {
+                throw new TempStaffMergeCollisionError(livePlan.collisions);
+            }
+
+            applyPlanWrites(transaction, {
+                db,
+                refs,
+                plan: livePlan,
+                tempUser,
+                realUser,
                 operationId,
-            }, { merge: true });
-            transaction.set(payoutLedgerEntryRef(db, date, realUser.uid), data);
+                updatedAt,
+                updatedBy,
+            });
         });
 
-        plan.ledgerDeletes.forEach(({ date }) => {
-            transaction.delete(payoutLedgerEntryRef(db, date, tempUser.uid));
+        completedDates += chunk.dates.length;
+        onProgress?.({
+            phase: "moving",
+            completedChunks: index + 1,
+            totalChunks: chunks.length,
+            completedDates,
+            totalDates,
         });
+    }
 
-        plan.legacyTipWrites.forEach(({ date, data }) => {
-            transaction.set(legacyTipRef(db, realUser.uid, date), data);
-        });
-
-        plan.legacyTipDeletes.forEach(({ date }) => {
-            transaction.delete(legacyTipRef(db, tempUser.uid, date));
-        });
-
-        plan.shiftUpdates.forEach(({ date, data }) => {
-            transaction.update(shiftRef(db, date), data);
-        });
-
-        transaction.update(userRef(db, realUser.uid), {
-            hasShiftHistory: true,
-            hasTipHistory: plan.migratedDates.length > 0 || plan.legacyTipWrites.length > 0 || plan.ledgerWrites.length > 0,
-        });
-        transaction.delete(tempStaffRef(db, tempUser.uid));
-        transaction.set(auditRef, buildMergeAuditEvent({
+    await runTransactionFn(db, async (transaction) => {
+        applyMergeFinalize(transaction, {
+            db,
+            refs,
             tempUser,
             realUser,
             operationId,
             updatedAt,
             updatedBy,
             plan,
-        }));
-
-        return {
-            operationId,
-            updatedAt,
-            migratedDates: plan.migratedDates,
-            rosterOnlyShiftDates: plan.rosterOnlyShiftDates,
-            updatedShiftDates: plan.shiftUpdates.map(update => update.date),
-        };
+        });
     });
+
+    const result = {
+        operationId,
+        updatedAt,
+        migratedDates: plan.migratedDates,
+        rosterOnlyShiftDates: plan.rosterOnlyShiftDates,
+        updatedShiftDates: plan.shiftUpdates.map(update => update.date),
+    };
 
     // The profile is deleted now, so re-check the open nights and hand back anything
     // that still names it - a shift saved between discovery and commit would land
-    // outside the transaction's read set. The caller must not report a plain success
+    // outside the written date set. The caller must not report a plain success
     // while this list has dates in it: those rosters point at a profile that is gone.
     // The merge itself is already committed here, so a failed re-check is reported as
     // an unverified merge rather than thrown as a failed one.
     try {
-        return { ...result, unresolvedShiftDates: await discoverUnsettledShiftDates(db, tempUser.uid) };
+        return { ...result, unresolvedShiftDates: await discoverUnsettledDates(db, tempUser.uid) };
     } catch (error) {
         console.error("Temp staff merge committed, but re-checking open floor plans failed:", error);
         return { ...result, unresolvedShiftDates: [], unresolvedShiftDatesUnknown: true };

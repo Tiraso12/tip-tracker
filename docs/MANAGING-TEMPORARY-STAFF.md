@@ -28,7 +28,8 @@ them is a night that can permanently block the merge.
    before they can be a merge target.
 3. Search for the temporary profile by name and open it. Its row is tagged **Temp**.
 4. Under **Temporary profile**, pick their real account in **Real employee account**.
-5. Tap **Merge profile** and confirm.
+5. Tap **Merge profile** and confirm. A long history may take a moment; wait for the
+   result, and do not delete the temporary profile if it fails.
 
 The merge moves their saved shifts and tip history onto the real account and removes the
 temporary profile. Nights that are still open - a floor plan built but not settled up - are

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { collection, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { useAuth } from "../../context/AuthContext";
+import { usePendingActions } from "../../context/PendingActionsContext";
 import { formatMonthDayRange, getCurrentWeek, toDateKey } from "../../utils/dateUtils";
 import {
     canApproveAccounts,
@@ -19,6 +20,7 @@ import {
     formatTempStaffMergeCollisionMessage,
     formatTempStaffMergeResultMessage,
     isTempStaffMergeCollisionError,
+    MERGE_DATES_PER_CHUNK,
     mergeTempStaffIntoAccount,
 } from "../../utils/tempStaffMergePersistence";
 import PayStatement from "../Pay/PayStatement";
@@ -243,6 +245,7 @@ function ManagementActions({
     person,
     allEmployees,
     loadingId,
+    mergeStatus,
     updateUser,
     deleteTemp,
     mergeTemp,
@@ -328,7 +331,7 @@ function ManagementActions({
                 <div className="border-b border-[var(--color-line)] px-5 py-4 sm:px-6">
                     <h3 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">Temporary profile</h3>
                     <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
-                        Merge as soon as the real account is approved. The rule is per date and all-or-nothing: if both profiles have saved payout history on even one same date, the entire merge stops and nothing moves.
+                        Merge as soon as the real account is approved. The rule is per date and all-or-nothing: if both profiles have saved payout history on even one same date, the entire merge stops and nothing moves. A long history may take a moment; wait for the result.
                     </p>
                 </div>
                 <div className="space-y-3 px-5 py-4 sm:px-6">
@@ -352,7 +355,7 @@ function ManagementActions({
                             onClick={() => mergeTemp(person, mergeTarget)}
                             disabled={busy || !mergeTarget}
                         >
-                            Merge profile
+                            {busy ? "Moving history…" : "Merge profile"}
                         </Button>
                         <Button
                             className="min-h-11"
@@ -363,6 +366,11 @@ function ManagementActions({
                             Delete temporary profile
                         </Button>
                     </div>
+                    {mergeStatus ? (
+                        <p className="text-xs leading-relaxed text-[var(--color-ink-soft)]" role="status">
+                            {mergeStatus}
+                        </p>
+                    ) : null}
                 </div>
             </Card>
         );
@@ -460,6 +468,7 @@ function PersonView({
     allEmployees,
     onBack,
     loadingId,
+    mergeStatus,
     updateUser,
     deleteTemp,
     mergeTemp,
@@ -495,6 +504,7 @@ function PersonView({
                 person={person}
                 allEmployees={allEmployees}
                 loadingId={loadingId}
+                mergeStatus={mergeStatus}
                 updateUser={updateUser}
                 deleteTemp={deleteTemp}
                 mergeTemp={mergeTemp}
@@ -531,7 +541,9 @@ function PersonView({
 
 function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
     const { user } = useAuth();
+    const { beginPendingAction } = usePendingActions();
     const [loadingId, setLoadingId] = useState(null);
+    const [mergeStatus, setMergeStatus] = useState("");
     const [unregisteredStaff, setUnregisteredStaff] = useState([]);
     const [selectedKey, setSelectedKey] = useState(null);
     const [search, setSearch] = useState("");
@@ -612,17 +624,24 @@ function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
         if (!realUser) return;
         const confirmed = window.confirm(
             `Merge temporary profile '${personName(tempPerson)}' into ${personName(realUser)}?\n\n` +
-            "This merge is per date and all-or-nothing. A same-date payout on both profiles stops the entire merge and changes nothing. If it succeeds, saved payout history moves to the real account, every floor plan still listing the temporary profile is updated, and the temporary profile is removed."
+            "This merge is per date and all-or-nothing. A same-date payout on both profiles stops the entire merge and changes nothing. If it succeeds, saved payout history moves to the real account, every floor plan still listing the temporary profile is updated, and the temporary profile is removed.\n\nA long history may take a moment. Wait for the result; do not delete the temporary profile if it fails."
         );
         if (!confirmed) return;
 
         setLoadingId(tempPerson.uid);
+        setMergeStatus("Moving this history now. Wait for the result.");
+        const endPendingAction = beginPendingAction();
         try {
             const result = await mergeTempStaffIntoAccount({
                 db,
                 tempUser: tempPerson,
                 realUser,
                 updatedBy: user?.uid || null,
+                onProgress: ({ completedDates, totalDates }) => {
+                    if (totalDates > MERGE_DATES_PER_CHUNK) {
+                        setMergeStatus(`Moving history (${completedDates} of ${totalDates} dates). Wait for the result.`);
+                    }
+                },
             });
             await fetchUnregistered();
             await refreshEmployees();
@@ -636,7 +655,9 @@ function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
                 alert("The temporary profile could not be merged. Please try again.");
             }
         } finally {
+            endPendingAction();
             setLoadingId(null);
+            setMergeStatus("");
         }
     };
 
@@ -665,6 +686,7 @@ function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
                 allEmployees={rosterPeople.filter((person) => !person.isTemp)}
                 onBack={() => setSelectedKey(null)}
                 loadingId={loadingId}
+                mergeStatus={mergeStatus}
                 updateUser={updateUser}
                 deleteTemp={deleteTemp}
                 mergeTemp={mergeTemp}
