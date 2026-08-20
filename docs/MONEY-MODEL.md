@@ -112,10 +112,12 @@ requires a non-empty `firstName` on UPDATE and Firestore validates the merged do
 legacy profile with no first name refuses the whole closeout batch and makes every shift that
 person worked unsaveable. **This is documented in full, with the exact failure mode and the
 fix procedure, in [DEPLOYING.md](DEPLOYING.md)** - read that before deploying `firestore.rules`
-to any project, and take a `npm run backup:live` save point before the backfill or
-`migrate:payout-ledger`, since those payroll writes have no undo. Nothing runs the backfill
-automatically, and nothing should - the captain settled that on 2026-08-14, because a predeploy
-hook would fire a production data mutation on every future deploy with nobody reading the plan.
+to any project, and take a `npm run backup:live` save point before the backfill, since that
+payroll write has no undo. Nothing runs the backfill automatically, and nothing should - the
+captain settled that on 2026-08-14, because a predeploy hook would fire a production data
+mutation on every future deploy with nobody reading the plan. (`migrate:payout-ledger` is a
+separate, already-completed migration - see [DEPLOYING.md](DEPLOYING.md#the-payout-ledger-migration-is-already-done)
+for its status.)
 
 ## The Pay Statement
 
