@@ -74,12 +74,13 @@ Read the output before going further. It leads with four numbers - scanned, will
 valid, cannot fix here - then lists every profile it will write and the exact value it will set, then
 every profile it **cannot** fix and why.
 
-**The "cannot fix here" list is the part that needs you.** The script copies a person's existing
-username into `firstName` (the restaurant's policy: their real name can be corrected later), so a
-profile with no username, or one over the 80 character cap, has nothing to copy. It will not invent
-or truncate a name - a made-up or mangled first name reads as legitimate and would never be
-corrected. Give each of those people a first name by hand in the Firebase console, then run the dry
-run again.
+**The "cannot fix here" list is the part that needs you.** (The judgment behind it is
+`planUserProfileNameBackfill` in `src/utils/userProfileNameBackfill.js`.) The script copies a
+person's existing username into `firstName` (the restaurant's policy: their real name can be
+corrected later), so a profile with no username, or one over the 80 character cap, has nothing to
+copy. It will not invent or truncate a name - a made-up or mangled first name reads as legitimate
+and would never be corrected. Give each of those people a first name by hand in the Firebase
+console, then run the dry run again.
 
 While anything is on that list the script writes **nothing at all** and exits non-zero. A partial run
 would report success while those profiles still blocked their shifts.

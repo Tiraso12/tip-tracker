@@ -89,6 +89,27 @@ The specs themselves need no edits: `initializeTestEnvironment` discovers
 Firestore through the `FIREBASE_EMULATOR_HUB` that `emulators:exec` exports, and
 the auth REST calls read `FIREBASE_AUTH_EMULATOR_HOST`.
 
+### Driving Playwright Against An Already-Running Stack
+
+`npm run test:e2e` starts its own emulators and collides on the `firebase.json` ports with an
+already-running `npm run dev:local`. To drive Playwright against that running stack instead:
+
+```bash
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8081 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npx playwright test
+```
+
+The specs clear Firestore and Auth, so re-seed after with those same vars plus:
+
+```bash
+GCLOUD_PROJECT=demo-tip-tracker-test node scripts/seed-emulators.mjs
+```
+
+### The `.env.test.local` Trap
+
+If every e2e test fails at login with "network request failed", look for a gitignored
+`.env.test.local`: it overrides `.env.test`'s emulator ports and outlives the session that wrote
+it in a reused worktree.
+
 ## Branching Model
 
 - `main` is live production.
