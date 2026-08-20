@@ -1,14 +1,24 @@
 # Before you change production data
 
 This project has no deploy procedure written down, and this document does not invent one. It records
-the two captain-run steps that are invisible from the outside and expensive to skip: a live backup
-before any payroll mutation, then the user profile name backfill before the rules go out.
+the captain-run steps that are invisible from the outside and expensive to skip: a live backup before
+any payroll mutation, then the user profile name backfill before the rules go out.
+
+## The payout-ledger migration is already done
+
+**`npm run migrate:payout-ledger` has already been run against production. Do not run it again.**
+It was a one-time conversion of legacy `shifts`-doc payout data into the `payouts/{date}/entries/*`
+ledger format. Production has no more legacy data left to convert, so there is nothing left for it to
+do - a re-run against an already-migrated project is, at best, a no-op, and this note exists so nobody
+has to work that out from the script before trusting it. If a genuinely new one-time data migration is
+ever needed, write it as its own script; do not repurpose this one.
 
 ## Take a live backup first
 
-Name backfill and payout-ledger migration are one-way writes against real pay records. There is no
+The user profile name backfill (below) is a one-way write against real pay records. There is no
 in-app undo. A screenshot, a dry-run log, and a git tag cannot put the old documents back. The save
-point is a point-in-time export of production, taken **before** either mutation.
+point is a point-in-time export of production, taken **before** that mutation - or before any other
+one-way script that writes to production payroll data.
 
 ```bash
 TIP_TRACKER_ALLOW_LIVE_MIGRATION=true TIP_TRACKER_BACKUP_BUCKET=<locked-backup-bucket> npm run backup:live
@@ -115,7 +125,7 @@ value of the dry run is that a person looks at the "cannot fix here" list and de
 run has no one to decide, and its most likely failure - refusing to write and failing the deploy - is
 a worse outcome than the problem it was added to prevent.
 
-The live backup is the same kind of command: captain-run, once, immediately before the first
-mutation. It is not a predeploy hook either.
+The live backup is the same kind of command: captain-run, immediately before the mutation. It is
+not a predeploy hook either.
 
 Run the backfill by hand, once, immediately before the rules go out.
