@@ -85,6 +85,23 @@ export function sumPayStatementRows(rows = []) {
 }
 
 /**
+ * The biweekly pay period the paycheck line belongs to: the period that
+ * contains the viewed week's start. The statement follows the week on screen.
+ * An in-progress period is still THAT period - never the previous already-paid
+ * one, even when today is still inside it.
+ */
+export function getPayStatementPeriod(startDate) {
+    return getBiweeklyPeriod(startDate || new Date());
+}
+
+/** Advice lands a week after the period closes. */
+export function getPaycheckAdviceDate(periodEnd) {
+    const advice = new Date(periodEnd);
+    advice.setDate(periodEnd.getDate() + 7);
+    return advice;
+}
+
+/**
  * The exact set of ledger documents a statement needs: the days it lists, plus
  * the pay period those days sit in, and nothing else. A statement reads one
  * document per date and never lists a collection, so this window IS the read
@@ -92,7 +109,7 @@ export function sumPayStatementRows(rows = []) {
  */
 export function getPayStatementSubscriptionKeys(startDate, endDate) {
     if (!startDate || !endDate) return [];
-    const period = getBiweeklyPeriod(startDate);
+    const period = getPayStatementPeriod(startDate);
     const keys = new Set([
         ...getDateKeys(startDate, endDate),
         ...getDateKeys(period.start, period.end),

@@ -1,10 +1,14 @@
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getDateKeys, toDateKey } from "./dateUtils.js";
 import {
     PAY_RECORDS_START_KEY,
     buildPayStatementRows,
     getNonCashDayTotal,
+    getPayStatementPeriod,
     getPayStatementSubscriptionKeys,
+    getPaycheckAdviceDate,
     sumPayStatementRows,
 } from "./payStatement.js";
 
@@ -77,6 +81,52 @@ test("the subscription window is the listed days plus their pay period, and noth
     assert.equal(keys.at(-1), "2026-08-13");
     assert.equal(keys.length, 14);
     assert.deepEqual(getPayStatementSubscriptionKeys(null, null), []);
+});
+
+test("an in-progress week's paycheck is that week's period, not the previous already-paid one", () => {
+    // Reproduction, 2026-08-21: week of Fri Aug 21 sits in Aug 14-27, which has
+    // not ended yet. Snapping to the previous period because the current one is
+    // still open is what put last period's paycheck (Jul 31-Aug 13 / Aug 20)
+    // on this week's screen while the day list followed Aug 21-27.
+    const startDate = new Date(2026, 7, 21);
+    const todayKey = "2026-08-21";
+    const period = getPayStatementPeriod(startDate);
+    const periodKeys = getDateKeys(period.start, period.end);
+    const lastPeriodNight = { tip: 1798.5, gratuity: 745.82, cash: 40 };
+    const totals = sumPayStatementRows(buildPayStatementRows({
+        "2026-08-07": lastPeriodNight,
+        "2026-08-13": lastPeriodNight,
+    }, periodKeys, todayKey));
+
+    assert.equal(toDateKey(period.start), "2026-08-14");
+    assert.equal(toDateKey(period.end), "2026-08-27");
+    assert.equal(toDateKey(getPaycheckAdviceDate(period.end)), "2026-09-03");
+    assert.equal(periodKeys[0], "2026-08-14");
+    assert.equal(periodKeys.at(-1), "2026-08-27");
+    assert.equal(totals.ctp, 0);
+    assert.equal(totals.grt, 0);
+    assert.equal(totals.total, 0);
+
+    const keys = getPayStatementSubscriptionKeys(startDate, new Date(2026, 7, 27));
+    assert.equal(keys[0], "2026-08-14");
+    assert.equal(keys.at(-1), "2026-08-27");
+});
+
+test("a completed past week keeps its own period rather than jumping forward", () => {
+    const period = getPayStatementPeriod(new Date(2026, 7, 7));
+
+    assert.equal(toDateKey(period.start), "2026-07-31");
+    assert.equal(toDateKey(period.end), "2026-08-13");
+    assert.equal(toDateKey(getPaycheckAdviceDate(period.end)), "2026-08-20");
+});
+
+test("the statement component uses the viewed week's period and never snaps back", () => {
+    const source = readFileSync(new URL("../components/Pay/PayStatement.jsx", import.meta.url), "utf8");
+
+    assert.match(source, /getPayStatementPeriod/);
+    assert.match(source, /getPaycheckAdviceDate/);
+    assert.doesNotMatch(source, /getPreviousPayPeriod/);
+    assert.doesNotMatch(source, /selectedPeriodEndKey/);
 });
 
 test("the history boundary is a fixed date, not a rolling window", () => {

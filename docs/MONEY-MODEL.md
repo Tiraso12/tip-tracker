@@ -128,6 +128,11 @@ in the range listed worked or not, CTP/GRT/Total in the payout table's own words
 cash on its own line and never in a total (see the total rule above for why the pay-period block
 carries none), the pay period with its advice date, and the history boundary
 `PAY_RECORDS_START_KEY` (`src/utils/payStatement.js`, a named date and never a rolling window).
+The paycheck line, period dates, and CTP/GRT/period-total follow the week on screen via
+`getPayStatementPeriod` (the biweekly period that contains that week's start). Do not snap to
+the previous already-paid period because the current one has not closed - that is what put last
+period's paycheck on an in-progress week. Cash stays weekly on the viewed week. A fully past
+week already uses that week's own period.
 No charts, no trend, no average, no best day, no pool maths, no comparison to colleagues - the
 captain has had that shape removed twice. The component decides neither who may read it
 (firestore.rules does, by uid or captain access) nor the identity header, and it never writes.

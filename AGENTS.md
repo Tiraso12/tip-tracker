@@ -121,7 +121,9 @@ Pattern: shell, chrome, and Pullenberg-kit conventions in [docs/UI-CONVENTIONS.m
 ## Pay statement (src/components/Pay/)
 Handles the pay stub: one range of days, CTP/GRT/Total/cash, for a person.
 Key files: `PayStatement.jsx` (the shared component), `PayView.jsx` (your own pay - Team's person
-view renders `PayStatement.jsx` directly for a colleague's).
+view renders `PayStatement.jsx` directly for a colleague's), `src/utils/payStatement.js`
+(`getPayStatementPeriod` is the paycheck period: the biweekly block that contains the viewed
+week's start, never the previous already-paid period because the current one is still open).
 Pattern: pay stub not a dashboard, no charts or comparisons - [docs/MONEY-MODEL.md § The Pay Statement](docs/MONEY-MODEL.md#the-pay-statement).
 
 ## Account, app bar, and auth (src/components/Account/, src/components/AppBar/, src/components/Auth/)

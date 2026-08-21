@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import DataService from "../../services/dataService";
-import { formatMonthDay, formatMonthDayRange, getBiweeklyPeriod, getDateKeys, toDateKey } from "../../utils/dateUtils";
+import { formatMonthDay, formatMonthDayRange, getDateKeys, toDateKey } from "../../utils/dateUtils";
 import {
     PAY_RECORDS_START_LABEL,
     buildPayStatementRows,
     fmtMoney,
+    getPayStatementPeriod,
     getPayStatementSubscriptionKeys,
+    getPaycheckAdviceDate,
     sumPayStatementRows,
 } from "../../utils/payStatement";
 import { roleShortLabel } from "../../utils/roleLabels";
@@ -45,12 +47,6 @@ function InfoIcon() {
 }
 
 const plural = (count, one, many) => (count === 1 ? one : many);
-
-function getPreviousPayPeriod(period) {
-    const previousDay = new Date(period.start);
-    previousDay.setDate(previousDay.getDate() - 1);
-    return getBiweeklyPeriod(previousDay);
-}
 
 function DateBlock({ date, active }) {
     const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date);
@@ -141,20 +137,16 @@ function PayStatement({ person, startDate, endDate, eyebrow, heading, voice = "o
     const personUid = person?.uid || null;
     const [allData, setAllData] = useState({});
 
-    const selectedPeriod = useMemo(() => getBiweeklyPeriod(startDate || new Date()), [startDate]);
     const todayKey = toDateKey(new Date());
-    const period = useMemo(() => {
-        const selectedPeriodEndKey = toDateKey(selectedPeriod.end);
-        return selectedPeriodEndKey >= todayKey ? getPreviousPayPeriod(selectedPeriod) : selectedPeriod;
-    }, [selectedPeriod, todayKey]);
+    // Same period as getPayStatementSubscriptionKeys: the biweekly block that
+    // contains the viewed week's start. Do not snap to the previous period
+    // because this one is still open - the statement follows the week on screen.
+    const period = useMemo(() => getPayStatementPeriod(startDate), [startDate]);
     const rangeKeys = useMemo(() => getDateKeys(startDate, endDate), [startDate, endDate]);
     const periodKeys = useMemo(() => getDateKeys(period.start, period.end), [period]);
     const subscriptionKeys = useMemo(
-        () => Array.from(new Set([
-            ...getPayStatementSubscriptionKeys(startDate, endDate),
-            ...periodKeys,
-        ])).sort(),
-        [startDate, endDate, periodKeys]
+        () => getPayStatementSubscriptionKeys(startDate, endDate),
+        [startDate, endDate]
     );
 
     // Whose money is on screen has to change the instant the person does -
@@ -188,12 +180,7 @@ function PayStatement({ person, startDate, endDate, eyebrow, heading, voice = "o
         [allData, periodKeys, todayKey]
     );
 
-    // The advice lands a week after the period closes.
-    const adviceDate = useMemo(() => {
-        const advice = new Date(period.end);
-        advice.setDate(period.end.getDate() + 7);
-        return advice;
-    }, [period]);
+    const adviceDate = useMemo(() => getPaycheckAdviceDate(period.end), [period]);
 
     return (
         <div className="space-y-4" data-testid="pay-statement">
