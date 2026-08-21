@@ -83,9 +83,10 @@ branch model - read it rather than trusting a summary here.
   `src/utils/closeoutPersistence.js`; a new `auditEvents` type or key must also be whitelisted in
   `firestore.rules`, or the whole batch is rejected. Details:
   [docs/DATA-PERSISTENCE.md](docs/DATA-PERSISTENCE.md).
-- Before deploying `firestore.rules`, or before the profile-name backfill or the payout-ledger
-  migration, take a live save point (`npm run backup:live`) - those payroll writes have no undo.
-  Full prerequisite order: [docs/DEPLOYING.md](docs/DEPLOYING.md).
+- Before deploying `firestore.rules`, or before the profile-name backfill, take a live save point
+  (`npm run backup:live`) - that payroll write has no undo. `migrate:payout-ledger` already ran
+  against production and is not a step to repeat. Full prerequisite order and status:
+  [docs/DEPLOYING.md](docs/DEPLOYING.md).
 
 ## Patterns
 
