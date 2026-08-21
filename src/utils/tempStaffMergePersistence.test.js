@@ -5,6 +5,7 @@ import {
     buildTempStaffMergePlan,
     chunkTempStaffMergePlan,
     countTempStaffMergeWrites,
+    formatTempStaffMergeCollisionMessage,
     formatTempStaffMergeResultMessage,
     isMergedFromThisTempStaff,
     isTempStaffMergeCollisionError,
@@ -569,6 +570,60 @@ test("a same-date collision stops the live merge with no writes", async () => {
 
     assert.deepEqual(harness.writes, []);
     assert.deepEqual(harness.store, storeBefore);
+});
+
+test("a collision found after the first piece has committed reports the dates that already moved", async () => {
+    const dates = Array.from({ length: 20 }, (_, index) => `2026-05-${String(index + 1).padStart(2, "0")}`);
+    const clashingDate = dates[MERGE_DATES_PER_CHUNK];
+    const harness = createMergeHarness();
+    seedLongHistory(harness.store, { dates });
+
+    let thrown = null;
+    await assert.rejects(
+        () => mergeTempStaffIntoAccount({
+            db: {},
+            tempUser,
+            realUser,
+            updatedBy: "adminUid",
+            refs: harness.refs,
+            readDoc: harness.readDoc,
+            runTransaction: harness.runTransaction,
+            discoverLedgerEntries: async () => dates.map(date => ({
+                date,
+                data: harness.store[`payouts/${date}/entries/${tempUser.uid}`],
+            })),
+            discoverLegacyTips: async () => [],
+            discoverUnsettledDates: async () => [],
+            // The clash appears between pieces: a captain settles that night for the real
+            // account while the merge is still running.
+            onProgress: ({ completedChunks }) => {
+                if (completedChunks === 1) {
+                    harness.store[`payouts/${clashingDate}/entries/${realUser.uid}`] = ledgerEntry(clashingDate, realUser.uid, {
+                        source: "closeout",
+                    }).data;
+                }
+            },
+        }),
+        (error) => {
+            thrown = error;
+            return isTempStaffMergeCollisionError(error);
+        }
+    );
+
+    assert.deepEqual(thrown.movedDates, dates.slice(0, MERGE_DATES_PER_CHUNK));
+    assert.equal(thrown.collisions[0].date, clashingDate);
+    assert.ok(harness.store[`unregisteredStaff/${tempUser.uid}`], "the temp profile survives a stopped merge");
+
+    const message = formatTempStaffMergeCollisionMessage(thrown.collisions, thrown.movedDates);
+    assert.ok(!message.includes("No records were changed"));
+    assert.ok(message.includes(dates[0]));
+    assert.ok(message.includes(clashingDate));
+});
+
+test("a collision found before any write still says nothing changed", () => {
+    const message = formatTempStaffMergeCollisionMessage([{ date: "2026-05-28" }], []);
+    assert.ok(message.includes("No records were changed"));
+    assert.ok(message.includes("2026-05-28"));
 });
 
 test("a retry after a partial success finishes the remaining dates and does not overwrite", async () => {

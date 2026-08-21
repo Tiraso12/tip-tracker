@@ -59,8 +59,16 @@ Nothing is damaged and nothing is lost. The app refuses on purpose: writing the 
 payout onto a date the real account already has would quietly overwrite a payout the
 employee may already have been paid on.
 
-It is all or nothing. If even one date conflicts, none of the temporary history moves over,
-including the dates that would have been fine.
+Almost always the clash is spotted before anything is written, and it is all or nothing: if
+even one date conflicts, none of the temporary history moves over, including the dates that
+would have been fine.
+
+A long history moves in pieces, so once in a while the clash only turns up after some of the
+pieces have landed. Then the message says **Merge stopped part-way** and lists the dates that
+already moved to the real account - those are off the temporary profile now. Leave the
+temporary profile alone, sort out the clashing date, and run the merge again to move the rest;
+re-running does not touch what already moved. The same is true of a merge that fails for any
+other reason part-way through: run it again rather than deleting anything.
 
 Older history on unrelated dates is not a problem by itself. An employee can already have
 weeks of shifts under their own account and the merge will still go through, as long as none

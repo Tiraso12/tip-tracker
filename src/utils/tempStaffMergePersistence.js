@@ -28,11 +28,16 @@ export const MERGE_DATES_PER_CHUNK = 12;
 const timestamp = (now) => now || new Date().toISOString();
 
 export class TempStaffMergeCollisionError extends Error {
-    constructor(collisions) {
+    constructor(collisions, movedDates = []) {
         const dates = collisions.map(collision => collision.date).join(", ");
         super(`Temp staff merge stopped because the target account already has saved payouts on: ${dates}`);
         this.name = "TempStaffMergeCollisionError";
         this.collisions = collisions;
+        // Dates whose writes had already committed when this was thrown. The preflight
+        // check throws with none; a clash that only appears once the pieces are running
+        // throws with everything the earlier pieces already moved, so nothing downstream
+        // can tell the manager the merge changed nothing when it changed some of it.
+        this.movedDates = movedDates;
     }
 }
 
@@ -640,6 +645,19 @@ async function readMergeDocsForDates({
     };
 }
 
+// Every piece of a chunked merge commits on its own, so a failure part-way through
+// leaves the dates before it already on the real account. Stamping the dates that are
+// already committed onto whatever error comes out is what lets the manager be told the
+// truth: the merge is not all-or-nothing once the pieces start landing.
+function runInMergeChunk(movedDates, run) {
+    return run().catch((error) => {
+        if (error && typeof error === "object") {
+            error.movedDates = [...movedDates];
+        }
+        throw error;
+    });
+}
+
 export async function mergeTempStaffIntoAccount({
     db,
     tempUser,
@@ -704,9 +722,11 @@ export async function mergeTempStaffIntoAccount({
         totalDates,
     });
 
+    const movedDates = [];
+
     for (let index = 0; index < chunks.length; index += 1) {
         const chunk = chunks[index];
-        await runTransactionFn(db, async (transaction) => {
+        await runInMergeChunk(movedDates, () => runTransactionFn(db, async (transaction) => {
             const liveDocs = await readMergeDocsForDates({
                 readSnapshot: (ref) => transaction.get(ref),
                 db,
@@ -738,8 +758,9 @@ export async function mergeTempStaffIntoAccount({
                 updatedAt,
                 updatedBy,
             });
-        });
+        }));
 
+        movedDates.push(...chunk.dates);
         completedDates += chunk.dates.length;
         onProgress?.({
             phase: "moving",
@@ -750,7 +771,7 @@ export async function mergeTempStaffIntoAccount({
         });
     }
 
-    await runTransactionFn(db, async (transaction) => {
+    await runInMergeChunk(movedDates, () => runTransactionFn(db, async (transaction) => {
         applyMergeFinalize(transaction, {
             db,
             refs,
@@ -761,7 +782,7 @@ export async function mergeTempStaffIntoAccount({
             updatedBy,
             plan,
         });
-    });
+    }));
 
     const result = {
         operationId,
@@ -785,11 +806,26 @@ export async function mergeTempStaffIntoAccount({
     }
 }
 
-export function formatTempStaffMergeCollisionMessage(collisions = []) {
+// The collision is usually caught before anything is written, but a merge long enough to
+// run in pieces can hit one after earlier pieces have already committed. The two cases get
+// different copy: only the first one may say nothing changed.
+export function formatTempStaffMergeCollisionMessage(collisions = [], movedDates = []) {
     const dates = collisions.map(collision => collision.date).join(", ");
+    const clash = `That date is saved under both the temporary profile and the real account, so moving it over could overwrite a payout already made.`;
+    const nextTime = `Next time, merge the temporary profile as soon as the employee's account is approved, before they start working under their own login.`;
+
+    if (movedDates.length > 0) {
+        const moved = movedDates.join(", ");
+        return `Merge stopped part-way. The target account already has saved payout history on ${dates}.
+
+${clash} ${movedDates.length === 1 ? "This date had" : "These dates had"} already moved to the real account before it stopped, and ${movedDates.length === 1 ? "is" : "are"} no longer on the temporary profile: ${moved}. Everything else stays on the temporary profile.
+
+Do not delete the temporary profile. Sort out the clashing date, then run the merge again to move the rest - re-running is safe and leaves the dates that already moved alone. ${nextTime}`;
+    }
+
     return `Merge stopped. The target account already has saved payout history on ${dates}. No records were changed.
 
-That date is saved under both the temporary profile and the real account, so moving it over could overwrite a payout already made. The whole merge is stopped, including the other dates, and this history stays on the temporary profile. Next time, merge the temporary profile as soon as the employee's account is approved, before they start working under their own login.`;
+${clash} The whole merge is stopped, including the other dates, and this history stays on the temporary profile. ${nextTime}`;
 }
 
 // What the manager is told after a merge. It reports what actually moved rather

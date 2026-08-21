@@ -650,9 +650,9 @@ function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
         } catch (error) {
             console.error("Failed to link account:", error);
             if (isTempStaffMergeCollisionError(error)) {
-                alert(formatTempStaffMergeCollisionMessage(error.collisions));
+                alert(formatTempStaffMergeCollisionMessage(error.collisions, error.movedDates));
             } else {
-                alert("The temporary profile could not be merged. Please try again.");
+                alert("The temporary profile could not be merged. A long history moves in pieces, so some dates may already be on the real account. Do not delete the temporary profile - run the merge again to move whatever is left. Re-running is safe.");
             }
         } finally {
             endPendingAction();
