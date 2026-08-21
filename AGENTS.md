@@ -27,7 +27,7 @@ Full table: [README.md § Tech Stack](README.md#tech-stack).
 ## Commands
 
 Local development and validation are emulator-first. **`docs/TESTING.md` is authoritative** for
-the Mac setup, the `npm run dev:local` loop, the `npm run test:all` gate, and the `main`/`develop`
+the Mac setup, the `npm run dev:local` loop, the `npm run test:all` gate, and the `main`
 branch model - read it rather than trusting a summary here.
 
 - `npm run dev:local` - one-command local loop against seeded Firebase emulators
@@ -68,12 +68,12 @@ branch model - read it rather than trusting a summary here.
 
 ## Boundaries
 
-- **This project is local-first**: local `develop` regularly runs many commits ahead of
-  `origin/develop`, which is not pushed on every change. A fresh worktree/branch can silently
-  start dozens of commits behind. Before branching, or before trusting a "my base is current"
-  check, diff your branch point against the local `develop` branch
-  (`git log --oneline <your-base>..develop`), not `origin/develop` - the two can disagree for a
-  long stretch, and comparing against the wrong one gives false confidence.
+- **`main` is the integration branch.** New work branches off `main` and merges back to `main`.
+  `develop` is no longer integration - do not start a branch from it, and do not treat
+  `origin/develop` as current. Before branching, or before trusting a "my base is current"
+  check, diff your branch point against local `main`
+  (`git log --oneline <your-base>..main`), not `develop`.
+- **Ship through no-mistakes.** It is the default workflow; yolo stays off. PRs target `main`.
 - **A negative CTP is correct. Never add a guard, a clamp, or a floor on it.** The captain
   declined that guard deliberately - see
   [docs/MONEY-MODEL.md § A negative CTP is correct](docs/MONEY-MODEL.md#a-negative-ctp-is-correct).

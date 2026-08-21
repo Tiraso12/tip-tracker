@@ -112,12 +112,12 @@ it in a reused worktree.
 
 ## Branching Model
 
-- `main` is live production.
-- `develop` is integration.
-- Feature and bug-fix branches start from `develop`.
-- Merge feature work back to `develop` after local emulator validation.
-- Promote `develop` to `main` only after explicit approval.
+- `main` is the integration branch and the production line.
+- Feature and bug-fix branches start from `main`.
+- Merge feature work back to `main` after local emulator validation (`npm run test:all`).
+- `develop` is no longer the integration branch. Do not branch from it or merge to it.
 - Deploy production only from a clean, approved `main`.
+- The default ship path is `no-mistakes`; yolo stays off. PRs target `main`. Do not merge your own PR.
 
 ## What The Tests Cover
 
