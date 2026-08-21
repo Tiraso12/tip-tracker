@@ -1,33 +1,236 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import EmployeePool from './EmployeePool';
-import TeamAssignmentPanel from './TeamAssignmentPanel';
+import ScrollRail from '../ScrollRail';
 import { ROLE_POINTS, RUNNER_FLAT_RATE } from '../../../utils/constants';
+import { ASSIGNABLE_ROLES, FLOOR_PLAN_ROLES, roleInitial, roleLabel, rolePluralLabel, roleShortLabel } from '../../../utils/roleLabels';
+import { firstNameFor, tempStaffNameFor, tempStaffRosterNameFor } from '../../../utils/userNames';
 import { db } from '../../../config/firebase';
 import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 
-const RESTAURANT_ROLE_OPTIONS = [
-    { value: "captain", label: "Captain", badge: "C" },
-    { value: "server", label: "Server", badge: "S" },
-    { value: "back", label: "Back", badge: "B" },
-    { value: "assistant", label: "Assistant", badge: "A" },
-];
+const plural = (count, one, many) => count === 1 ? one : many;
 
-const ROLE_BADGES = RESTAURANT_ROLE_OPTIONS.reduce((acc, option) => {
-    acc[option.value] = option.badge;
-    return acc;
-}, {});
+const ROLE_FILTERS = ASSIGNABLE_ROLES.map(role => ({
+    value: role,
+    label: role === 'bartender' ? roleShortLabel(role) : rolePluralLabel(role),
+}));
+
+const poolNameFor = (employee) => employee?.isUnregistered
+    ? tempStaffNameFor(employee)
+    : firstNameFor(employee);
+
+const poolActionNameFor = (employee) => employee?.isUnregistered
+    ? tempStaffRosterNameFor(employee)
+    : firstNameFor(employee);
+
+const memberTag = (member) => {
+    const points = member.points;
+    const tag = roleInitial(member.role);
+    return points === null || points === undefined || points === ""
+        ? tag
+        : `${tag} · ${points}`;
+};
+
+function TeamMemberChip({ member, teamId, canEditRole, draggable, onDragStart, onRemove, onRoleChange }) {
+    const tag = memberTag(member);
+
+    return (
+        <span
+            className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] pl-2.5 pr-1 text-[12.5px] font-medium text-[var(--color-ink)] shadow-[0_1px_0_rgba(15,23,42,0.02)]"
+            draggable={draggable}
+            onDragStart={onDragStart}
+        >
+            <span className="min-w-0 max-w-[8.5rem] truncate">{member.name}</span>
+            {canEditRole ? (
+                <span className="relative shrink-0">
+                    <span className="inline-flex h-[22px] items-center text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--color-accent)]">
+                        {tag}
+                    </span>
+                    <select
+                        name={`floor-role-${member.uid}`}
+                        value={FLOOR_PLAN_ROLES.includes(member.role) ? member.role : "server"}
+                        onChange={(e) => onRoleChange(teamId, member.uid, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        aria-label={`${member.name} worked role`}
+                    >
+                        {FLOOR_PLAN_ROLES.map(role => (
+                            <option key={role} value={role}>{roleShortLabel(role)}</option>
+                        ))}
+                    </select>
+                </span>
+            ) : (
+                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--color-accent)]">
+                    {tag}
+                </span>
+            )}
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                aria-label={`Remove ${member.name}`}
+                className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-sm leading-none text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
+            >
+                ×
+            </button>
+        </span>
+    );
+}
+
+function TeamCard({
+    section,
+    isOver,
+    tappable,
+    dragEnabled,
+    onOpen,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    onDragStart,
+    onRemove,
+    onRoleChange,
+}) {
+    const { id, title, members, canEditRole } = section;
+    const populated = members.length > 0;
+
+    // Team-count (+Team/-Team) lives in the dedicated TeamCountStepper in the summary
+    // row above, not inside the card - having it in both places read as two controls
+    // for one job. The whole card is the "add people" trigger (no separate +Add
+    // button); which team a tap targets is decided entirely by which card was tapped,
+    // so the sheet it opens has no second team-switcher re-asking the same question.
+    //
+    // `tappable` (whole card opens the add-people sheet) and `dragEnabled`
+    // (drag-and-drop + inline role edit) are separate axes: a read-only card (a closed
+    // shift on a phone) can still exist without either. `isOver` (a drag hover) gets
+    // its own accent-soft fill on top of the resting border, so an active drag target
+    // stays visually distinct. Nested controls (member chips' remove/role) stop the
+    // click so tapping THEM never also opens the sheet; `e.target !== e.currentTarget`
+    // does the same for keyboard activation, so Enter/Space on a nested button can't
+    // double-fire onOpen.
+    return (
+        <section
+            role={tappable ? "button" : undefined}
+            tabIndex={tappable ? 0 : undefined}
+            onClick={tappable ? () => onOpen(id) : undefined}
+            onKeyDown={tappable ? (e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpen(id);
+                }
+            } : undefined}
+            aria-label={tappable ? `Add employees to ${title}` : undefined}
+            className={[
+                "rounded-[12px] border shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors",
+                tappable ? "border-dashed border-[var(--color-accent)] cursor-pointer" : "border-[var(--color-line)]",
+                isOver ? "bg-[var(--color-accent-soft)]" : "bg-[var(--color-surface)]",
+            ].join(" ")}
+            onDragOver={(e) => dragEnabled && onDragOver(e, id)}
+            onDragLeave={dragEnabled ? onDragLeave : undefined}
+            onDrop={(e) => dragEnabled && onDrop(e, id)}
+        >
+            <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+                <h3 className="m-0 min-w-0 truncate text-[13px] font-semibold text-[var(--color-ink)]">
+                    {title}
+                </h3>
+                <span className="shrink-0 text-[11px] font-medium text-[var(--color-ink-muted)]">
+                    {members.length} {plural(members.length, 'person', 'people')}
+                </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 px-4 pb-4">
+                {populated ? members.map(member => (
+                    <TeamMemberChip
+                        key={member.uid}
+                        member={member}
+                        teamId={id}
+                        canEditRole={dragEnabled && canEditRole}
+                        draggable={dragEnabled}
+                        onDragStart={(e) => onDragStart(e, member.uid, id)}
+                        onRemove={() => onRemove(member.uid, id)}
+                        onRoleChange={onRoleChange}
+                    />
+                )) : null}
+            </div>
+        </section>
+    );
+}
+
+function TeamCountStepper({ count, onAdd, onRemove, addDisabled, removeDisabled }) {
+    return (
+        <div className="flex shrink-0 items-center gap-1.5">
+            <button
+                type="button"
+                onClick={onRemove}
+                disabled={removeDisabled}
+                aria-label="Remove last restaurant team"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-base font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-line-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+                −
+            </button>
+            <span className="min-w-5 text-center text-sm font-bold text-[var(--color-ink)]">{count}</span>
+            <button
+                type="button"
+                onClick={onAdd}
+                disabled={addDisabled}
+                aria-label="Add restaurant team"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-base font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-line-strong)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+                +
+            </button>
+        </div>
+    );
+}
+
+function RoleFilterRail({ roleFilter, counts, onChange }) {
+    return (
+        <ScrollRail
+            ariaLabel="Filter available employees by role"
+            depsKey={`${roleFilter}-${counts.all}`}
+            className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+            {ROLE_FILTERS.map(filter => {
+                const selected = roleFilter === filter.value;
+                return (
+                    <button
+                        key={filter.value}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => onChange(prev => prev === filter.value ? 'all' : filter.value)}
+                        className={[
+                            "h-8 flex-none rounded-full border px-3 text-[12px] font-medium transition-colors",
+                            selected
+                                ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
+                                : "border-[var(--color-line)] bg-[var(--color-surface-muted)] text-[var(--color-ink-soft)] hover:border-[var(--color-line-strong)]",
+                        ].join(" ")}
+                    >
+                        {filter.label}
+                        <span className={[
+                            "ml-1 font-mono text-[10px]",
+                            selected ? "text-white/75" : "text-[var(--color-ink-muted)]",
+                        ].join(" ")}>
+                            {counts[filter.value] || 0}
+                        </span>
+                    </button>
+                );
+            })}
+        </ScrollRail>
+    );
+}
 
 function ShiftSetupDnd({
     allEmployees,
     teams, setTeams,
     barTeam, setBarTeam,
-    runners, setRunners
+    runners, setRunners,
+    readOnly = false,
+    onSheetOpenChange
 }) {
     const [draggedData, setDraggedData] = useState(null);
     const [dragOverId, setDragOverId] = useState(null);
     const [selectedTeamId, setSelectedTeamId] = useState(null); // click-to-assign target
     const [mobilePickerOpen, setMobilePickerOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
+    const [roleFilter, setRoleFilter] = useState('all');
+    const [showTempForm, setShowTempForm] = useState(false);
+    const [tempForm, setTempForm] = useState({ name: '', role: 'server' });
 
     // ── Unregistered Staff ──
     const [unregisteredDb, setUnregisteredDb] = useState([]);
@@ -61,7 +264,28 @@ function ShiftSetupDnd({
         return [...allEmployees, ...unregisteredDb];
     }, [allEmployees, unregisteredDb]);
 
-    const handleAddUnregistered = async (name, role) => {
+    const floorSections = useMemo(() => ([
+        ...teams.map((team, index) => ({
+            id: team.teamId,
+            title: `Team ${index + 1}`,
+            members: team.members,
+            canEditRole: true,
+        })),
+        {
+            id: "bar",
+            title: "Bar Team",
+            members: barTeam.members,
+            canEditRole: false,
+        },
+        {
+            id: "runner",
+            title: "Runners",
+            members: runners,
+            canEditRole: false,
+        },
+    ]), [barTeam.members, runners, teams]);
+
+    const handleAddUnregistered = useCallback(async (name, role) => {
         // Create permanent placeholder employee
         const newUid = `unreg_${Date.now()}_${name.replace(/\s+/g, '')}`.toLowerCase();
         const unregData = {
@@ -82,7 +306,7 @@ function ShiftSetupDnd({
         } catch (e) {
             console.error("Failed to save unregistered staff:", e);
         }
-    };
+    }, []);
 
     // Get assigned UIDs to hide them from the pool
     // OPTIMIZATION: Memoize to prevent recalculating on every render
@@ -94,22 +318,23 @@ function ShiftSetupDnd({
         return Array.from(uids);
     }, [teams, barTeam.members, runners]);
 
-    const selectedTargetLabel = useMemo(() => {
-        if (!selectedTeamId) return "";
-        if (selectedTeamId === "bar") return "Bar Team";
-        if (selectedTeamId === "runner") return "Runners";
-        const teamIndex = teams.findIndex(t => t.teamId === selectedTeamId);
-        return teamIndex >= 0 ? `Team ${teamIndex + 1}` : "";
-    }, [selectedTeamId, teams]);
+    // The sheet's whole content (title, live member preview, roster) is scoped to
+    // whichever card the admin tapped - one lookup shared by all of it.
+    const activeSection = useMemo(() => (
+        floorSections.find(section => section.id === selectedTeamId) || null
+    ), [floorSections, selectedTeamId]);
+    const selectedTargetLabel = activeSection?.title || "";
 
-    const selectedTargetMembers = useMemo(() => {
-        if (!selectedTeamId) return [];
-        if (selectedTeamId === "bar") return barTeam.members;
-        if (selectedTeamId === "runner") return runners;
-        return teams.find(t => t.teamId === selectedTeamId)?.members || [];
-    }, [barTeam.members, runners, selectedTeamId, teams]);
+    // F10 is scoped to phones: a closed shift's floor is view-only until the admin
+    // taps "Edit roster". Desktop behavior is intentionally unchanged.
+    const mobileReadOnly = readOnly && isMobile;
+    const sheetOpen = Boolean(mobilePickerOpen && selectedTeamId && !mobileReadOnly);
 
-    const canEditSelectedRoles = selectedTeamId && selectedTeamId !== "bar" && selectedTeamId !== "runner";
+    useEffect(() => {
+        if (!onSheetOpenChange) return undefined;
+        onSheetOpenChange(sheetOpen);
+        return () => onSheetOpenChange(false);
+    }, [onSheetOpenChange, sheetOpen]);
 
     // ── Core helpers ─────────────────────────────────────
     const removeEmployee = useCallback((uid, teamId) => {
@@ -127,7 +352,8 @@ function ShiftSetupDnd({
 
     const addEmployee = useCallback((emp, targetTeamId, pts) => {
         const restaurantRole = getRestaurantRole(emp.role);
-        const newMember = { uid: emp.uid, name: emp.username || emp.name, role: restaurantRole, points: pts };
+        const name = emp.isUnregistered ? tempStaffRosterNameFor(emp) : firstNameFor(emp);
+        const newMember = { uid: emp.uid, name, role: restaurantRole, points: pts };
         if (targetTeamId === 'bar') {
             setBarTeam(prev => ({ ...prev, members: [...prev.members, { ...newMember, role: 'bartender', points: null }] }));
         } else if (targetTeamId === 'runner') {
@@ -208,12 +434,21 @@ function ShiftSetupDnd({
     }, [draggedData, combinedEmployees, removeEmployee, addEmployee, getRestaurantRole]);
 
     // ── Click-to-assign ──────────────────────────────────
-    const handleTeamClick = useCallback((teamId) => {
-        setSelectedTeamId(prev => {
-            const nextTeamId = prev === teamId ? null : teamId;
-            setMobilePickerOpen(Boolean(nextTeamId));
-            return nextTeamId;
-        });
+    const openPickerForTeam = useCallback((teamId) => {
+        if (mobileReadOnly) return;
+        setSelectedTeamId(teamId);
+        setMobilePickerOpen(true);
+        setRoleFilter('all');
+    }, [mobileReadOnly]);
+
+    // Closing the mobile picker also clears the selection. Leaving a team selected
+    // after "Done"/scrim-dismiss made the next tap silently toggle it off (dead
+    // first tap), and left a lingering "active" fill + pulsing dot on a card whose
+    // picker is closed - a selection glow only makes sense while the sheet is open.
+    const closeMobilePicker = useCallback(() => {
+        setMobilePickerOpen(false);
+        setSelectedTeamId(null);
+        setShowTempForm(false);
     }, []);
 
     const handlePoolEmployeeClick = useCallback((emp) => {
@@ -256,134 +491,216 @@ function ShiftSetupDnd({
         onRoleChange: updateMemberRole
     }), [handleDragOver, handleDragLeave, handleDropTeam, handleDragStart, removeEmployee, updateMemberRole]);
 
+    const unassignedEmployees = useMemo(() => (
+        combinedEmployees.filter(emp => !assignedUids.includes(emp.uid))
+    ), [assignedUids, combinedEmployees]);
+
+    const roleCounts = useMemo(() => {
+        // `all` isn't a filter chip anymore (removed per the captain - the unfiltered
+        // roster is already the default view), but ScrollRail's depsKey still needs a
+        // total to know when to re-measure its overflow fade.
+        const counts = { all: unassignedEmployees.length };
+        ASSIGNABLE_ROLES.forEach(role => { counts[role] = 0; });
+        unassignedEmployees.forEach(emp => {
+            if (ASSIGNABLE_ROLES.includes(emp.role)) counts[emp.role] += 1;
+        });
+        return counts;
+    }, [unassignedEmployees]);
+
+    const visibleEmployees = useMemo(() => (
+        unassignedEmployees.filter(emp => roleFilter === 'all' || emp.role === roleFilter)
+    ), [roleFilter, unassignedEmployees]);
+
+    const handleCreateTempStaff = useCallback(() => {
+        const name = tempForm.name.trim();
+        if (!name) return;
+        handleAddUnregistered(name, tempForm.role);
+        setTempForm({ name: '', role: 'server' });
+        setShowTempForm(false);
+    }, [handleAddUnregistered, tempForm.name, tempForm.role]);
+
     return (
-        <div className="grid grid-cols-[minmax(340px,0.9fr)_minmax(440px,1.3fr)] gap-4 h-[min(68vh,720px)] min-h-[420px] items-stretch max-[900px]:grid-cols-1 max-[900px]:h-auto max-[560px]:min-h-0">
+        // -mx-3 cancels the step content's own p-3 on phone, same trick Settle up's
+        // entry card and its team switcher band use (see SettleStep.jsx) - without
+        // it this content sat a second layer of padding further in than Settle's
+        // and Review's cards, so the three steps' cards read as different widths
+        // when they were really just differently inset.
+        <div className="relative flex min-h-[420px] flex-col gap-3 max-[560px]:-mx-3">
             <div
-                className="min-h-0 h-full flex flex-col max-[900px]:order-2 max-[560px]:hidden"
+                className="hidden"
                 onDragOver={(e) => { e.preventDefault(); if (dragOverId !== 'pool') setDragOverId('pool'); }}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDropPool}
-            >
-                <EmployeePool
-                    employees={combinedEmployees}
-                    assignedUids={assignedUids}
-                    onDragStart={handleDragStart}
-                    onEmployeeClick={handlePoolEmployeeClick}
-                    selectedTeamId={selectedTeamId}
-                    selectedTargetLabel={selectedTargetLabel}
-                    onAddUnregistered={handleAddUnregistered}
-                />
-            </div>
-
-            <TeamAssignmentPanel
-                teams={teams}
-                barTeam={barTeam}
-                runners={runners}
-                onAddTeam={handleAddTeam}
-                onRemoveTeam={handleRemoveTeam}
-                dragOverId={dragOverId}
-                selectedTeamId={selectedTeamId}
-                hideSelectedMembers={isMobile && mobilePickerOpen}
-                onTeamClick={handleTeamClick}
-                handlers={handlers}
             />
 
-            {isMobile && mobilePickerOpen && selectedTeamId ? (
-            <div
-                className="fixed inset-0 z-40"
-            >
+            <div className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-line)] bg-[var(--color-bg)] px-3 py-2">
+                <div className="min-w-0 text-[0.78rem] font-medium text-[var(--color-ink-soft)]">
+                    {teams.reduce((total, team) => total + team.members.length, 0)} dining / {barTeam.members.length} bar / {runners.length} {plural(runners.length, 'runner', 'runners')}
+                </div>
+                {mobileReadOnly ? null : (
+                    <TeamCountStepper
+                        count={teams.length}
+                        onAdd={handleAddTeam}
+                        onRemove={handleRemoveTeam}
+                        addDisabled={teams.length >= 6}
+                        removeDisabled={teams.length <= 1}
+                    />
+                )}
+            </div>
+
+            {/* One column at every width: a 2-up grid stopped each card halfway
+                across the screen, while Settle up's money card and Review's cards
+                run to the full content-column edge - the captain wants every step's
+                cards sharing that same edge, not a fixed pixel width. */}
+            <div className="grid flex-1 grid-cols-1 content-start gap-2.5 overflow-y-auto pb-32 pr-1 max-[560px]:gap-2 max-[560px]:flex-none max-[560px]:overflow-visible max-[560px]:pr-0">
+                {floorSections.map(section => (
+                    <TeamCard
+                        key={section.id}
+                        section={section}
+                        isOver={dragOverId === section.id}
+                        tappable={!mobileReadOnly}
+                        dragEnabled={!mobileReadOnly}
+                        onOpen={openPickerForTeam}
+                        {...handlers}
+                    />
+                ))}
+            </div>
+
+            {sheetOpen ? (
+            <div className="fixed inset-0 z-20">
                 <button
                     type="button"
                     aria-label="Close employee picker"
-                    className="absolute inset-0 bg-black/30"
-                    onClick={() => setMobilePickerOpen(false)}
+                    className="absolute inset-0 bg-[var(--color-ink)]/30"
+                    onClick={closeMobilePicker}
                 />
                 <div
                     role="dialog"
                     aria-modal="true"
                     aria-label={`Add employees to ${selectedTargetLabel || 'selected team'}`}
-                    className="absolute inset-x-0 bottom-0 max-h-[82vh] rounded-t-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[0_-12px_36px_rgba(15,23,42,0.22)] border-t border-[var(--color-line)] overflow-hidden"
+                    className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[72vh] min-h-[26rem] max-w-3xl flex-col overflow-hidden rounded-t-[var(--radius-lg)] border border-b-0 border-[var(--color-line)] bg-[var(--color-surface)] shadow-[0_-12px_36px_rgba(15,23,42,0.22)] max-[560px]:max-h-[70vh] max-[560px]:min-h-0"
                 >
-                    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-[var(--color-line)]">
-                        <div className="min-w-0">
-                            <h3 className="text-sm font-semibold text-[var(--color-ink)] truncate">
-                                {selectedTargetLabel || 'Selected team'}
-                            </h3>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setMobilePickerOpen(false)}
-                            className="h-9 px-3 rounded-[var(--radius-sm)] border border-[var(--color-line)] text-sm font-medium text-[var(--color-ink)] bg-[var(--color-surface)]"
-                        >
-                            Done
-                        </button>
-                    </div>
-
-                    <div className="px-4 py-2.5 border-b border-[var(--color-line)] bg-[var(--color-surface)]">
+                    <button
+                        type="button"
+                        aria-label="Close employee picker"
+                        onClick={closeMobilePicker}
+                        className="mx-auto mt-2 h-5 w-12 flex-none rounded-full bg-transparent p-0"
+                    >
+                        <span className="mx-auto block h-1 w-9 rounded-full bg-[var(--color-line-strong)]" />
+                    </button>
+                    <div className="flex-none border-b border-[var(--color-line)] px-4 pb-3 pt-2">
                         <div className="mb-2 flex items-center justify-between gap-3">
-                            <div className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                Assigned
-                            </div>
-                            <span className="text-[0.72rem] text-[var(--color-ink-muted)]">
-                                {selectedTargetMembers.length} {selectedTargetMembers.length === 1 ? "person" : "people"}
+                            <h3 className="m-0 min-w-0 truncate font-display text-[19px] font-medium text-[var(--color-ink)]">
+                                Add to {selectedTargetLabel || 'team'}
+                            </h3>
+                            <span className="shrink-0 text-[11px] font-medium text-[var(--color-ink-muted)]">
+                                {activeSection?.members.length || 0} {plural(activeSection?.members.length || 0, 'person', 'people')}
                             </span>
                         </div>
-                        {selectedTargetMembers.length === 0 ? (
-                            <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--color-line)] px-3 py-2 text-sm text-[var(--color-ink-muted)]">
-                                No employees assigned yet.
-                            </div>
-                        ) : (
-                            <div className="flex flex-wrap gap-1.5">
-                                {selectedTargetMembers.map(member => (
-                                    <span
-                                        key={member.uid}
-                                        className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface-muted)] px-2 py-1"
-                                    >
-                                        <span className="max-w-[8rem] truncate text-[0.72rem] font-semibold text-[var(--color-ink)]">
-                                            {member.name}
-                                        </span>
-                                        {canEditSelectedRoles ? (
-                                            <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--color-accent)]/20 bg-[var(--color-accent-soft)] text-[0.62rem] font-bold text-[var(--color-accent)]">
-                                                {ROLE_BADGES[member.role] || "S"}
-                                                <select
-                                                    value={RESTAURANT_ROLE_OPTIONS.some(option => option.value === member.role) ? member.role : "server"}
-                                                    onChange={(e) => updateMemberRole(selectedTeamId, member.uid, e.target.value)}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                                                    aria-label={`${member.name} worked role`}
-                                                >
-                                                    {RESTAURANT_ROLE_OPTIONS.map(option => (
-                                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                                    ))}
-                                                </select>
-                                            </span>
-                                        ) : null}
-                                        <button
-                                            type="button"
-                                            onClick={() => removeEmployee(member.uid, selectedTeamId)}
-                                            aria-label={`Remove ${member.name}`}
-                                            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[0.65rem] font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
-                                        >
-                                            x
-                                        </button>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
+                        {/* Which team is being edited is decided by the card the admin
+                            tapped, not a second switcher here re-asking the same
+                            question - that read as redundant. This is a live mirror of
+                            that card's roster instead: the sheet covers it, so without
+                            this the admin can't see who's already on the team (or who
+                            they just added) while picking more people from below. */}
+                        <div className="mb-2.5 flex flex-wrap gap-1.5">
+                            {activeSection?.members.length ? activeSection.members.map(member => (
+                                <TeamMemberChip
+                                    key={member.uid}
+                                    member={member}
+                                    teamId={activeSection.id}
+                                    canEditRole={activeSection.canEditRole}
+                                    draggable={false}
+                                    onRemove={() => removeEmployee(member.uid, activeSection.id)}
+                                    onRoleChange={updateMemberRole}
+                                />
+                            )) : (
+                                <p className="m-0 text-[12px] text-[var(--color-ink-muted)]">No one on this team yet.</p>
+                            )}
+                        </div>
+                        <RoleFilterRail
+                            roleFilter={roleFilter}
+                            counts={roleCounts}
+                            onChange={setRoleFilter}
+                        />
                     </div>
 
-                    <EmployeePool
-                        employees={combinedEmployees}
-                        assignedUids={assignedUids}
-                        onDragStart={handleDragStart}
-                        onEmployeeClick={handlePoolEmployeeClick}
-                        selectedTeamId={selectedTeamId}
-                        selectedTargetLabel={selectedTargetLabel}
-                        onAddUnregistered={handleAddUnregistered}
-                        title="Choose Employees"
-                        className="h-[calc(82vh-135px)] min-h-0 bg-[var(--color-surface-muted)] p-3 flex flex-col gap-2.5 overflow-hidden"
-                    />
+                    <div className="flex-1 overflow-y-auto bg-[var(--color-surface)] pb-28">
+                        {visibleEmployees.length === 0 ? (
+                            <p className="m-0 px-4 py-5 text-center text-sm text-[var(--color-ink-muted)]">
+                                {unassignedEmployees.length === 0 ? 'Everyone is on the floor.' : `No ${ROLE_FILTERS.find(filter => filter.value === roleFilter)?.label.toLowerCase() || 'people'} left off the floor.`}
+                            </p>
+                        ) : visibleEmployees.map(emp => (
+                            <button
+                                key={emp.uid}
+                                type="button"
+                                onClick={() => handlePoolEmployeeClick(emp)}
+                                className="flex min-h-12 w-full items-center justify-between gap-3 border-t border-[var(--color-line)] bg-transparent px-4 py-2 text-left transition-colors hover:bg-[var(--color-surface-muted)]"
+                                title={`Assign ${poolActionNameFor(emp)} to ${selectedTargetLabel || 'selected team'}`}
+                            >
+                                <span className="flex min-w-0 flex-col gap-0.5">
+                                    <span className="truncate text-sm font-medium text-[var(--color-ink)]">{poolNameFor(emp)}</span>
+                                    <span className="text-[11px] text-[var(--color-ink-muted)]">{roleLabel(emp.role)}</span>
+                                </span>
+                                <span className="shrink-0 text-[12px] font-semibold text-[var(--color-accent)]">
+                                    Add to {selectedTargetLabel || 'selected team'} →
+                                </span>
+                            </button>
+                        ))}
+
+                        <div className="border-t border-[var(--color-line)]">
+                            {showTempForm ? (
+                                <div className="flex flex-col gap-2 bg-[var(--color-surface-muted)] px-4 py-3">
+                                    <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Temporary staff name</label>
+                                    <input
+                                        name="temporary-staff-name"
+                                        type="text"
+                                        value={tempForm.name}
+                                        onChange={(e) => setTempForm(prev => ({ ...prev, name: e.target.value }))}
+                                        autoFocus
+                                        placeholder="Guest server"
+                                        className="h-11 rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/15"
+                                    />
+                                    <label className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Role</label>
+                                    <select
+                                        name="temporary-staff-role"
+                                        value={tempForm.role}
+                                        onChange={(e) => setTempForm(prev => ({ ...prev, role: e.target.value }))}
+                                        className="h-11 rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-ink)] focus:border-[var(--color-accent)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/15"
+                                    >
+                                        {ASSIGNABLE_ROLES.map(role => (
+                                            <option key={role} value={role}>{roleShortLabel(role)}</option>
+                                        ))}
+                                    </select>
+                                    <div className="flex gap-2 pt-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTempForm(false)}
+                                            className="h-10 flex-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] text-sm font-semibold text-[var(--color-ink-soft)]"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleCreateTempStaff}
+                                            className="h-10 flex-1 rounded-full bg-[var(--color-accent)] text-sm font-bold text-white disabled:opacity-50"
+                                            disabled={!tempForm.name.trim()}
+                                        >
+                                            Create
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowTempForm(true)}
+                                    className="flex min-h-12 w-full items-center px-4 text-left text-[13px] font-semibold text-[var(--color-accent)] transition-colors hover:bg-[var(--color-surface-muted)]"
+                                >
+                                    + Add temp staff
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
             ) : null}
@@ -395,6 +712,8 @@ function ShiftSetupDnd({
 // We deeply compare the MEMBERS array length/content of teams, but ignore the `pools` typing data
 // so that typing Tip/Cash numbers doesn't force this massive component to recalculate its lists.
 export default React.memo(ShiftSetupDnd, (prevProps, nextProps) => {
+    // If the read-only (closed-shift Edit roster) gate changed, re-render
+    if (prevProps.readOnly !== nextProps.readOnly) return false;
     // If employees changed, re-render
     if (prevProps.allEmployees !== nextProps.allEmployees) return false;
     // If runners or barTeam length changed, re-render

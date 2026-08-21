@@ -29,8 +29,9 @@ function reconcile(arr, targetTotal, key) {
         const lastItem = arr[arr.length - 1];
         lastItem[key] = r2(lastItem[key] + diff);
         if (lastItem.total !== undefined) {
-            // Recalculate total if the item has one
-            lastItem.total = r2(lastItem.ctp + (lastItem.grt || 0) + (lastItem.cash || 0));
+            // Recalculate total if the item has one. `total` is CTP + GRT only -
+            // cash is always paid and reported separately, never folded into a total.
+            lastItem.total = r2(lastItem.ctp + (lastItem.grt || 0));
         }
     }
 }
@@ -71,8 +72,22 @@ export function calculateShift(inputs) {
     const barSales = Math.max(0, n(config.barTeam.pools?.sales) || n(config.barSales));
     const barCTP = Math.max(0, n(config.barTeam.pools?.tips));
     const barGRT = Math.max(0, n(config.barTeam.pools?.gratuity));
+    // The bar's total food sales. Recorded, never spent: it is what the Runners Fee is
+    // derived FROM at Settle up (3%, prefill only - see RUNNERS_FEE_FOOD_SALES_RATE),
+    // and the engine deliberately does not know that rate. The fee reaches the engine
+    // as the amount below, so no rate change and no missing food-sales figure can move
+    // a night's money - which is what leaves every shift settled before this field
+    // existed identical to the cent.
+    const barFoodSales = Math.max(0, n(config.barTeam.pools?.foodSales));
     const barToTeamTransfer = Math.max(0, n(config.barTeam.pools?.runners));
     const hasBarTeam = config.barTeam.members.length > 0;
+    // The same question on the dining side, asked here so section 2 can skip the
+    // captain override when nobody works the role. `role` is the job worked that
+    // night, matched exactly the way section 9 builds activeCaptains - the two must
+    // agree, or money is carved out for a captain the payout loop never finds.
+    const hasCaptainOnFloor = config.teams.some((t) =>
+        (t.members || []).some((m) => m.role === 'captain')
+    );
 
     // If new format is active, firmly ignore global inputs to prevent ghost totals
     const baseTeamCTP = totalTeamCTP;
@@ -112,13 +127,29 @@ export function calculateShift(inputs) {
     const totalRunnerPay = r2(sumProp(runnerPayouts, 'payoutAmount'));
 
     // 2. PRE-DISTRIBUTIONS
+    // Two bases, never one: everything on the CTP side is a rate on regularSalesBase
+    // (bar 1%, door 0.5%, captain override 1%), and everything on the GRT side is a
+    // rate on contractSales (bar 1%, door 2%, PE coordinator 2%, house 3%, captain
+    // override 1%). The same name carries a different rate on each side - "door" is
+    // 0.5% here and 2% below - so quoting one rate per allocation is always wrong.
+    //
+    // Two allocations are conditional on who is actually on the floor, for the same
+    // reason: money carved out for a role nobody works is paid to nobody, and the
+    // shift then cannot be settled at all (section 11's balance check is enforced as
+    // a hard throw by reconcilePayoutLedger on save).
+    //
     // Bar allocations only apply when a bar team with members is active. When bartenders
     // work a contract shift as captains in a regular team they are not in barTeam, so
     // hasBarTeam = false and these allocations are skipped to avoid stranded pool money.
+    //
+    // The captain override is skipped the same way when no one works as Captain. The
+    // 1% then simply stays in the dining pools the team splits - staff keep it, it does
+    // not go to the house. That is the captain's ruling, made 2026-08-14; a one-server
+    // night was unclosable before it.
     const barCTPAllocation = hasBarTeam ? r2(regularSalesBase * 0.01) : 0;
     const doorCTPAllocation = r2(regularSalesBase * 0.005);
-    const captainOverrideCTP = r2(regularSalesBase * 0.01);
-    const captainOverrideGRT = r2(contractSales * 0.01);
+    const captainOverrideCTP = hasCaptainOnFloor ? r2(regularSalesBase * 0.01) : 0;
+    const captainOverrideGRT = hasCaptainOnFloor ? r2(contractSales * 0.01) : 0;
     const barGRTAllocation = hasBarTeam ? r2(contractSales * 0.01) : 0;
     const doorGRTAllocation = r2(contractSales * 0.02);
     const peCoordinatorGRT = r2(contractSales * 0.02);
@@ -161,15 +192,18 @@ export function calculateShift(inputs) {
 
     const barPayouts = config.barTeam.members.map(emp => {
         const pts = n(emp.points);
-        const ctp = pts * barCTPPointValue;
-        const grt = pts * barGRTPointValue;
+        // Sum the ROUNDED components, not the raw ones: the employee sees the
+        // rounded CTP and GRT, so the total has to be exactly what those two add
+        // to. Summing raw values first can land a cent above the visible sum.
+        const ctp = r2(pts * barCTPPointValue);
+        const grt = r2(pts * barGRTPointValue);
         return {
             uid: emp.uid,
             name: emp.name,
             role: 'bartender',
             points: pts,
-            ctp: r2(ctp),
-            grt: r2(grt),
+            ctp,
+            grt,
             cash: 0,
             total: r2(ctp + grt)
         };
@@ -221,6 +255,19 @@ export function calculateShift(inputs) {
 
 
     // 9. CAPTAIN OVERRIDE
+    // The split below is only ever reached with a captain on the floor, because
+    // section 2 carves nothing out without one (hasCaptainOnFloor). Both sides of
+    // the pair therefore stay 0 on a no-captain night: nothing deducted, nothing to
+    // hand out, "Cap Ov CTP"/"Cap Ov GRT" balance at 0 and the shift settles.
+    //
+    // This used to be carved out unconditionally and the resulting stranded money was
+    // defended as the shift telling the truth. That held while it was only a warning;
+    // it stopped holding when reconcilePayoutLedger began throwing on the same
+    // condition, which made a night with no captain impossible to close.
+    //
+    // The captainCount guard below is kept even so - it is the divide-by-zero guard,
+    // and it keeps this block correct on its own terms rather than only by what
+    // section 2 happens to do.
     const captainOverrideCTPPool = captainOverrideCTP;
     const captainOverrideGRTPool = captainOverrideGRT;
 
@@ -232,7 +279,14 @@ export function calculateShift(inputs) {
         splitGRT = captainOverrideGRTPool / captainCount;
     }
 
-    // 10. GENERATE PAYOUTS 
+    // 10. GENERATE PAYOUTS
+    // Dining-room CTP/GRT/cash are pooled house-wide: one point value is computed across
+    // ALL dining teams combined and applied to every dining employee, regardless of which
+    // team's money they came from. This is intentional restaurant policy (tips pool across
+    // teams and split by points), not a per-team split - do not "fix" this into computing
+    // separate point values per team. The UI still collects money per team for entry
+    // convenience/auditing (see loc_adjCTP/loc_adjCash/loc_adjGRT above), but those per-team
+    // proportional amounts are not what drives payouts here.
     const totalAllTeamPoints = teamsProcessed.reduce((sum, t) => sum + t.teamPts, 0);
 
     const globalTeamCTPPointValue = totalAllTeamPoints > 0 ? adjustedTeamCTPPool / totalAllTeamPoints : 0;
@@ -261,15 +315,20 @@ export function calculateShift(inputs) {
                 grt += splitGRT;
             }
 
+            const roundedCTP = r2(ctp);
+            const roundedGRT = r2(grt);
+
             const payoutObj = {
                 uid: emp.uid,
                 name: emp.name,
                 role: emp._stdRole,
                 points: emp.points,
-                ctp: r2(ctp),
+                ctp: roundedCTP,
                 cash: r2(cash),
-                grt: r2(grt),
-                total: r2(ctp + cash + grt),
+                grt: roundedGRT,
+                // CTP + GRT only, matching bar payouts above. Cash is a separate
+                // payment to the employee and is never rolled into `total`.
+                total: r2(roundedCTP + roundedGRT),
                 teamId: team.teamId
             };
 
@@ -360,6 +419,7 @@ export function calculateShift(inputs) {
             contractSales: r2(contractSales),
             regularSalesBase: r2(regularSalesBase),
             barSales: r2(barSales),
+            barFoodSales: r2(barFoodSales),
             baseTeamCTP: r2(baseTeamCTP),
             baseTeamCash: r2(baseTeamCash),
             ctpTotal: r2(ctpTotal),

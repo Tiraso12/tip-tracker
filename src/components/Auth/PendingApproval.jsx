@@ -1,17 +1,19 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Button, Card } from '../ui';
+import { fullNameFor } from '../../utils/userNames';
 
 const PendingApproval = () => {
     const { user, logout } = useAuth();
     const isInactive = user?.status === 'inactive';
+    const isProfileError = user?.status === 'profile_error';
 
     return (
         <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-[var(--color-bg)]">
             <div className="w-full max-w-md">
                 <div className="mb-8 text-center">
                     <span className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
-                        TipTracker
+                        Tip Tracker
                     </span>
                 </div>
 
@@ -24,20 +26,35 @@ const PendingApproval = () => {
                     </div>
 
                     <h1 className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
-                        {isInactive ? 'Account Inactive' : 'Account Pending'}
+                        {isProfileError ? 'Account Unavailable' : isInactive ? 'Account Inactive' : 'Account Pending'}
                     </h1>
 
                     <p className="mt-3 text-sm text-[var(--color-ink-soft)] leading-relaxed">
-                        {isInactive
+                        {isProfileError
+                            ? 'Your account profile could not be verified. Log out and try again, or contact your manager.'
+                            : isInactive
                             ? 'Your account is currently inactive. Contact your manager if you need access restored.'
                             : 'Your account has been created, but it needs to be approved by an administrator before you can access your dashboard.'}
                     </p>
 
                     <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
-                        {isInactive
+                        {isProfileError
+                            ? 'Access is blocked until the profile check succeeds.'
+                            : isInactive
                             ? 'You can log out and check back after your account is reactivated.'
                             : 'Check back later or contact your manager.'}
                     </p>
+
+                    <dl className="mt-5 rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface-muted)]/50 px-4 py-3 text-left">
+                        <div>
+                            <dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Signed up as</dt>
+                            <dd className="mt-1 text-sm font-medium text-[var(--color-ink)]">{fullNameFor(user, 'Name unavailable')}</dd>
+                        </div>
+                        <div className="mt-3 border-t border-[var(--color-line)] pt-3">
+                            <dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">Login email</dt>
+                            <dd className="mt-1 break-all text-sm text-[var(--color-ink)]">{user?.email || 'Email unavailable'}</dd>
+                        </div>
+                    </dl>
 
                     <Button onClick={logout} variant="secondary" className="mt-6">
                         Log Out

@@ -47,6 +47,21 @@ export function formatDate(date) {
 }
 
 /**
+ * Formats a "YYYY-MM-DD" date key as "Sunday, May 31, 2026" - local calendar
+ * date, never parsed through `new Date(dateKey)` directly (that reads as UTC
+ * midnight and can print the wrong day near a timezone boundary).
+ */
+export function formatFullDateKey(dateKey) {
+    const [y, m, d] = dateKey.split("-");
+    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+    });
+}
+
+/**
  * Formats a date as "May 22".
  */
 export function formatMonthDay(date) {
@@ -62,6 +77,23 @@ export function formatMonthDay(date) {
 export function formatMonthDayRange(start, end) {
     if (!start || !end) return "";
     return `${formatMonthDay(start)} - ${formatMonthDay(end)}`;
+}
+
+/**
+ * Formats a work week as the Pullenberg kit's compact range (kit's
+ * PayScreen.jsx: `KitDatePill label="Aug 10 - 16"`, en dash, month named
+ * once) - "Aug 14 - 20" within a month, "Aug 28 - Sep 3" across one, since
+ * the kit itself never shows a week crossing a month boundary and repeating
+ * the month on both ends is the only unambiguous fallback.
+ */
+export function formatWeekRange(start, end) {
+    if (!start || !end) return "";
+    const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+    if (sameMonth) {
+        const month = new Intl.DateTimeFormat("en-US", { month: "short" }).format(start);
+        return `${month} ${start.getDate()} – ${end.getDate()}`;
+    }
+    return `${formatMonthDay(start)} – ${formatMonthDay(end)}`;
 }
 
 /**
@@ -111,67 +143,52 @@ export function getBiweeklyPeriod(date) {
 }
 
 /**
- * Returns an array of 42 dates (6 weeks) representing a calendar view for the given month.
- * The grid starts on the Sunday before the 1st (if 1st is not Sunday).
+ * Every day key from start to end inclusive, in order.
  */
-export function getCalendarMonth(baseDate) {
-    const year = baseDate.getFullYear();
-    const month = baseDate.getMonth();
+export function getDateKeys(start, end) {
+    if (!start || !end) return [];
 
-    // First day of the month
-    const firstDayOfMonth = new Date(year, month, 1);
-    // 0 = Sun, 1 = Mon ...
-    const dayOfWeek = firstDayOfMonth.getDay();
-
-    // Start date for the grid (Sunday)
-    const startDate = new Date(firstDayOfMonth);
-    startDate.setDate(1 - dayOfWeek);
-    startDate.setHours(0, 0, 0, 0);
-
-    // Last day of the month
-    const lastDayOfMonth = new Date(year, month + 1, 0);
-
-    // End date for the grid (Saturday)
-    // If last day is Sat (6), add 0. If Fri (5), add 1, etc.
-    const endDayOfWeek = lastDayOfMonth.getDay();
-    const daysToAdd = 6 - endDayOfWeek;
-
-    const endDate = new Date(lastDayOfMonth);
-    endDate.setDate(lastDayOfMonth.getDate() + daysToAdd);
-    endDate.setHours(0, 0, 0, 0);
-
-    const dates = [];
-    const current = new Date(startDate);
-
-    // Loop until we pass the endDate
-    // Use a safety break just in case, though logic should be sound
-    while (current <= endDate) {
-        dates.push(new Date(current));
-        current.setDate(current.getDate() + 1);
-    }
-
-    return dates;
-}
-
-/**
- * Returns the date keys the employee dashboard needs to render the current
- * visible surface without subscribing to the user's entire tip history.
- */
-export function getEmployeeTipSubscriptionDateKeys(baseDate, viewMode = "week") {
-    const date = baseDate || new Date();
-
-    if (viewMode === "month") {
-        return getCalendarMonth(date).map(toDateKey);
-    }
-
-    const period = getBiweeklyPeriod(date);
     const keys = [];
-    const current = new Date(period.start);
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
 
-    while (current <= period.end) {
-        keys.push(toDateKey(current));
-        current.setDate(current.getDate() + 1);
+    const finalDate = new Date(end);
+    finalDate.setHours(0, 0, 0, 0);
+
+    while (cursor <= finalDate) {
+        keys.push(toDateKey(cursor));
+        cursor.setDate(cursor.getDate() + 1);
     }
 
     return keys;
+}
+
+/**
+ * Parses a "YYYY-MM-DD" key as a LOCAL date. Noon, not midnight: a DST spring
+ * forward at midnight would otherwise land the date on the previous day.
+ */
+export function parseDateKey(dateKey) {
+    return new Date(dateKey + "T12:00:00");
+}
+
+/**
+ * One step away from a date key, in the unit the screen reads in.
+ *
+ * `unit: "day"` moves a calendar day. `unit: "week"` moves ONE WORK WEEK, not
+ * seven arbitrary days: it re-anchors to the Friday that starts the week the key
+ * falls in (`getCurrentWeek`) and steps from there, so stepping from a Tuesday
+ * lands on a Friday and every further step stays on Fridays. That is what makes
+ * prev/next on the pay side land on the same weeks the statement is cut into.
+ */
+export function stepDateKey(dateKey, unit, direction) {
+    const cursor = parseDateKey(dateKey);
+
+    if (unit === "week") {
+        const weekStart = getCurrentWeek(cursor)[0];
+        weekStart.setDate(weekStart.getDate() + direction * 7);
+        return toDateKey(weekStart);
+    }
+
+    cursor.setDate(cursor.getDate() + direction);
+    return toDateKey(cursor);
 }

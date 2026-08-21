@@ -4,20 +4,14 @@ import assert from "node:assert/strict";
 
 const readSource = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("App loads admin and chart surfaces through lazy boundaries", () => {
+test("App loads the admin workspace through a lazy boundary", () => {
     const source = readSource("src/App.jsx");
 
-    assert.doesNotMatch(
-        source,
-        /import\s+Charts\s+from\s+["']\.\/components\/Charts\/Charts["']/,
-        "Charts should not be eagerly imported into the main app chunk."
-    );
     assert.doesNotMatch(
         source,
         /import\s+AdminDashboard\s+from\s+["']\.\/components\/Admin\/AdminDashboard["']/,
         "AdminDashboard should not be eagerly imported into the main app chunk."
     );
-    assert.match(source, /lazy\(\(\)\s*=>\s*import\(["']\.\/components\/Charts\/Charts["']\)\)/);
     assert.match(source, /lazy\(\(\)\s*=>\s*import\(["']\.\/components\/Admin\/AdminDashboard["']\)\)/);
 });
 
@@ -52,18 +46,23 @@ test("Firebase emulator ports are configurable for local port conflicts", () => 
     assert.match(source, /VITE_FIRESTORE_EMULATOR_PORT/);
 });
 
-test("Shift editor isolates money closeout cards from unrelated input rerenders", () => {
+test("Shift editor isolates money closeout entry from unrelated input rerenders", () => {
     const source = readSource("src/components/Admin/ShiftEditorPanel.jsx");
+    const railPillSource = readSource("src/components/Admin/ShiftEditor/RailPill.jsx");
+    const entryPanelSource = readSource("src/components/Admin/ShiftEditor/CloseoutEntryPanel.jsx");
 
+    // The team-switcher renders one fixed-height entry panel and a rail of memoized
+    // pills, so only the focused group's inputs (plus the pill whose pool changed) react
+    // to a keystroke - the roster no longer renders as a growing stack of cards.
     assert.match(
-        source,
-        /const\s+TeamPoolCloseoutCard\s*=\s*memo\(/,
-        "Dining team money inputs should live in a memoized closeout card."
+        railPillSource,
+        /const\s+RailPill\s*=\s*memo\(/,
+        "Switcher rail pills should be memoized so unrelated teams don't rerender on every keystroke."
     );
     assert.match(
-        source,
-        /const\s+BarPoolCloseoutCard\s*=\s*memo\(/,
-        "Bar money inputs should live in a memoized closeout card."
+        entryPanelSource,
+        /function\s+CloseoutEntryPanel\(/,
+        "Money inputs should render through a single fixed-height entry panel."
     );
     assert.match(
         source,
@@ -77,45 +76,62 @@ test("Shift editor isolates money closeout cards from unrelated input rerenders"
     );
 });
 
-test("Employee dashboard scopes tip subscriptions to the visible date window", () => {
-    const appSource = readSource("src/App.jsx");
+test("A pay statement scopes its reads to the days it actually shows", () => {
+    // The statement is where a person's payout documents are read now - one
+    // component for your own pay and, through the roster, a colleague's - so
+    // this is where the bounded window has to hold.
+    const statementSource = readSource("src/components/Pay/PayStatement.jsx");
     const dataServiceSource = readSource("src/services/dataService.js");
 
     assert.doesNotMatch(
-        appSource,
+        statementSource,
         /DataService\.subscribeToAllData/,
-        "Employee sessions should not subscribe to the full historical tips collection."
+        "A pay statement should not subscribe to the full historical tips collection."
     );
     assert.match(
-        appSource,
-        /getEmployeeTipSubscriptionDateKeys/,
-        "App should derive a small date window for employee tip subscriptions."
+        statementSource,
+        /getPayStatementSubscriptionKeys/,
+        "A pay statement should derive a small date window before subscribing."
     );
     assert.match(
-        appSource,
-        /DataService\.subscribeToDates/,
-        "Employee sessions should subscribe only to the needed tip documents."
+        statementSource,
+        /DataService\.subscribeToDatesForUser/,
+        "A pay statement should subscribe only to the needed payout documents, for one person."
     );
     assert.match(
         dataServiceSource,
-        /subscribeToDates/,
-        "DataService should expose a document-scoped subscription helper."
+        /subscribeToDatesForUser/,
+        "DataService should expose a document-scoped, per-person subscription helper."
     );
 });
 
-test("Team Management uses user history flags before legacy merge scans", () => {
+test("Team Management delegates temp merge payout ownership to the ledger utility", () => {
     const teamManagementSource = readSource("src/components/Admin/TeamManagement.jsx");
     const shiftEditorSource = readSource("src/components/Admin/ShiftEditorPanel.jsx");
+    const mergePersistenceSource = readSource("src/utils/tempStaffMergePersistence.js");
 
     assert.match(
         teamManagementSource,
-        /getMergeHistoryState/,
-        "Team Management should use user metadata flags for merge eligibility."
+        /mergeTempStaffIntoAccount/,
+        "Team Management should delegate temp-staff merge persistence to a tested utility."
+    );
+    assert.doesNotMatch(
+        teamManagementSource,
+        /collection\(db,\s*["']shifts["']\)/,
+        "Team Management should not scan every shift while rendering merge controls."
     );
     assert.match(
-        teamManagementSource,
-        /legacyUsers/,
-        "Team Management should scan historical data only for users missing history flags."
+        mergePersistenceSource,
+        /collection\(db,\s*PAYOUT_LEDGER_COLLECTION\)/,
+        "Temp-staff merge should discover payout ownership through canonical ledger dates."
+    );
+    // The merge has to find shifts that still name the temp profile but hold no
+    // money yet. That lookup must stay an indexed "setup" query - a bare scan of
+    // `shifts` grows with every night the restaurant has ever worked.
+    assert.match(
+        mergePersistenceSource,
+        /query\(collection\(db,\s*["']shifts["']\),\s*where\(["']status["'],\s*["']==["'],\s*["']setup["']\)\)/,
+        "Temp-staff merge should find open rosters through a status-bounded query, not a full shift scan."
     );
     assert.match(
         shiftEditorSource,

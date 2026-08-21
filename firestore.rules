@@ -3,22 +3,512 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: check if the requester is an admin
-    function isAdmin() {
+    // ------------------------------------------------------------------
+    // Permission tiers: Manager > Captain > Employee, cumulative.
+    //
+    // Permission is bound to the SUPERVISOR switch on users/{uid} plus the
+    // manager pointer at restaurant/config. A job title grants nothing:
+    //
+    //   users.role          the job title, and the ONLY thing the money is
+    //                       calculated from. A captain with the switch off is
+    //                       still paid as a captain and can still do nothing.
+    //   users.isSupervisor  the "Supervisor" switch. Manager-set, per person,
+    //                       absent reads as OFF. This is the captain tier.
+    //
+    // Never move this predicate back onto a role value, and never add a role
+    // value that means "supervisor": src/utils/engine.js reads ROLE_POINTS by
+    // role and matches role == "captain" exactly for the captain override, so a
+    // compound title would silently pay someone zero. The switch is a separate
+    // field for that reason.
+    //
+    // The floor plan's teams[].members[].role is pay weight for one night and is
+    // NEVER a permission - any floor-plan editor can change that dropdown, so
+    // reading it here would let a supervisor promote themselves or anyone else.
+    // The same holds for any other key smuggled onto a floor-plan member: every
+    // predicate below reads the reader's own users/{uid} document and nothing on
+    // the shift.
+    //
+    // MIGRATION STATE - read this before changing anything below.
+    // The tier model is dormant until the restaurant names a manager. With no
+    // restaurant/config document, isManager() and isCaptain() are false for
+    // everyone and the only authority is the legacy `role: "admin"` account,
+    // exactly as it was before this file grew tiers. Naming the manager is the
+    // cutover and it is a separate release; until it lands nobody gains or
+    // loses access. tests/rules/current-state.test.js pins that, and
+    // tests/rules/manager-tier.test.js proves the tiers once a manager exists.
+    // ------------------------------------------------------------------
+
+    function selfProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isActiveUser() {
+      return request.auth != null && selfProfile().status == "active";
+    }
+
+    // The tier model is live only once a manager has been named.
+    function tierModelActive() {
+      return exists(/databases/$(database)/documents/restaurant/config);
+    }
+
+    // Exactly one manager, named by a singleton pointer rather than a role
+    // value: rules cannot cheaply assert "only one document carries this role",
+    // but a single field has a single holder by construction.
+    function isManager() {
       return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+        tierModelActive() &&
+        request.auth.uid == get(/databases/$(database)/documents/restaurant/config).data.get("managerUid", "") &&
+        isActiveUser();
+    }
+
+    // Cumulative: the manager holds every captain power too, without needing the
+    // switch set on their own profile.
+    function isCaptain() {
+      return isManager() ||
+        (request.auth != null &&
+          tierModelActive() &&
+          selfProfile().get("isSupervisor", false) == true &&
+          isActiveUser());
+    }
+
+    // Legacy authority, deliberately kept: today's `role: "admin"` account keeps
+    // exactly the access it has now. The cutover retires it. Do not drop this
+    // clause before then - it is what makes the tier release safe.
+    function isLegacyAdmin() {
+      return request.auth != null &&
+        selfProfile().role == "admin" &&
+        selfProfile().status == "active";
+    }
+
+    function hasCaptainAccess() {
+      return isCaptain() || isLegacyAdmin();
+    }
+
+    function hasManagerAccess() {
+      return isManager() || isLegacyAdmin();
+    }
+
+    // Settle-up stamps history flags onto every participant's profile, so a
+    // captain must be able to update users/*. Restricting that write to these
+    // two fields is what stops "a captain can settle up" from quietly becoming
+    // "a captain can change roles".
+    function onlyHistoryFlagsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["hasShiftHistory", "hasTipHistory"]);
+    }
+
+    // A signed-in person owns only the display-name fields and login handle on
+    // their own profile. Role, status, Supervisor rights, history flags, email,
+    // identity, and provenance stay outside this whitelist, so smuggling any of
+    // them into the same write rejects the whole write.
+    function onlySelfEditableProfileFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["firstName", "lastName", "username"]);
+    }
+
+    function isSelfServiceProfileWrite(uid) {
+      return request.auth != null &&
+        request.auth.uid == uid &&
+        resource.data.status == "active" &&
+        onlySelfEditableProfileFieldsChanged();
+    }
+
+    // The Supervisor switch IS the captain tier, so moving it is the one write
+    // that hands out access. Two separate guards: only manager authority may
+    // move it at all, and nobody may move it on their own profile - a self-write
+    // is the only path by which an account could gain the tier without a
+    // manager's decision. The manager needs no self-write: isCaptain() already
+    // returns true for them through isManager().
+    function supervisorFlagChanged() {
+      return request.resource.data.get("isSupervisor", false) !=
+        resource.data.get("isSupervisor", false);
+    }
+
+    function maySetSupervisorFlag(uid) {
+      return hasManagerAccess() && request.auth.uid != uid;
+    }
+
+    // Closing, recalculating, and discarding a setup-stage day are captain work.
+    // Merging a temporary profile and removing a settled day are not - those
+    // stay on shift_removed / temp_staff_merged, which only the manager may write.
+    function isCaptainAuditType() {
+      return request.resource.data.type in ["shift_closed", "shift_recalculated", "setup_shift_removed"];
+    }
+
+    function isRole(role) {
+      return role in [
+        "admin",
+        "unassigned",
+        "captain",
+        "server",
+        "back",
+        "assistant",
+        "bartender",
+        "runner"
+      ];
+    }
+
+    function isPayoutRole(role) {
+      return isRole(role) || role == "staff";
+    }
+
+    function isStatus(status) {
+      return status in ["active", "pending", "inactive"];
+    }
+
+    function isShiftStatus(status) {
+      return status in ["setup", "closed"];
+    }
+
+    function isNumber(value) {
+      return value is int || value is float;
+    }
+
+    function isStringOrTimestamp(value) {
+      return value is string || value is timestamp;
+    }
+
+    function validSelfProfileCreate(uid) {
+      return request.resource.data.keys().hasOnly([
+          "uid",
+          "username",
+          "firstName",
+          "lastName",
+          "email",
+          "role",
+          "status",
+          "createdAt"
+        ]) &&
+        request.resource.data.keys().hasAll(["uid", "username", "firstName", "lastName", "email", "role", "status"]) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.username is string &&
+        request.resource.data.firstName is string &&
+        request.resource.data.firstName.size() > 0 &&
+        request.resource.data.firstName.size() <= 80 &&
+        request.resource.data.lastName is string &&
+        request.resource.data.lastName.size() <= 80 &&
+        request.resource.data.email is string &&
+        request.resource.data.role == "unassigned" &&
+        request.resource.data.status == "pending" &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    // DEPLOY ORDER HAZARD - read before shipping this rule to production.
+    // The `firstName.size() > 0` requirement below applies on UPDATE too, and
+    // Firestore validates the MERGED document. The closeout batch updates every
+    // participant's user doc (`closeoutPersistence.js` history flags), so a single
+    // legacy profile with no first name refuses the whole batch and makes EVERY
+    // shift that person worked unsaveable. Run
+    // `npm run backfill:user-profile-names -- --apply` against the target project
+    // BEFORE these rules reach it. Same family of hazard as docs/MANAGER-CHANGEOVER.md.
+    function validUserProfile(uid) {
+      return request.resource.data.keys().hasOnly([
+          "uid",
+          "username",
+          "firstName",
+          "lastName",
+          "email",
+          "role",
+          "status",
+          "createdAt",
+          "hasShiftHistory",
+          "hasTipHistory",
+          "isSupervisor"
+        ]) &&
+        request.resource.data.keys().hasAll(["uid", "firstName", "lastName", "role", "status"]) &&
+        request.resource.data.uid == uid &&
+        isRole(request.resource.data.role) &&
+        isStatus(request.resource.data.status) &&
+        (!("username" in request.resource.data) || request.resource.data.username is string) &&
+        request.resource.data.firstName is string &&
+        request.resource.data.firstName.size() > 0 &&
+        request.resource.data.firstName.size() <= 80 &&
+        request.resource.data.lastName is string &&
+        request.resource.data.lastName.size() <= 80 &&
+        (!("email" in request.resource.data) || request.resource.data.email is string) &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt)) &&
+        (!("hasShiftHistory" in request.resource.data) || request.resource.data.hasShiftHistory is bool) &&
+        (!("hasTipHistory" in request.resource.data) || request.resource.data.hasTipHistory is bool) &&
+        (!("isSupervisor" in request.resource.data) || request.resource.data.isSupervisor is bool);
+    }
+
+    function validUsernameMapping(username) {
+      return request.resource.data.keys().hasOnly(["uid", "username", "email", "createdAt"]) &&
+        request.resource.data.keys().hasAll(["uid", "username", "email"]) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.username is string &&
+        request.resource.data.username.size() > 0 &&
+        request.resource.data.username.size() <= 80 &&
+        request.resource.data.username.lower() == username &&
+        request.resource.data.email is string &&
+        request.resource.data.email == request.auth.token.email &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    // Open floor plans carry a uid-keyed name override so a rename can restamp
+    // the person's own label without handing an employee write access to the
+    // nested roster, roles, or money. getAfter binds the stamp to the firstName
+    // landing in the same atomic batch. Closed shifts can never take this path.
+    function isSelfServiceShiftNameRestamp() {
+      return request.auth != null &&
+        isActiveUser() &&
+        resource.data.status == "setup" &&
+        request.resource.data.status == "setup" &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberNames"]) &&
+        request.resource.data.memberNames is map &&
+        request.resource.data.memberNames
+          .diff(resource.data.get("memberNames", {}))
+          .affectedKeys().hasOnly([request.auth.uid]) &&
+        request.resource.data.memberNames
+          .diff(resource.data.get("memberNames", {}))
+          .affectedKeys().hasAll([request.auth.uid]) &&
+        request.resource.data.memberNames.get(request.auth.uid, "") ==
+          getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.firstName;
+    }
+
+    function validManagerPointer() {
+      return request.resource.data.keys().hasOnly(["managerUid", "updatedAt"]) &&
+        request.resource.data.keys().hasAll(["managerUid"]) &&
+        request.resource.data.managerUid is string &&
+        (!("updatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.updatedAt));
+    }
+
+    function validShift(shiftId) {
+      return request.resource.data.keys().hasOnly([
+          "date",
+          "status",
+          "teams",
+          "barTeam",
+          "runners",
+          "memberNames",
+          "setupSavedAt",
+          "closeoutDraftSavedAt",
+          "summary",
+          "payouts",
+          "firstClosedAt",
+          "closedAt",
+          "lastRecalculatedAt",
+          "lastTempStaffMergeAt",
+          "updatedAt",
+          "updatedBy",
+          "operationId"
+        ]) &&
+        request.resource.data.keys().hasAll(["date", "status", "teams", "barTeam", "runners", "updatedAt"]) &&
+        request.resource.data.date == shiftId &&
+        isShiftStatus(request.resource.data.status) &&
+        request.resource.data.teams is list &&
+        request.resource.data.barTeam is map &&
+        request.resource.data.runners is list &&
+        (!("memberNames" in request.resource.data) || request.resource.data.memberNames is map) &&
+        isStringOrTimestamp(request.resource.data.updatedAt) &&
+        (!("setupSavedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.setupSavedAt)) &&
+        (!("closeoutDraftSavedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.closeoutDraftSavedAt)) &&
+        (!("summary" in request.resource.data) || request.resource.data.summary is map) &&
+        (!("payouts" in request.resource.data) || request.resource.data.payouts is map) &&
+        (!("firstClosedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.firstClosedAt)) &&
+        (!("closedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.closedAt)) &&
+        (!("lastRecalculatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.lastRecalculatedAt)) &&
+        (!("lastTempStaffMergeAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.lastTempStaffMergeAt)) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("operationId" in request.resource.data) || request.resource.data.operationId == null || request.resource.data.operationId is string);
+    }
+
+    function validPayoutMeta(shiftDate) {
+      return request.resource.data.keys().hasOnly(["date", "ledgerVersion", "updatedAt", "updatedBy", "operationId"]) &&
+        request.resource.data.keys().hasAll(["date", "ledgerVersion"]) &&
+        request.resource.data.date == shiftDate &&
+        request.resource.data.ledgerVersion == 1 &&
+        (!("updatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.updatedAt)) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("operationId" in request.resource.data) || request.resource.data.operationId == null || request.resource.data.operationId is string);
+    }
+
+    function validPayoutEntry(shiftDate, uid) {
+      return request.resource.data.keys().hasOnly([
+          "ledgerVersion",
+          "date",
+          "uid",
+          "name",
+          "role",
+          "points",
+          "tips",
+          "gratuity",
+          "cash",
+          "wineBonus",
+          "total",
+          "teamId",
+          "breakdown",
+          "payoutAmount",
+          "operationId",
+          "updatedAt",
+          "updatedBy",
+          "source",
+          "previousSource",
+          "mergedFromTempStaff"
+        ]) &&
+        request.resource.data.keys().hasAll([
+          "ledgerVersion",
+          "date",
+          "uid",
+          "name",
+          "role",
+          "tips",
+          "gratuity",
+          "cash",
+          "total",
+          "operationId",
+          "updatedAt",
+          "source"
+        ]) &&
+        request.resource.data.ledgerVersion == 1 &&
+        request.resource.data.date == shiftDate &&
+        request.resource.data.uid == uid &&
+        request.resource.data.name is string &&
+        isPayoutRole(request.resource.data.role) &&
+        isNumber(request.resource.data.tips) &&
+        isNumber(request.resource.data.gratuity) &&
+        isNumber(request.resource.data.cash) &&
+        isNumber(request.resource.data.total) &&
+        request.resource.data.operationId is string &&
+        isStringOrTimestamp(request.resource.data.updatedAt) &&
+        request.resource.data.source is string &&
+        (!("points" in request.resource.data) || isNumber(request.resource.data.points)) &&
+        (!("wineBonus" in request.resource.data) || isNumber(request.resource.data.wineBonus)) &&
+        (!("teamId" in request.resource.data) || request.resource.data.teamId == null || request.resource.data.teamId is string) &&
+        (!("breakdown" in request.resource.data) || request.resource.data.breakdown is map) &&
+        (!("payoutAmount" in request.resource.data) || request.resource.data.payoutAmount == null || isNumber(request.resource.data.payoutAmount)) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("previousSource" in request.resource.data) || request.resource.data.previousSource == null || request.resource.data.previousSource is string) &&
+        (!("mergedFromTempStaff" in request.resource.data) || request.resource.data.mergedFromTempStaff is map);
+    }
+
+    function validLegacyTip(userId, tipDate) {
+      return request.resource.data.keys().hasOnly([
+          "gratuity",
+          "tip",
+          "cash",
+          "wineBonus",
+          "points",
+          "total",
+          "role",
+          "shiftDate",
+          "updatedAt",
+          "name",
+          "updatedBy",
+          "mergeOperationId",
+          "mergedFromTempStaff"
+        ]) &&
+        request.resource.data.keys().hasAll(["gratuity", "tip", "cash", "total", "role"]) &&
+        isNumber(request.resource.data.gratuity) &&
+        isNumber(request.resource.data.tip) &&
+        isNumber(request.resource.data.cash) &&
+        isNumber(request.resource.data.total) &&
+        isPayoutRole(request.resource.data.role) &&
+        (!("shiftDate" in request.resource.data) || request.resource.data.shiftDate == tipDate) &&
+        (!("wineBonus" in request.resource.data) || isNumber(request.resource.data.wineBonus)) &&
+        (!("points" in request.resource.data) || isNumber(request.resource.data.points)) &&
+        (!("updatedAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.updatedAt)) &&
+        (!("name" in request.resource.data) || request.resource.data.name is string) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
+        (!("mergeOperationId" in request.resource.data) || request.resource.data.mergeOperationId is string) &&
+        (!("mergedFromTempStaff" in request.resource.data) || request.resource.data.mergedFromTempStaff is map);
+    }
+
+    function validTempStaff(uid) {
+      return request.resource.data.keys().hasOnly([
+          "uid",
+          "name",
+          "username",
+          "role",
+          "status",
+          "isUnregistered",
+          "createdAt"
+        ]) &&
+        request.resource.data.keys().hasAll(["uid", "name", "username", "role", "status", "isUnregistered"]) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.name is string &&
+        request.resource.data.username is string &&
+        isRole(request.resource.data.role) &&
+        request.resource.data.status == "active" &&
+        request.resource.data.isUnregistered == true &&
+        (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
+    }
+
+    function validAuditEvent() {
+      return request.resource.data.keys().hasOnly([
+          "type",
+          "date",
+          "shiftId",
+          "operationId",
+          "actorUid",
+          "createdAt",
+          "ledgerVersion",
+          "previousPayoutUids",
+          "nextPayoutUids",
+          "removedPayoutUids",
+          "previousPayoutCount",
+          "nextPayoutCount",
+          "tempStaff",
+          "targetUser",
+          "migratedDates",
+          "migratedLedgerDates",
+          "migratedLegacyTipDates",
+          "updatedShiftDates",
+          "collisionDates"
+        ]) &&
+        request.resource.data.keys().hasAll(["type", "operationId", "createdAt", "ledgerVersion"]) &&
+        request.resource.data.type in ["shift_closed", "shift_recalculated", "temp_staff_merged", "shift_removed", "setup_shift_removed"] &&
+        request.resource.data.operationId is string &&
+        isStringOrTimestamp(request.resource.data.createdAt) &&
+        request.resource.data.ledgerVersion == 1 &&
+        (!("date" in request.resource.data) || request.resource.data.date is string) &&
+        (!("shiftId" in request.resource.data) || request.resource.data.shiftId is string) &&
+        (!("actorUid" in request.resource.data) || request.resource.data.actorUid == null || request.resource.data.actorUid is string) &&
+        (!("previousPayoutUids" in request.resource.data) || request.resource.data.previousPayoutUids is list) &&
+        (!("nextPayoutUids" in request.resource.data) || request.resource.data.nextPayoutUids is list) &&
+        (!("removedPayoutUids" in request.resource.data) || request.resource.data.removedPayoutUids is list) &&
+        (!("previousPayoutCount" in request.resource.data) || request.resource.data.previousPayoutCount is int) &&
+        (!("nextPayoutCount" in request.resource.data) || request.resource.data.nextPayoutCount is int) &&
+        (!("tempStaff" in request.resource.data) || request.resource.data.tempStaff is map) &&
+        (!("targetUser" in request.resource.data) || request.resource.data.targetUser is map) &&
+        (!("migratedDates" in request.resource.data) || request.resource.data.migratedDates is list) &&
+        (!("migratedLedgerDates" in request.resource.data) || request.resource.data.migratedLedgerDates is list) &&
+        (!("migratedLegacyTipDates" in request.resource.data) || request.resource.data.migratedLegacyTipDates is list) &&
+        (!("updatedShiftDates" in request.resource.data) || request.resource.data.updatedShiftDates is list) &&
+        (!("collisionDates" in request.resource.data) || request.resource.data.collisionDates is list);
+    }
+
+    // The restaurant's manager pointer - the single holder of the manager tier.
+    // Any signed-in client reads it so it can tell whether it holds the tier.
+    // Transfer is one atomic write by the sitting manager, so there is never a
+    // moment with zero or two managers. Creating the pointer is the cutover and
+    // is done out of band, the same way today's admin account was created; the
+    // pointer is never deleted, only retargeted.
+    match /restaurant/config {
+      allow read: if request.auth != null;
+      allow update: if isManager() && validManagerPointer();
+      allow create, delete: if false;
     }
 
     // Users collection
     match /users/{uid} {
       allow read: if request.auth != null &&
-        (request.auth.uid == uid || isAdmin());
-      // Enforce safe defaults on self-registration — prevents SDK-level role elevation.
+        (request.auth.uid == uid || hasCaptainAccess());
+      // Enforce safe defaults on self-registration - prevents SDK-level role elevation.
       allow create: if request.auth != null &&
         request.auth.uid == uid &&
-        request.resource.data.role == "unassigned" &&
-        request.resource.data.status == "pending";
-      allow update, delete: if isAdmin();
+        validSelfProfileCreate(uid);
+      // Roles, account status and the Supervisor switch are manager-only. A
+      // captain may write nothing but the settle-up history flags - see
+      // onlyHistoryFlagsChanged(). The switch carries the extra self-write ban
+      // in maySetSupervisorFlag(), which binds the manager too.
+      allow update: if validUserProfile(uid) &&
+        (!supervisorFlagChanged() || maySetSupervisorFlag(uid)) &&
+        (hasManagerAccess() ||
+          (hasCaptainAccess() && onlyHistoryFlagsChanged()) ||
+          isSelfServiceProfileWrite(uid));
+      allow delete: if hasManagerAccess();
     }
 
     // Minimal public username lookup. This avoids exposing full user profiles
@@ -26,30 +516,80 @@ service cloud.firestore {
     match /usernames/{username} {
       allow read: if true;
       allow create: if request.auth != null &&
-        request.resource.data.uid == request.auth.uid;
-      allow update, delete: if isAdmin();
+        validUsernameMapping(username);
+      allow update: if hasManagerAccess() ||
+        (request.auth != null &&
+          resource.data.uid == request.auth.uid &&
+          request.resource.data.uid == resource.data.uid &&
+          validUsernameMapping(username));
+      allow delete: if hasManagerAccess() ||
+        (request.auth != null && resource.data.uid == request.auth.uid);
     }
 
-    // Shifts (admin creates, employees read their own payouts)
+    // Shifts. Building a floor plan, settling up, correcting an already settled
+    // day, and discarding a setup-stage day (no saved pay) are captain work.
+    // Removing a settled day outright is not - that stays with the manager.
     match /shifts/{shiftId} {
-      allow read, write: if isAdmin();
+      allow get: if hasCaptainAccess();
+      allow list: if hasCaptainAccess() ||
+        (isActiveUser() && resource.data.status == "setup");
+      allow create: if hasCaptainAccess() && validShift(shiftId);
+      allow update: if validShift(shiftId) &&
+        (hasCaptainAccess() || isSelfServiceShiftNameRestamp());
+      allow delete: if hasManagerAccess() ||
+        (hasCaptainAccess() && resource.data.status == "setup");
     }
 
-    // Per-user tip data — employees read-only; only admins write.
-    match /users/{userId}/tips/{document=**} {
+    // Canonical payout ledger. Employees can read only their own exact entry doc.
+    // Entry deletes stay at captain tier because correcting a settled day drops
+    // the entries of anyone taken off the floor plan (saveClosedShiftAtomically).
+    // Deleting the meta doc is only ever part of removing the whole day, so it
+    // sits with the manager alongside the shifts/{date} delete.
+    match /payouts/{shiftDate} {
+      allow read: if hasCaptainAccess();
+      allow create, update: if hasCaptainAccess() && validPayoutMeta(shiftDate);
+      allow delete: if hasManagerAccess();
+
+      match /entries/{uid} {
+        allow get: if request.auth != null &&
+          (request.auth.uid == uid || hasCaptainAccess());
+        allow list: if hasCaptainAccess();
+        allow create, update: if hasCaptainAccess() && validPayoutEntry(shiftDate, uid);
+        allow delete: if hasCaptainAccess();
+      }
+    }
+
+    // Per-user tip data - employees read-only. Only the temp-staff merge still
+    // writes here, and merging is manager work.
+    // Legacy data remains readable during migration, but new closeout writes use /payouts.
+    match /users/{userId}/tips/{tipDate} {
       allow read: if request.auth != null &&
-        (request.auth.uid == userId || isAdmin());
-      allow write: if isAdmin();
+        (request.auth.uid == userId || hasCaptainAccess());
+      allow create, update: if hasManagerAccess() && validLegacyTip(userId, tipDate);
+      allow delete: if hasManagerAccess();
     }
 
-    // Unregistered (temporary) staff — admin-only, explicit rule prevents silent catch-all dependence.
-    match /unregisteredStaff/{document=**} {
-      allow read, write: if isAdmin();
+    // Unregistered (temporary) staff. Captains add them mid-setup; deleting one
+    // is the destructive half of a merge and stays with the manager.
+    match /unregisteredStaff/{uid} {
+      allow read: if hasCaptainAccess();
+      allow create, update: if hasCaptainAccess() && validTempStaff(uid);
+      allow delete: if hasManagerAccess();
     }
 
-    // Fallback: admins can access anything else
+    // Money-changing actions append immutable audit events. The event type is
+    // what separates a captain's closeout from a manager's merge or removal -
+    // each atomic batch stands or falls on its own audit event.
+    match /auditEvents/{eventId} {
+      allow read: if hasCaptainAccess();
+      allow create: if validAuditEvent() &&
+        (hasManagerAccess() || (hasCaptainAccess() && isCaptainAuditType()));
+      allow update, delete: if false;
+    }
+
+    // No broad fallback. New collections need explicit review.
     match /{document=**} {
-      allow read, write: if isAdmin();
+      allow read, write: if false;
     }
   }
 }

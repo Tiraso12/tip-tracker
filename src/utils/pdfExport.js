@@ -1,14 +1,15 @@
-const PRIMARY_COLOR = [26, 61, 46]; // #1a3d2e — forest green accent (matches v0.7.0 UI theme)
-const PRIMARY_SOFT = [232, 239, 233]; // #e8efe9 — soft accent tint for section header backgrounds
-const ROLE_ORDER = ["captain", "server", "back", "assistant", "bartender", "runner"];
-const ROLE_LABELS = {
-    captain: "CAPTAINS",
-    server: "SERVERS",
-    back: "BACKS",
-    assistant: "ASSISTANTS",
-    bartender: "BAR TEAM",
-    runner: "RUNNERS",
-};
+// Every PDF the app can produce. Only generateShiftReport has a screen behind it
+// today - DayPayoutPanel's shift report. generateTeamSheetPDF,
+// generateWeeklyReport and generateMonthlyReport are intact but unreachable: the
+// admin Reports panel that called them was removed. They are kept rather than
+// deleted because it was the entry point that went away, not the layouts, which
+// are the expensive part: re-wiring one is a button, not a rewrite.
+
+import { ASSIGNABLE_ROLES, rolePluralLabel, roleShortLabel } from './roleLabels';
+
+const PRIMARY_COLOR = [27, 94, 63]; // #1b5e3f - pine accent (matches --color-accent)
+const PRIMARY_SOFT = [231, 247, 236]; // #e7f7ec - soft accent tint for section header backgrounds (matches --color-accent-soft)
+const ROLE_ORDER = ASSIGNABLE_ROLES;
 
 const n = (value) => Number(value) || 0;
 const currency = (value) => `$${n(value).toFixed(2)}`;
@@ -44,13 +45,17 @@ const buildEmployeeTotals = (days = []) => {
             const tips = n(pay.tips);
             const gratuity = n(pay.gratuity);
             const cash = n(pay.cash);
-            const total = pay.total !== undefined ? n(pay.total) : tips + gratuity + cash;
+            // Total is CTP + GRT, matching the on-screen reports panel. Cash is
+            // its own column and is deliberately not added in here.
+            const total = tips + gratuity;
+            const activityTotal = total + cash;
 
             employeeTotals[uid].tips += tips;
             employeeTotals[uid].gratuity += gratuity;
             employeeTotals[uid].cash += cash;
             employeeTotals[uid].total += total;
-            employeeTotals[uid].shifts += total > 0 ? 1 : 0;
+            // A cash-only shift is still a shift worked.
+            employeeTotals[uid].shifts += activityTotal > 0 ? 1 : 0;
         });
     });
 
@@ -73,7 +78,7 @@ const buildEmployeeRows = (employeeTotals = []) => {
         if (members.length === 0) return;
 
         rows.push([{
-            content: ROLE_LABELS[role] || role.toUpperCase(),
+            content: rolePluralLabel(role).toUpperCase(),
             colSpan: 7,
             styles: { fillColor: PRIMARY_SOFT, textColor: PRIMARY_COLOR, fontStyle: 'bold' }
         }]);
@@ -139,7 +144,7 @@ export const generateShiftReport = async (date, summary) => {
     // 2. Header
     doc.setTextColor(...PRIMARY_COLOR);
     doc.setFontSize(22);
-    doc.text('TipTracker Shift Report', 40, 50);
+    doc.text('Tip Tracker Shift Report', 40, 50);
 
     doc.setTextColor(100);
     doc.setFontSize(12);
@@ -190,7 +195,7 @@ export const generateShiftReport = async (date, summary) => {
                 arr.forEach(m => {
                     tableBody.push([
                         m.name,
-                        isRunner ? 'Runner' : m.teamId?.replace('team-', 'Team ') || 'Bar',
+                        isRunner ? roleShortLabel('runner') : m.teamId?.replace('team-', 'Team ') || roleShortLabel('bartender'),
                         currency(m.ctp),
                         currency(m.grt),
                         currency(m.cash || 0),
@@ -199,12 +204,13 @@ export const generateShiftReport = async (date, summary) => {
                 });
             };
 
-            addGroup('CAPTAINS', roleGrouped.captains);
-            addGroup('SERVERS', roleGrouped.servers);
-            addGroup('BACKS', roleGrouped.backs);
-            addGroup('ASSISTANTS', roleGrouped.assistants);
-            addGroup('BAR TEAM', roleGrouped.bar);
-            addGroup('RUNNERS', roleGrouped.runners, true);
+            const upper = (role) => rolePluralLabel(role).toUpperCase();
+            addGroup(upper('captain'), roleGrouped.captains);
+            addGroup(upper('server'), roleGrouped.servers);
+            addGroup(upper('back'), roleGrouped.backs);
+            addGroup(upper('assistant'), roleGrouped.assistants);
+            addGroup(upper('bartender'), roleGrouped.bar);
+            addGroup(upper('runner'), roleGrouped.runners, true);
 
         } else {
             // 1. Teams
@@ -235,7 +241,7 @@ export const generateShiftReport = async (date, summary) => {
                 if (isGrouped) {
                     summary.payouts.captainsOverride.forEach((teamGroup, idx) => {
                         tableBody.push([{
-                            content: `TEAM ${idx + 1} CAPTAINS OVERRIDE`,
+                            content: `TEAM ${idx + 1} ${rolePluralLabel('captain').toUpperCase()} OVERRIDE`,
                             colSpan: 6,
                             styles: { fillColor: [255, 240, 245], textColor: [200, 50, 100], fontStyle: 'bold' }
                         }]);
@@ -252,7 +258,7 @@ export const generateShiftReport = async (date, summary) => {
                     });
                 } else {
                     tableBody.push([{
-                        content: `CAPTAINS OVERRIDE`,
+                        content: `${rolePluralLabel('captain').toUpperCase()} OVERRIDE`,
                         colSpan: 6,
                         styles: { fillColor: [255, 240, 245], textColor: [200, 50, 100], fontStyle: 'bold' }
                     }]);
@@ -482,7 +488,7 @@ export const generateWeeklyReport = async (weekData, weekRangeLabel, reportLabel
     // Header
     doc.setTextColor(...PRIMARY_COLOR);
     doc.setFontSize(22);
-    doc.text(`TipTracker ${reportLabel} Report`, 40, 50);
+    doc.text(`Tip Tracker ${reportLabel} Report`, 40, 50);
 
     doc.setTextColor(100);
     doc.setFontSize(12);
@@ -562,7 +568,7 @@ export const generateMonthlyReport = async (monthName, daysInMonthData) => {
     // Header
     doc.setTextColor(...PRIMARY_COLOR);
     doc.setFontSize(22);
-    doc.text('TipTracker Monthly Report', 40, 50);
+    doc.text('Tip Tracker Monthly Report', 40, 50);
 
     doc.setTextColor(100);
     doc.setFontSize(12);

@@ -4,12 +4,14 @@ import {
     browserLocalPersistence,
     browserSessionPersistence,
     createUserWithEmailAndPassword,
+    EmailAuthProvider,
     onAuthStateChanged,
+    reauthenticateWithCredential,
     sendPasswordResetEmail,
     setPersistence,
     signInWithEmailAndPassword,
     signOut,
-    updateProfile,
+    updatePassword,
 } from "firebase/auth";
 import { doc, getDoc, writeBatch } from "firebase/firestore";
 
@@ -26,14 +28,29 @@ export const AuthProvider = ({ children }) => {
 
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
-                // Fetch role and status from Firestore
-                let role = "employee"; // default fallback
-                let status = "active"; // default fallback
+                // Profile state is the authorization source of truth. Missing
+                // or unreadable state must not become an active employee.
+                let role = "unassigned";
+                let status = "profile_error";
+                let username = "";
+                let firstName = "";
+                let lastName = "";
+                let createdAt = null;
+                // The "Supervisor" switch - the captain tier. The manager sets
+                // it, absent means off, and the job title in `role` grants
+                // nothing on its own. See src/utils/permissions.js.
+                let isSupervisor = false;
                 try {
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
-                        role = userDoc.data().role || "employee";
-                        status = userDoc.data().status || "active";
+                        const profile = userDoc.data();
+                        role = profile.role || "unassigned";
+                        status = profile.status || "pending";
+                        username = profile.username || "";
+                        firstName = profile.firstName || "";
+                        lastName = profile.lastName || "";
+                        createdAt = profile.createdAt || null;
+                        isSupervisor = profile.isSupervisor === true;
                     } else if (registrationInProgressRef.current) {
                         role = "unassigned";
                         status = "pending";
@@ -49,13 +66,33 @@ export const AuthProvider = ({ children }) => {
                     console.warn("Could not fetch user data:", e);
                 }
 
+                // Who holds the manager tier. It is a singleton pointer rather
+                // than a role value, so "exactly one manager" is structural.
+                // An absent or unreadable pointer means no manager has been
+                // named, which leaves every tier capability resolving the way
+                // it did before the tiers existed - see src/utils/permissions.js.
+                let managerUid = null;
+                try {
+                    const configDoc = await getDoc(doc(db, 'restaurant', 'config'));
+                    if (configDoc.exists()) {
+                        managerUid = configDoc.data().managerUid || null;
+                    }
+                } catch (e) {
+                    console.warn("Could not fetch the manager pointer:", e);
+                }
+
                 const mappedUser = {
                     uid: firebaseUser.uid,
-                    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+                    username,
+                    firstName,
+                    lastName,
                     email: firebaseUser.email,
                     emailVerified: true, // Default to true as we're removing verification step
                     role,
                     status,
+                    isSupervisor,
+                    managerUid,
+                    createdAt,
                 };
                 setUser(mappedUser);
             } else {
@@ -95,9 +132,11 @@ export const AuthProvider = ({ children }) => {
         return await signInWithEmailAndPassword(auth, emailToSignIn, password);
     };
 
-    const register = async (email, password, username) => {
+    const register = async (email, password, username, firstName, lastName) => {
         const cleanEmail = email.trim();
         const cleanUsername = username.trim();
+        const cleanFirstName = firstName.trim();
+        const cleanLastName = lastName.trim();
         const usernameKey = normalizeUsername(cleanUsername);
         const usernameRef = doc(db, 'usernames', usernameKey);
 
@@ -108,8 +147,6 @@ export const AuthProvider = ({ children }) => {
             const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
             firebaseUser = userCredential.user;
 
-            await updateProfile(firebaseUser, { displayName: cleanUsername });
-
             // Atomically claim the username and create the user doc without a
             // client-side username read. Firestore rules allow creating the
             // username mapping, but deny updating it, so an existing username
@@ -118,6 +155,8 @@ export const AuthProvider = ({ children }) => {
             batch.set(doc(db, 'users', firebaseUser.uid), {
                 uid: firebaseUser.uid,
                 username: cleanUsername,
+                firstName: cleanFirstName,
+                lastName: cleanLastName,
                 email: cleanEmail,
                 role: "unassigned",
                 status: "pending",
@@ -144,7 +183,18 @@ export const AuthProvider = ({ children }) => {
             registrationInProgressRef.current = false;
         }
 
-        setUser(prev => ({ ...prev, username: cleanUsername, role: "unassigned", status: "pending", emailVerified: true }));
+        // A self-registered account is pending with no title and no switch - the
+        // same safe defaults firestore.rules enforces on the create.
+        setUser(prev => ({
+            ...prev,
+            username: cleanUsername,
+            firstName: cleanFirstName,
+            lastName: cleanLastName,
+            role: "unassigned",
+            status: "pending",
+            isSupervisor: false,
+            emailVerified: true,
+        }));
         return firebaseUser;
     };
 
@@ -152,8 +202,32 @@ export const AuthProvider = ({ children }) => {
         await sendPasswordResetEmail(auth, email);
     };
 
+    const updateSessionProfile = (changes) => {
+        setUser((current) => current ? { ...current, ...changes } : current);
+    };
+
+    const changePassword = async (currentPassword, nextPassword) => {
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser?.email) throw new Error("Your sign-in session is unavailable. Log in again and retry.");
+        if (!currentPassword) throw new Error("Enter your current password.");
+        if (nextPassword.length < 8) throw new Error("Your new password must be at least 8 characters.");
+
+        const credential = EmailAuthProvider.credential(firebaseUser.email, currentPassword);
+        await reauthenticateWithCredential(firebaseUser, credential);
+        await updatePassword(firebaseUser, nextPassword);
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading, resetPassword }}>
+        <AuthContext.Provider value={{
+            user,
+            login,
+            register,
+            logout,
+            loading,
+            resetPassword,
+            updateSessionProfile,
+            changePassword,
+        }}>
             {!loading && children}
         </AuthContext.Provider>
     );

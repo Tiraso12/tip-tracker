@@ -1,633 +1,84 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
-import ShiftSetupDnd from "./ShiftSetup/ShiftSetupDnd";
-import { Button, Card } from "../ui";
-import { buildClosedShiftPayload, buildShiftSetupDraft, getRemovedPayoutUids } from "../../utils/shiftPersistence";
+import DayRail from "./DayRail";
+import { getRailSteps } from "../../utils/dayFlow";
+import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleStatus";
+import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
+import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
 import { RUNNER_FLAT_RATE } from "../../utils/constants";
 import { getHistoryFlagUpdate, getShiftParticipantUids } from "../../utils/userHistoryFlags";
+import { useAuth } from "../../context/AuthContext";
+import { usePendingActions } from "../../context/PendingActionsContext";
 import {
+    applyBarFoodSalesEdit,
     buildPayoutReview,
-    fmtMoney,
+    fmtAmount,
     getBarSummary,
-    getPayoutNonCashTotal,
     getTeamSummary,
     ignoreMissingUserDoc,
     mapPayoutsForFirebase,
-    roleLabels,
     toMoney,
     validateShiftInputs,
-    validateTeamSetup,
 } from "./shiftEditorUtils";
+import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
+import { describeShiftBalance } from "../../utils/shiftBalance";
+import { describeSaveFailure, findNamelessParticipants } from "../../utils/saveFailure";
+import { FloorStep } from "./ShiftEditor/FloorStep";
+import { ReviewStep } from "./ShiftEditor/ReviewStep";
+import { SettleStep } from "./ShiftEditor/SettleStep";
 
-const NUMERIC_INPUT =
-    "block w-full h-9 px-2.5 text-sm font-mono tabular-nums bg-[var(--color-surface)] max-[560px]:h-10 " +
-    "text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] " +
-    "border border-[var(--color-line)] rounded-[var(--radius-xs)] " +
-    "transition-colors duration-150 hover:border-[var(--color-line-strong)] " +
-    "focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent)]/15 " +
-    "appearance-none [-moz-appearance:textfield] " +
-    "[&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
-
-function PoolField({ label, value, onChange, hint }) {
-    const id = `pool-field-${label.replace(/\s+/g, "-").toLowerCase()}`;
-    return (
-        <div className="flex flex-col gap-1">
-            <label htmlFor={id} className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
-                {label}
-            </label>
-            {hint ? <span className="text-[10px] text-[var(--color-ink-muted)]">{hint}</span> : null}
-            <input
-                id={id}
-                type="number"
-                min="0"
-                step="0.01"
-                className={NUMERIC_INPUT}
-                value={value ?? ""}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder="0.00"
-                aria-label={label}
-            />
-        </div>
-    );
+// A stable fingerprint of the editable shift (roster + money), ignoring transient
+// UI-only fields like `_showContracts`. Comparing the live fingerprint to the one
+// captured at load tells us whether the admin has actually changed anything - used
+// to decide whether leaving edit mode needs a discard confirmation.
+function fingerprintShift(teams, barTeam, runners) {
+    return JSON.stringify({
+        teams: (teams || []).map(team => ({
+            teamId: team.teamId,
+            members: team.members || [],
+            pools: team.pools || {},
+            contracts: team.contracts || [],
+        })),
+        barTeam: { members: barTeam?.members || [], pools: barTeam?.pools || {} },
+        runners: runners || [],
+    });
 }
 
-function SummaryMetric({ label, value }) {
-    return (
-        <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
-                {label}
-            </span>
-            <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)] truncate">
-                {value}
-            </strong>
-        </div>
-    );
-}
+// The one discard prompt for leaving the editor with unsaved work. It is shared by
+// the in-screen Cancel and by navigation that leaves from outside the editor (the
+// home control, the workspace menu), so every exit warns identically.
+const DISCARD_EDIT_CONFIRMATION =
+    "Discard your changes to this closed shift?\n\n" +
+    "Edits to a paid-out shift are only saved when you go to Review and " +
+    "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
+    "current payouts unchanged.";
 
-function PoolCardTotals({ totals }) {
-    return (
-        <div className="grid grid-cols-3 gap-3 px-4 py-3 bg-[var(--color-surface-muted)]/50 border-y border-[var(--color-line)] max-[560px]:gap-2">
-            {totals.map(([label, value]) => (
-                <div key={label} className="flex flex-col gap-0.5 min-w-0">
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
-                        {label}
-                    </span>
-                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)] truncate">
-                        {label === "Covers" ? value.toLocaleString() : fmtMoney(value)}
-                    </strong>
-                </div>
-            ))}
-        </div>
-    );
-}
-
-function TeamCloseoutCard({
-    title,
-    memberCount,
-    totals,
-    hasInputData,
-    mobileOpen,
-    onMobileToggle,
-    inactive = false,
-    children,
-}) {
-    return (
-        <div className={
-            "border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden " +
-            (inactive ? "max-[560px]:bg-[var(--color-surface-muted)]/35" : "")
-        }>
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:py-2.5">
-                <span className={
-                    "text-sm font-medium " +
-                    (inactive ? "max-[560px]:text-[var(--color-ink-soft)] text-[var(--color-ink)]" : "text-[var(--color-ink)]")
-                }>
-                    {title} ({memberCount} {memberCount === 1 ? "member" : "members"})
-                </span>
-                <button
-                    type="button"
-                    onClick={onMobileToggle}
-                    className="hidden max-[560px]:inline text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
-                >
-                    {mobileOpen ? (
-                        "Hide inputs"
-                    ) : hasInputData ? (
-                        <span className="inline-flex items-center justify-center" title="Data entered" aria-label="Data entered">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
-                        </span>
-                    ) : inactive ? (
-                        "Open"
-                    ) : (
-                        "Edit inputs"
-                    )}
-                </button>
-            </div>
-            <div className={!mobileOpen ? "max-[560px]:hidden" : ""}>
-                <PoolCardTotals totals={totals} />
-            </div>
-            <div className={(mobileOpen ? "grid " : "hidden ") + "sm:grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 max-[560px]:p-3"}>
-                {children}
-            </div>
-        </div>
-    );
-}
-
-const TeamPoolCloseoutCard = memo(function TeamPoolCloseoutCard({
-    team,
-    teamIndex,
-    summarySales,
-    summaryPool,
-    summaryCovers,
-    mobileOpen,
-    onMobileToggle,
-    onPoolChange,
-    onToggleContracts,
-    onAddContract,
-    onUpdateContract,
-    onRemoveContract,
-}) {
-    const hasInputData = Object.values(team.pools || {}).some(value => toMoney(value) > 0)
-        || (team.contracts || []).some(contract => toMoney(contract.gratuity) > 0);
-    const inactive = team.members.length === 0 && !hasInputData;
-
-    return (
-        <TeamCloseoutCard
-            title={`Team ${teamIndex + 1}`}
-            memberCount={team.members.length}
-            hasInputData={hasInputData}
-            mobileOpen={mobileOpen}
-            onMobileToggle={onMobileToggle}
-            inactive={inactive}
-            totals={[
-                ["Sales", summarySales],
-                ["Pool", summaryPool],
-                ["Covers", summaryCovers],
-            ]}
-        >
-            <PoolField label="Sales ($)" value={team.pools.sales} onChange={(value) => onPoolChange(team.teamId, "sales", value)} />
-            <PoolField label="Tips (CTP) ($)" value={team.pools.tips} onChange={(value) => onPoolChange(team.teamId, "tips", value)} />
-            <PoolField label="Gratuity ($)" value={team.pools.gratuity} onChange={(value) => onPoolChange(team.teamId, "gratuity", value)} />
-            <PoolField label="Cash ($)" value={team.pools.cash} onChange={(value) => onPoolChange(team.teamId, "cash", value)} />
-            <PoolField label="Covers" value={team.pools.covers} onChange={(value) => onPoolChange(team.teamId, "covers", value)} />
-
-            <div className="col-span-full border-t border-[var(--color-line)]">
-                <div className="flex flex-wrap items-center justify-between gap-2 py-2">
-                    <button
-                        type="button"
-                        onClick={() => onToggleContracts(team.teamId)}
-                        aria-expanded={Boolean(team._showContracts)}
-                        className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] transition-colors"
-                    >
-                        <span className={"transition-transform duration-150 " + (team._showContracts ? "rotate-90" : "")}>▶</span>
-                        Contracts {team.contracts && team.contracts.length > 0 ? `(${team.contracts.length})` : ""}
-                    </button>
-                    {team._showContracts ? (
-                        <button
-                            type="button"
-                            onClick={() => onAddContract(team.teamId)}
-                            className="text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors whitespace-nowrap"
-                        >
-                            + Add Contract
-                        </button>
-                    ) : null}
-                </div>
-
-                {team._showContracts ? (
-                    team.contracts && team.contracts.length > 0 ? (
-                        <div className="pb-4 space-y-2">
-                            {team.contracts.map((contract, contractIndex) => (
-                                <div key={contractIndex} className="flex items-center gap-2">
-                                    <span className="text-xs font-mono tabular-nums text-[var(--color-ink-muted)] w-7">
-                                        #{contractIndex + 1}
-                                    </span>
-                                    <div className="relative flex-1">
-                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-ink-muted)] pointer-events-none">$</span>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            placeholder="26% Gratuity Amount"
-                                            value={contract.gratuity}
-                                            onChange={(e) => onUpdateContract(team.teamId, contractIndex, "gratuity", e.target.value)}
-                                            className={NUMERIC_INPUT + " !pl-6"}
-                                        />
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => onRemoveContract(team.teamId, contractIndex)}
-                                        title="Remove contract"
-                                        aria-label="Remove contract"
-                                        className="h-9 w-9 inline-flex items-center justify-center rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors"
-                                    >
-                                        ×
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="pb-4 text-xs text-[var(--color-ink-muted)] italic">
-                            No contracts added. Click '+ Add Contract' to input a contract amount.
-                        </div>
-                    )
-                ) : null}
-            </div>
-        </TeamCloseoutCard>
-    );
-});
-
-const BarPoolCloseoutCard = memo(function BarPoolCloseoutCard({
-    barTeam,
-    summarySales,
-    summaryPool,
-    summaryTransfer,
-    hasInputData,
-    mobileOpen,
-    onMobileToggle,
-    onBarPoolChange,
-}) {
-    const inactive = barTeam.members.length === 0 && !hasInputData;
-
-    return (
-        <TeamCloseoutCard
-            title="Bar Team"
-            memberCount={barTeam.members.length}
-            hasInputData={hasInputData || barTeam.members.length > 0}
-            mobileOpen={mobileOpen}
-            onMobileToggle={onMobileToggle}
-            inactive={inactive}
-            totals={[
-                ["Sales", summarySales],
-                ["Pool", summaryPool],
-                ["Transfer", summaryTransfer],
-            ]}
-        >
-            <PoolField label="Bar Sales ($)" value={barTeam.pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
-            <PoolField label="Tips (CTP) ($)" value={barTeam.pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
-            <PoolField label="Gratuity ($)" value={barTeam.pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
-            <PoolField label="Covers" value={barTeam.pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />
-            <PoolField label="Runners Transfer ($)" value={barTeam.pools.runners} onChange={(value) => onBarPoolChange("runners", value)} />
-        </TeamCloseoutCard>
-    );
-});
-
-function PointGroup({ title, members, emptyMessage, defaultPoints = 0, onPointChange, onPointAdjust }) {
-    const totalPoints = members.reduce((sum, member) => {
-        const points = member.points === null || member.points === undefined || member.points === ""
-            ? defaultPoints
-            : toMoney(member.points);
-        return sum + points;
-    }, 0);
-
-    return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-sm)] overflow-hidden max-[560px]:border-x-0 max-[560px]:rounded-none">
-            <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-muted)]/40 border-b border-[var(--color-line)] max-[560px]:px-3 max-[560px]:py-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
-                    {title}
-                </span>
-                <strong className="text-xs font-mono tabular-nums text-[var(--color-ink)]">
-                    {totalPoints.toLocaleString()} pts
-                </strong>
-            </div>
-
-            {members.length === 0 ? (
-                <div className="px-4 py-3 text-xs text-[var(--color-ink-muted)] italic">
-                    {emptyMessage}
-                </div>
-            ) : (
-                <div className="divide-y divide-[var(--color-line)]">
-                    {members.map((member) => {
-                        const value = member.points === null || member.points === undefined || member.points === ""
-                            ? defaultPoints
-                            : member.points;
-                        return (
-                            <div key={member.uid} className="flex items-center justify-between gap-3 px-4 py-2 max-[560px]:px-3 max-[560px]:py-2">
-                                <div className="flex flex-col min-w-0 flex-1">
-                                    <strong className="text-sm text-[var(--color-ink)] truncate max-[560px]:text-[0.82rem]">{member.name}</strong>
-                                    <span className="text-[11px] text-[var(--color-ink-muted)] max-[560px]:text-[0.68rem]">
-                                        {roleLabels[member.role] || member.role || "Staff"}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0 max-[560px]:gap-1.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => onPointAdjust(member.uid, -0.5)}
-                                        aria-label={`Decrease ${member.name} points`}
-                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-8 max-[560px]:w-8"
-                                    >
-                                        −
-                                    </button>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        className={NUMERIC_INPUT + " !w-16 !h-7 text-center max-[560px]:!h-8 max-[560px]:!w-16 max-[560px]:text-[0.82rem]"}
-                                        value={value}
-                                        onChange={(e) => onPointChange(member.uid, e.target.value)}
-                                        aria-label={`${member.name} points`}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => onPointAdjust(member.uid, 0.5)}
-                                        aria-label={`Increase ${member.name} points`}
-                                        className="h-7 w-7 inline-flex items-center justify-center rounded-[var(--radius-xs)] border border-[var(--color-line)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors max-[560px]:h-8 max-[560px]:w-8"
-                                    >
-                                        +
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
-
-function RunnerGroup({ runners, totalPay, onPayoutChange }) {
-    return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-sm)] overflow-hidden max-[560px]:border-x-0 max-[560px]:rounded-none">
-            <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface-muted)]/40 border-b border-[var(--color-line)] max-[560px]:px-3 max-[560px]:py-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-ink-soft)]">
-                    Runners
-                </span>
-                <strong className="text-xs font-mono tabular-nums text-[var(--color-ink)]">
-                    {fmtMoney(totalPay)}
-                </strong>
-            </div>
-
-            {runners.length === 0 ? (
-                <div className="px-4 py-3 text-xs text-[var(--color-ink-muted)] italic">
-                    No runners assigned to this shift.
-                </div>
-            ) : (
-                <div className="divide-y divide-[var(--color-line)]">
-                    {runners.map((runner) => (
-                        <div key={runner.uid} className="flex items-center justify-between gap-3 px-4 py-2 max-[560px]:px-3 max-[560px]:py-2">
-                            <strong className="text-sm text-[var(--color-ink)] truncate max-[560px]:text-[0.82rem]">{runner.name}</strong>
-                            <label className="flex items-center gap-2 shrink-0">
-                                <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Payout</span>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className={NUMERIC_INPUT + " !w-20 !h-7 max-[560px]:!h-8 max-[560px]:!w-20 max-[560px]:text-[0.82rem]"}
-                                    value={runner.payoutAmount ?? ""}
-                                    onChange={(e) => onPayoutChange(runner.uid, e.target.value)}
-                                    placeholder={String(RUNNER_FLAT_RATE)}
-                                    aria-label={`${runner.name} runner payout`}
-                                />
-                            </label>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
-function PointAdjustmentsPanel({
-    teams,
-    barTeam,
-    runners,
-    totals,
-    onTeamPointChange,
-    onTeamPointAdjust,
-    onBarPointChange,
-    onBarPointAdjust,
-    onRunnerPayoutChange,
-}) {
-    const restaurantMembersCount = teams.reduce((sum, team) => sum + team.members.length, 0);
-    const hasAdjustments = restaurantMembersCount > 0 || barTeam.members.length > 0 || runners.length > 0;
-    const [isOpen, setIsOpen] = useState(false);
-
-    return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--color-line)] max-[560px]:items-center max-[560px]:px-3 max-[560px]:py-2">
-                <div className="min-w-0">
-                    <span className="block text-sm font-medium text-[var(--color-ink)] max-[560px]:text-[0.82rem]">Point Adjustments</span>
-                    <div className="mt-2 flex items-center gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
-                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1 max-[560px]:py-0.5">Dining {totals.restaurant.toLocaleString()} pts</span>
-                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Bar {totals.bar.toLocaleString()} pts</span>
-                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">Runners {fmtMoney(totals.runnerPay)}</span>
-                    </div>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => setIsOpen(open => !open)}
-                    className="shrink-0 text-xs font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors max-[560px]:rounded-[var(--radius-xs)] max-[560px]:border max-[560px]:border-[var(--color-line)] max-[560px]:px-2.5 max-[560px]:py-1.5"
-                >
-                    {isOpen ? "Hide points" : "Edit points"}
-                </button>
-            </div>
-
-            {!isOpen ? null : !hasAdjustments ? (
-                <div className="px-4 py-6 text-xs text-[var(--color-ink-muted)] italic">
-                    Assign restaurant, bar, or runner employees before adjusting.
-                </div>
-            ) : (
-                <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-3 max-[560px]:px-0 max-[560px]:py-2">
-                    {teams.map((team, index) => (
-                        <PointGroup
-                            key={team.teamId}
-                            title={`Team ${index + 1}`}
-                            members={team.members}
-                            emptyMessage="No dining room employees on this team."
-                            onPointChange={(uid, value) => onTeamPointChange(team.teamId, uid, value)}
-                            onPointAdjust={(uid, delta) => onTeamPointAdjust(team.teamId, uid, delta)}
-                        />
-                    ))}
-
-                    <PointGroup
-                        title="Bar Team"
-                        members={barTeam.members}
-                        emptyMessage="No bar employees assigned."
-                        defaultPoints={1}
-                        onPointChange={onBarPointChange}
-                        onPointAdjust={onBarPointAdjust}
-                    />
-
-                    <RunnerGroup
-                        runners={runners}
-                        totalPay={totals.runnerPay}
-                        onPayoutChange={onRunnerPayoutChange}
-                    />
-                </div>
-            )}
-        </div>
-    );
-}
-
-function CalculatedPayoutReview({ review }) {
-    const { result, payoutRows, staffTotal } = review;
-    const [showAllMobilePayouts, setShowAllMobilePayouts] = useState(false);
-    const verificationPayout = payoutRows.find(payout => payout.role === "captain") || payoutRows[0];
-    const reviewRoleLabels = {
-        captain: "Captains",
-        server: "Servers",
-        back: "Backs",
-        assistant: "Assistants",
-        bartender: "Bar",
-        runner: "Runners",
-    };
-
-    return (
-        <div className="border border-[var(--color-accent)]/20 rounded-[var(--radius-md)] bg-[var(--color-accent-soft)]/40">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-[var(--color-accent)]/20 max-[560px]:flex-row max-[560px]:items-start max-[560px]:px-4 max-[560px]:py-3">
-                <div>
-                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                        Calculated payout review
-                    </div>
-                    <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-accent)] max-[560px]:text-xl">
-                        {fmtMoney(staffTotal)}
-                    </div>
-                </div>
-                <div className="flex flex-col items-end max-[560px]:pt-0.5">
-                    <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-muted)]">Balance</span>
-                    <strong className="font-mono tabular-nums text-[var(--color-ink)]">
-                        {fmtMoney(result.balances?.overallBalance)}
-                    </strong>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-[var(--color-accent)]/15 max-[560px]:gap-x-5 max-[560px]:gap-y-2 max-[560px]:px-4 max-[560px]:py-2.5">
-                <SummaryMetric label="Employees" value={payoutRows.length.toLocaleString()} />
-                <SummaryMetric label="Available" value={fmtMoney(result.balances?.totalAvailable)} />
-                <SummaryMetric label="Distributed" value={fmtMoney(result.balances?.totalDistributed)} />
-                <SummaryMetric label="Runner pay" value={fmtMoney(result.allocations?.totalRunnerPay)} />
-            </div>
-
-            <div className="hidden max-[560px]:block px-4 py-2.5 border-b border-[var(--color-accent)]/15">
-                {verificationPayout ? (
-                    <div className="rounded-[var(--radius-sm)] border border-[var(--color-accent)]/20 bg-[var(--color-surface)] px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                    {verificationPayout.role === "captain" ? "Captain check" : "Payout check"}
-                                </div>
-                                <div className="mt-1 text-sm font-semibold text-[var(--color-ink)] truncate">
-                                    {verificationPayout.name}
-                                </div>
-                            </div>
-                            <strong className="shrink-0 font-mono tabular-nums text-base text-[var(--color-ink)]">
-                                {fmtMoney(getPayoutNonCashTotal(verificationPayout))}
-                            </strong>
-                        </div>
-                        <div className="mt-1.5 flex items-center justify-between gap-3 border-t border-[var(--color-line)] pt-1.5 text-xs">
-                            <span className="font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                Cash
-                            </span>
-                            <strong className="font-mono tabular-nums text-[var(--color-ink)]">
-                                {fmtMoney(verificationPayout.cash)}
-                            </strong>
-                        </div>
-                    </div>
-                ) : null}
-
-                <button
-                    type="button"
-                    onClick={() => setShowAllMobilePayouts(open => !open)}
-                    className="mt-2 w-full rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-accent)]"
-                >
-                    {showAllMobilePayouts ? "Hide all payouts" : "Show all payouts"}
-                </button>
-            </div>
-
-            <div className={(showAllMobilePayouts ? "block " : "hidden ") + "sm:block divide-y divide-[var(--color-accent)]/10 max-h-96 overflow-y-auto"}>
-                {payoutRows.map((payout) => (
-                    <div key={payout.uid} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-5 py-3">
-                        <div className="flex flex-col">
-                            <strong className="text-sm text-[var(--color-ink)]">{payout.name}</strong>
-                            <span className="text-[11px] text-[var(--color-ink-muted)]">
-                                {reviewRoleLabels[payout.role] || payout.role}
-                            </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-xs font-mono tabular-nums text-[var(--color-ink-soft)]">
-                            <span>CTP {fmtMoney(payout.tips)}</span>
-                            <span>GRT {fmtMoney(payout.gratuity)}</span>
-                            <span>Cash {fmtMoney(payout.cash)}</span>
-                            <strong className="text-sm text-[var(--color-ink)]">
-                                Total (CTP+GRT) {fmtMoney(getPayoutNonCashTotal(payout))}
-                            </strong>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-
-function CollapsibleSection({ title, subtitle, badge, isOpen, onToggle, children }) {
-    return (
-        <div className="border border-[var(--color-line)] rounded-[var(--radius-md)] overflow-hidden">
-            <button
-                type="button"
-                onClick={onToggle}
-                aria-expanded={isOpen}
-                className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]/50 transition-colors duration-150 text-left max-[560px]:px-4 max-[560px]:py-2.5"
-            >
-                <div className="flex flex-col gap-0.5">
-                    {subtitle ? (
-                        <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)] max-[560px]:hidden">
-                            {subtitle}
-                        </span>
-                    ) : null}
-                    <h3 className="font-display text-xl font-medium tracking-tight text-[var(--color-ink)] max-[560px]:text-base">
-                        {title}
-                    </h3>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                    {badge ? (
-                        <span className="text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
-                            {badge}
-                        </span>
-                    ) : null}
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className={`text-[var(--color-ink-muted)] transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
-                        aria-hidden="true"
-                    >
-                        <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                </div>
-            </button>
-            {isOpen ? (
-                <div className="border-t border-[var(--color-line)]">
-                    {children}
-                </div>
-            ) : null}
-        </div>
-    );
-}
-
-function ShiftEditorPanel({ date, allEmployees, onClose }) {
+function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
+    const { user } = useAuth();
+    const { beginPendingAction } = usePendingActions();
     const [teams, setTeams] = useState([
         { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
     ]);
     const [barTeam, setBarTeam] = useState({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
     const [runners, setRunners] = useState([]);
     const [saveStatus, setSaveStatus] = useState("");
-    const [validationMessages, setValidationMessages] = useState([]);
+    // What came back from a refused Confirm & Save, in captain-facing wording.
+    const [saveFailure, setSaveFailure] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [hasLoadedShift, setHasLoadedShift] = useState(false);
-    const [calculatedReview, setCalculatedReview] = useState(null);
     const [shiftStatus, setShiftStatus] = useState(null);
-    const [teamSetupOpen, setTeamSetupOpen] = useState(true);
-    const [moneyCloseoutOpen, setMoneyCloseoutOpen] = useState(false);
-    const [showLiveTotalDetails, setShowLiveTotalDetails] = useState(false);
-    const [activeMobileCloseoutId, setActiveMobileCloseoutId] = useState(null);
+    // Day-step spine (shared by both flow shells): "floor" -> "settle" -> "review".
+    // The old two-accordion editor is retired; each step is its own focused screen.
+    const [step, setStep] = useState(["settle", "review"].includes(initialStep) ? initialStep : "floor");
+    const [activeGroupId, setActiveGroupId] = useState("team-1");
     const [draftStatus, setDraftStatus] = useState("");
-    const [hasWarnedClosedRosterEdit, setHasWarnedClosedRosterEdit] = useState(false);
+    // Fingerprint of the shift as loaded, so the leave-guard can tell an untouched view
+    // from one with real edits and only confirm a discard when work would actually be
+    // lost. Covers money too - `fingerprintShift` reads pools nested inside teams/barTeam.
+    const loadedFingerprintRef = useRef("");
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -668,11 +119,230 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         };
     }, [teams, barTeam, runners]);
 
-    const hasBarCloseoutData = Object.values(barTeam.pools || {}).some(value => toMoney(value) > 0);
+    // Descriptors for the switcher rail + entry panel: one entry per dining team, then Bar,
+    // then Runners. Each carries the display name, roster sub-line, live pool, and whether
+    // any money has been entered (drives the status dot / check).
+    const closeoutGroups = useMemo(() => {
+        const teamGroups = teams.map((team, index) => {
+            const pool = poolSummary.teams[index]?.payoutPool ?? 0;
+            const hasPeople = team.members.length > 0;
+            // "Other input" = non-pool money/context (Sales/Cash/Covers). The pool
+            // itself (Tips + Gratuity + contract gratuity) is what funds payouts.
+            const hasOtherInput = toMoney(team.pools?.sales) > 0
+                || toMoney(team.pools?.cash) > 0
+                || toMoney(team.pools?.covers) > 0;
+            return {
+                id: team.teamId,
+                kind: "dining",
+                name: `Team ${index + 1}`,
+                // No "· dining" tag: a numbered Team IS the dining room, so the word only
+                // restated the pill you just tapped. The bar group keeps its tag - there
+                // the pool really is a different one, and that distinction earns a word.
+                sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"}`,
+                poolLabel: "Pool",
+                pool,
+                hasPeople,
+                status: getGroupMoneyStatus({ pool, hasOtherInput, hasPeople }),
+                teamIndex: index,
+            };
+        });
+        const barPool = poolSummary.bar.payoutPool;
+        const barHasPeople = barTeam.members.length > 0;
+        const barHasOtherInput = toMoney(barTeam.pools?.sales) > 0
+            || toMoney(barTeam.pools?.covers) > 0
+            || toMoney(barTeam.pools?.foodSales) > 0;
+        const runnerPool = poolSummary.totalRunnerPay;
+        return [
+            ...teamGroups,
+            {
+                id: "bar",
+                kind: "bar",
+                name: "Bar Team",
+                sub: `${barTeam.members.length} ${barTeam.members.length === 1 ? "member" : "members"} · bar`,
+                poolLabel: "Pool",
+                pool: barPool,
+                hasPeople: barHasPeople,
+                status: getGroupMoneyStatus({ pool: barPool, hasOtherInput: barHasOtherInput, hasPeople: barHasPeople }),
+            },
+            {
+                id: "runners",
+                kind: "runners",
+                name: "Runners",
+                sub: `${runners.length} ${runners.length === 1 ? "runner" : "runners"}`,
+                poolLabel: "Pay",
+                pool: runnerPool,
+                hasPeople: runners.length > 0,
+                status: getGroupMoneyStatus({ pool: runnerPool, hasOtherInput: false, hasPeople: runners.length > 0 }),
+            },
+        ];
+    }, [teams, barTeam, runners, poolSummary]);
 
-    const toggleMobileCloseoutCard = useCallback((cardId) => {
-        setActiveMobileCloseoutId(current => current === cardId ? null : cardId);
-    }, []);
+    const groupStatusSummary = summarizeGroupStatuses(closeoutGroups);
+    // The count that sits beside the Pool figure counts only the groups that figure is
+    // made of. `payoutPool` is dining CTP + GRT + bar CTP + bar GRT; runner pay is not in
+    // it and never was - it is a deduction off the top, which is why the Runners pill is
+    // labelled "Pay" and not "Pool". Counting Runners there put a group in the headline
+    // that contributes nothing to the money printed next to it, so "5 groups · Pool $X"
+    // described five groups with four groups' money. This changes the COUNT only; the
+    // figure itself is untouched.
+    const poolGroupSummary = summarizeGroupStatuses(
+        closeoutGroups.filter(group => group.kind !== "runners"),
+    );
+
+    // Review's rung 2: every group's money exactly as it was typed at Settle up, all on
+    // one screen. Settle up itself shows one group at a time, so this is the only place
+    // the whole entry can be scanned for a typo in a single read.
+    //
+    // Runners are deliberately NOT here. Money you entered means money that FUNDS the
+    // pool; runner pay is drawn OUT of that pool (engine.js subtracts `totalRunnerPay`
+    // from the raw team CTP pool before the point split). Listing it alongside CTP and
+    // GRT read as if runner pay added to the pool, overstating what there is to split.
+    // Runner pay now appears in Shift totals as the deduction it is, and the runners
+    // themselves stay in "Who's on the floor".
+    const reviewMoneyGroups = useMemo(() => {
+        const moneyEntry = (label, value) => ({
+            label,
+            value: fmtAmount(value),
+            empty: toMoney(value) === 0,
+        });
+        const teamGroups = teams.map((team, index) => {
+            const pools = team.pools || {};
+            const contracts = (team.contracts || []).filter(contract => toMoney(contract.gratuity) > 0);
+            return {
+                id: team.teamId,
+                name: `Team ${index + 1}`,
+                poolLabel: "pool",
+                pool: poolSummary.teams[index]?.payoutPool ?? 0,
+                entries: [
+                    moneyEntry("CTP", pools.tips),
+                    moneyEntry("GRT", pools.gratuity),
+                    moneyEntry("Cash", pools.cash),
+                    moneyEntry("Sales", pools.sales),
+                    ...contracts.map((contract, contractIndex) => (
+                        moneyEntry(`Contract ${contract.name || contractIndex + 1}`, contract.gratuity)
+                    )),
+                ],
+            };
+        });
+        return [
+            ...teamGroups,
+            {
+                id: "bar",
+                name: "Bar Team",
+                poolLabel: "pool",
+                pool: poolSummary.bar.payoutPool,
+                entries: [
+                    moneyEntry("CTP", barTeam.pools?.tips),
+                    moneyEntry("GRT", barTeam.pools?.gratuity),
+                    moneyEntry("Sales", barTeam.pools?.sales),
+                    // Food sales funds nothing - it is what the fee below is derived
+                    // from - but it belongs in a row whose whole job is "every number
+                    // you typed, on one screen": a fee that looks wrong is checked
+                    // against the figure it came from, and hiding that figure would
+                    // send the check to the wrong place.
+                    moneyEntry("Food sales", barTeam.pools?.foodSales),
+                    // The bar's "Runners Fee" field (`pools.runners`). Despite the name
+                    // this is NOT runner pay - that is the flat per-runner amount, which
+                    // leaves the pool entirely and lives in Shift totals. This is a MOVE
+                    // between the two sides: engine.js adds it to the dining CTP pool and
+                    // takes the same amount off the bar CTP pool, so it changes who splits
+                    // the money without changing how much there is. Keep this label in
+                    // step with the PoolField on the Bar entry screen - the captain scans
+                    // this row against the field they typed, so the two must read alike.
+                    moneyEntry("Runners fee", barTeam.pools?.runners),
+                ],
+            },
+        ];
+    }, [teams, barTeam, poolSummary]);
+
+    // Review's rung 3: the floor as it stands, for spotting someone who should not be on.
+    const reviewFloorGroups = useMemo(() => {
+        const memberNames = (members) => members.map(member => member.name || "Unknown");
+        return [
+            ...teams.map((team, index) => ({
+                id: team.teamId,
+                kind: "dining",
+                name: `Team ${index + 1}`,
+                members: memberNames(team.members),
+                points: team.members.reduce((sum, member) => sum + toMoney(member.points), 0),
+            })),
+            {
+                id: "bar",
+                kind: "bar",
+                name: "Bar Team",
+                members: memberNames(barTeam.members),
+                points: poolSummary.barPoints,
+            },
+            {
+                id: "runners",
+                kind: "runners",
+                name: "Runners",
+                members: memberNames(runners),
+                points: 0,
+                // Runners split no points - they are paid a flat amount off the pool - so
+                // their meta carries that pay instead. It is the only place on Review the
+                // per-group runner figure appears now that it is out of "Money you entered",
+                // and here it reads as what it is: money leaving the pool, not funding it.
+                pay: poolSummary.totalRunnerPay,
+            },
+        ];
+    }, [teams, barTeam, runners, poolSummary.barPoints, poolSummary.totalRunnerPay]);
+
+    // THE payout calculation, derived from the CURRENT floor plan and money on every
+    // render rather than captured by a button press. That is the whole point: the old
+    // model stored a snapshot in state and nulled it on any edit, so adding one person
+    // on the Floor plan made Review unreachable until you walked back to Settle up and
+    // pressed Calculate Payouts again. Recalculation now follows the data.
+    //
+    // `calculateShift` is pure - it reads the inputs and returns a result, writing
+    // nothing - so deriving it costs nothing but the arithmetic and cannot persist a
+    // half-finished shift. Confirm & Save is still the only thing that writes.
+    //
+    // The guard that matters: when the inputs cannot produce a complete calculation
+    // this returns `ready: false` with the reasons, and Review renders those reasons
+    // instead of a confident wrong total. Review NEVER shows a partially-derived
+    // number as if it were final.
+    const liveReview = useMemo(() => {
+        if (!hasLoadedShift) return { ready: false, blockers: [], warnings: [] };
+
+        const blockers = validateShiftInputs({ teams, barTeam, runners });
+        if (blockers.length > 0) return { ready: false, blockers, warnings: [] };
+
+        const result = calculateShift({ teams, barTeam, runners });
+        const mappedPayouts = mapPayoutsForFirebase(result);
+        if (Object.keys(mappedPayouts).length === 0) {
+            return {
+                ready: false,
+                blockers: ["Assign at least one employee before payouts can be calculated."],
+                warnings: [],
+            };
+        }
+
+        return {
+            ready: true,
+            blockers: [],
+            // Engine warnings (a shift that does not balance, a negative runner payout).
+            // Not blockers - the numbers are complete - but the captain must see them
+            // before committing, so Review surfaces them in Shift totals.
+            warnings: result.validations || [],
+            ...buildPayoutReview(result, mappedPayouts),
+        };
+    }, [hasLoadedShift, teams, barTeam, runners]);
+
+    // The one rule that blocks a save on a complete calculation. Derived on every
+    // render alongside `liveReview` so Review can withhold the save BEFORE the press
+    // instead of reporting it afterwards - `saveClosedShiftAtomically` re-runs the
+    // same check and throws, so anything this reports blocked would have failed.
+    const balanceReport = useMemo(() => (
+        liveReview.ready ? describeShiftBalance({ result: liveReview.result, teams, barTeam }) : null
+    ), [barTeam, liveReview, teams]);
+    const saveBlocked = Boolean(balanceReport && !balanceReport.balanced);
+
+    // A failure describes the shift as it was when it was refused. Any edit to the
+    // roster or the money makes that description stale, so it goes.
+    useEffect(() => {
+        setSaveFailure(null);
+    }, [teams, barTeam, runners]);
 
     const hasAssignedStaff = useMemo(() => (
         teams.some(team => team.members.length > 0) || barTeam.members.length > 0 || runners.length > 0
@@ -729,6 +399,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
 
     const updateBarPool = useCallback((field, value) => {
         setBarTeam(prev => ({ ...prev, pools: { ...prev.pools, [field]: value } }));
+    }, []);
+
+    // Food sales has one behaviour no other pool field has: it PREFILLS the Runners
+    // Fee at 3%, and only while the fee is still tracking that derivation. The rule
+    // lives in `applyBarFoodSalesEdit` so it can be tested without a browser; what
+    // matters here is that entering food sales on a shift settled under the old model
+    // leaves that night's typed fee alone rather than silently moving its money.
+    const updateBarFoodSales = useCallback((value) => {
+        setBarTeam(prev => ({ ...prev, pools: applyBarFoodSalesEdit(prev.pools || {}, value) }));
     }, []);
 
     const updateRunnerPayout = (uid, value) => {
@@ -798,47 +477,44 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     };
 
     useEffect(() => {
-        setCalculatedReview(null);
-    }, [teams, barTeam, runners, date]);
-
-    useEffect(() => {
         const loadShift = async () => {
             try {
                 setLoading(true);
                 setHasLoadedShift(false);
                 setDraftStatus("");
                 setShiftStatus(null);
-                setHasWarnedClosedRosterEdit(false);
                 const shiftDoc = await getDoc(doc(db, "shifts", date));
+                const emptyTeams = [
+                    { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
+                ];
+                const emptyBar = { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } };
+                let nextTeams = emptyTeams;
+                let nextBar = emptyBar;
+                let nextRunners = [];
                 if (shiftDoc.exists()) {
-                    const d = shiftDoc.data();
+                    const d = applyOpenShiftMemberNames(shiftDoc.data());
                     if (d.teams) {
-                        setTeams(d.teams.map(t => ({
+                        nextTeams = d.teams.map(t => ({
                             teamId: t.teamId,
                             members: t.members || [],
                             pools: t.pools || { sales: t.teamSales || "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" },
                             contracts: t.contracts || []
-                        })));
+                        }));
                     }
                     if (d.barTeam) {
-                        setBarTeam({
+                        nextBar = {
                             members: d.barTeam.members || [],
                             pools: d.barTeam.pools || { sales: "", tips: "", gratuity: "", covers: "" }
-                        });
+                        };
                     }
-                    if (d.runners) setRunners(d.runners);
-                    setShiftStatus(d.status || (d.summary || d.payouts ? "closed" : "setup"));
-                    setTeamSetupOpen(false);
-                    setMoneyCloseoutOpen(true);
-                } else {
-                    setTeams([
-                        { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
-                    ]);
-                    setBarTeam({ members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } });
-                    setRunners([]);
-                    setTeamSetupOpen(true);
-                    setMoneyCloseoutOpen(false);
+                    if (d.runners) nextRunners = d.runners;
+                    setShiftStatus(d.status || (d.summary || d.firstClosedAt || d.payouts ? "closed" : "setup"));
                 }
+                setTeams(nextTeams);
+                setBarTeam(nextBar);
+                setRunners(nextRunners);
+                // Baseline the loaded shift so Cancel knows whether anything changed.
+                loadedFingerprintRef.current = fingerprintShift(nextTeams, nextBar, nextRunners);
             } catch (e) {
                 console.error("Failed to load shift:", e);
             } finally {
@@ -850,10 +526,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
     }, [date]);
 
     useEffect(() => {
-        if (!hasLoadedShift || loading || isSaving || shiftStatus === "closed") return undefined;
+        // The sole persistence path for a setup shift, covering Floor AND Settle -
+        // both are directly editable with no lock/Cancel/Done, so this is the only
+        // thing that saves either. Stays off for a closed shift: edits there persist
+        // only through Review -> Confirm & Save (see handleConfirmSave below).
+        if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
         let cancelled = false;
+        const wasAlreadySetup = shiftStatus === "setup";
         const timeoutId = window.setTimeout(async () => {
             setDraftStatus("Saving draft...");
             try {
@@ -864,6 +545,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
                     runners,
                     includeCloseoutDraft: true,
                 }));
+                // Only on the transition into "setup" - once flagged there is nothing
+                // more to mark, and this would otherwise re-write every participant's
+                // profile on every autosave tick while actively editing.
+                if (!wasAlreadySetup) await markUserHistoryFlags("setup");
 
                 if (!cancelled) {
                     setShiftStatus("setup");
@@ -889,373 +574,238 @@ function ShiftEditorPanel({ date, allEmployees, onClose }) {
         hasLoadedShift,
         isSaving,
         loading,
+        markUserHistoryFlags,
+        removingSetupDay,
         runners,
         shiftStatus,
         teams,
     ]);
 
-    const handleSaveTeamSetup = async () => {
-        if (isSaving) return;
+    // Has the admin actually changed anything since the shift loaded?
+    const isDirty = hasLoadedShift
+        && loadedFingerprintRef.current !== ""
+        && fingerprintShift(teams, barTeam, runners) !== loadedFingerprintRef.current;
 
-        if (shiftStatus === "closed") {
-            setSaveStatus("This shift is already closed and paid out. Use Calculate Payouts → Confirm & Save Shift to update the roster and payouts together.");
-            return;
-        }
-
-        const inputErrors = validateTeamSetup({ teams, barTeam, runners });
-        if (inputErrors.length > 0) {
-            setValidationMessages(inputErrors);
-            setSaveStatus("Assign staff before saving setup.");
-            return;
-        }
-
-        setIsSaving(true);
-        setValidationMessages([]);
-        setSaveStatus("Saving team setup...");
-
-        try {
-            await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({ date, teams, barTeam, runners }));
-            await markUserHistoryFlags("setup");
-            setShiftStatus("setup");
-            setSaveStatus("Team setup saved.");
-            setMoneyCloseoutOpen(true);
-            setTimeout(() => setSaveStatus(""), 3000);
-        } catch (e) {
-            console.error(e);
-            setSaveStatus("Failed to save team setup.");
-            setValidationMessages(["The team setup could not be saved. Please try again."]);
-        } finally {
-            setIsSaving(false);
-        }
+    // Leaving the editor loses work only on a closed shift: a setup shift autosaves
+    // its draft continuously, while a closed shift disables autosave (edits persist
+    // only through Review -> Confirm & Save), so an in-progress edit would be dropped.
+    // Read through a ref so the guard handed to the parent below can stay stable while
+    // the fingerprint keeps changing on every keystroke.
+    const leaveGuardStateRef = useRef({ isSaving: false, wouldDropWork: false });
+    leaveGuardStateRef.current = {
+        isSaving,
+        wouldDropWork: shiftStatus === "closed" && isDirty,
     };
 
-    const handleCalculateForReview = () => {
-        if (isSaving) return;
+    // The single gate every exit from the editor passes through. Returns true when it
+    // is safe to leave: no unsaved work, or the admin confirmed the discard. Nothing
+    // in-editor is written either way - the caller re-reads the day.
+    const confirmLeaveEditor = useCallback(() => {
+        const { isSaving: saving, wouldDropWork } = leaveGuardStateRef.current;
+        if (saving) return false;
+        if (!wouldDropWork) return true;
+        return window.confirm(DISCARD_EDIT_CONFIRMATION);
+    }, []);
 
-        const inputErrors = validateShiftInputs({ teams, barTeam, runners });
-        if (inputErrors.length > 0) {
-            setValidationMessages(inputErrors);
-            setSaveStatus("Fix the highlighted items before saving.");
-            return;
-        }
+    // Hand the guard up so navigation that lives OUTSIDE this panel (the app bar's
+    // home control, the workspace menu) warns exactly as Cancel does instead of
+    // silently discarding the edit. Withdrawn on unmount so a stale guard can never
+    // block navigation once the editor is gone.
+    useEffect(() => {
+        if (!onRegisterLeaveGuard) return undefined;
+        onRegisterLeaveGuard(confirmLeaveEditor);
+        return () => onRegisterLeaveGuard(null);
+    }, [onRegisterLeaveGuard, confirmLeaveEditor]);
 
-        setValidationMessages([]);
-        setSaveStatus("Calculating payouts…");
-
-        const result = calculateShift({ teams, barTeam, runners });
-
-        if (result.validations?.length > 0) {
-            setValidationMessages(result.validations);
-            setSaveStatus("Review warnings and calculated payouts before saving.");
-        } else {
-            setValidationMessages([]);
-            setSaveStatus("Review calculated payouts before saving.");
-        }
-
-        const mappedPayoutsForFirebase = mapPayoutsForFirebase(result);
-        const payoutCount = Object.keys(mappedPayoutsForFirebase).length;
-
-        if (payoutCount === 0) {
-            setValidationMessages(["Assign at least one employee before saving the shift."]);
-            setSaveStatus("Cannot save shift: no employees are assigned.");
-            setTimeout(() => setSaveStatus(""), 4000);
-            return;
-        }
-
-        setCalculatedReview(buildPayoutReview(result, mappedPayoutsForFirebase));
+    // Day rail step navigation (Floor -> Settle -> Review). Every step is directly
+    // editable and one tap away, including Review: it derives from the live inputs,
+    // so there is nothing to unlock or commit first. The only exit that needs
+    // confirming is leaving the EDITOR entirely on a dirty closed shift - see
+    // confirmLeaveEditor above; switching steps within it never does.
+    const goToStep = (key) => {
+        setStep(key);
     };
 
     const handleConfirmSave = async () => {
-        if (isSaving || !calculatedReview) return;
+        // `saveBlocked` mirrors the reconciliation the write path re-runs and throws on,
+        // so this is the same refusal made before anything is attempted rather than
+        // after. The button is disabled in that state; this is the belt to its braces.
+        if (isSaving || !liveReview.ready || saveBlocked) return;
 
-        const mappedPayoutsForFirebase = calculatedReview.mappedPayouts;
-        const result = calculatedReview.result;
+        const mappedPayoutsForFirebase = liveReview.mappedPayouts;
+        const result = liveReview.result;
 
         setIsSaving(true);
         setSaveStatus("Saving…");
+        setSaveFailure(null);
+        // Spans the write and the day refetch that onClose kicks off, so the
+        // workspace progress bar reads as one wait rather than two.
+        const endPendingAction = beginPendingAction();
         try {
-            const shiftRef = doc(db, "shifts", date);
-            const existingShiftDoc = await getDoc(shiftRef);
-            const previousPayouts = existingShiftDoc.exists() ? existingShiftDoc.data().payouts || {} : {};
-            const removedPayoutUids = getRemovedPayoutUids(previousPayouts, mappedPayoutsForFirebase);
-
-            await setDoc(shiftRef, buildClosedShiftPayload({
+            await saveClosedShiftAtomically({
+                db,
                 date,
                 teams,
                 barTeam,
                 runners,
                 payouts: mappedPayoutsForFirebase,
                 summary: result,
-            }));
-
-            const saves = Object.entries(mappedPayoutsForFirebase).map(([uid, payout]) =>
-                setDoc(doc(db, "users", uid, "tips", date), {
-                    gratuity: payout.gratuity,
-                    tip: payout.tips,
-                    cash: payout.cash,
-                    wineBonus: payout.wineBonus,
-                    points: payout.points || 0,
-                    total: payout.total,
-                    role: payout.role,
-                    shiftDate: date,
-                    updatedAt: new Date().toISOString(),
-                })
-            );
-            const deletes = removedPayoutUids.map(uid =>
-                deleteDoc(doc(db, "users", uid, "tips", date))
-            );
-            await Promise.all([...saves, ...deletes]);
-            await markUserHistoryFlags("closed", mappedPayoutsForFirebase);
-            setSaveStatus("Saved.");
+                realEmployeeUids,
+                updatedBy: user?.uid || null,
+            });
             setShiftStatus("closed");
-            setCalculatedReview(null);
-
-            setTimeout(() => {
-                onClose();
-            }, 1500);
+            // Reset before leaving: the leave guard refuses to let go while this is
+            // set, and it used to stay true for the whole hand-over.
+            setIsSaving(false);
+            // Hand straight over to the saved day. This used to sit on a 1500ms
+            // timer, which parked the admin on Review after the work was done and
+            // put the "Saved." line on the screen they were about to leave; the
+            // day landing is where the confirmation belongs.
+            onClose({ saved: true });
         } catch (e) {
             console.error(e);
-            setSaveStatus("Failed to save.");
-            setValidationMessages(["The shift could not be saved. Please try again."]);
+            // Deliberately no status line: it used to read "Failed to save." and that
+            // was the ENTIRE on-screen explanation. The alert below now carries the
+            // reason, and a four-word line above it would only say it worse twice.
+            setSaveStatus("");
+            // Who on this shift has no first name on their profile. firestore.rules
+            // `validUserProfile()` requires one, and the closeout batch updates every
+            // participant's user document, so a single nameless profile refuses the
+            // whole batch - previously with nothing on screen naming the person or the
+            // reason. Computed from data the editor already holds, only when a save has
+            // actually failed.
+            setSaveFailure(describeSaveFailure(e, {
+                namelessParticipants: findNamelessParticipants({
+                    participantUids: getShiftParticipantUids({
+                        teams,
+                        barTeam,
+                        runners,
+                        payouts: mappedPayoutsForFirebase,
+                    }).filter(uid => realEmployeeUids.has(uid)),
+                    employees: allEmployees || [],
+                }),
+            }));
             setIsSaving(false);
+        } finally {
+            endPendingAction();
         }
     };
 
-    const handleToggleTeamSetup = () => {
-        const willOpen = !teamSetupOpen;
-        if (willOpen && shiftStatus === "closed" && !hasWarnedClosedRosterEdit) {
-            const confirmed = window.confirm(
-                "This shift is already closed and paid out. Roster changes here won't take effect until you run Calculate Payouts → Confirm & Save Shift.\n\nContinue editing the roster?"
-            );
-            if (!confirmed) return;
-            setHasWarnedClosedRosterEdit(true);
-        }
-        setTeamSetupOpen(willOpen);
-    };
+    // Review no longer bounces back to Settle up when the numbers are not ready. Being
+    // silently redirected was the confusing half of the old model - the captain tapped
+    // Review and landed somewhere else with no explanation. Review is now always its
+    // own screen; when the inputs are incomplete it says what is missing (see
+    // `ReviewNotReady`) instead of pretending to be Settle up.
+    const effectiveStep = step;
 
-    const diningCount = teams.reduce((sum, team) => sum + team.members.length, 0);
+    // Day-level step status for the rail. Status is always shown; order is never
+    // hard-forced - any earlier/reachable step is one tap away.
+    const railSteps = getRailSteps({
+        activeStep: effectiveStep,
+        shiftStatus,
+        reviewReady: liveReview.ready,
+        hasFloorStaff: hasAssignedStaff,
+    });
+
+    // Every step used to be BOUND to the viewport on a phone: a definite height for a
+    // `flex-1 min-h-0` chain to shrink against, so an inner `overflow-y-auto` box
+    // scrolled and the page did not. That inner scrollport was itself a leftover
+    // wrapper - it hard-clipped cards at its edges when scrolled and read as a boxed
+    // seam above the floating action pair instead of ordinary page content passing
+    // behind it. Floor plan shed it first; Review gets the identical fix here for the
+    // identical defect. Neither is bound anymore - both now scroll with the page like
+    // everywhere else that isn't explicitly viewport-bound, and their cards pass behind
+    // the floating action pair the same way FloatingActions already floats over content
+    // elsewhere. Settle up was never bound to begin with: the captain asked for the
+    // titled money card to hug its own content instead of stretching to fill the screen
+    // with an internal scroller. No current step needs the viewport-bound treatment, so
+    // nothing below reaches for it - a future step that does can reintroduce the flag.
+    const stepContent = loading ? (
+        <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
+            Loading shift data…
+        </div>
+    ) : (
+        <div className="p-3 sm:p-6">
+            {/* The Day Rail above names the active step, so no duplicate step heading
+                is rendered here. Floor and Settle no longer block on their own
+                validation - both are directly editable and autosave (or, on a closed
+                shift, wait for Review), so incomplete input just shows up as an
+                incomplete number rather than a separate warning block. Review is the
+                one place invalid/incomplete input is named, from the engine's own
+                validations, right where the save button lives. */}
+
+            {effectiveStep === "floor" ? (
+                <FloorStep
+                    allEmployees={allEmployees}
+                    teams={teams}
+                    setTeams={setTeams}
+                    barTeam={barTeam}
+                    setBarTeam={setBarTeam}
+                    runners={runners}
+                    setRunners={setRunners}
+                    onRemoveSetupDay={shiftStatus === "setup" ? onRemoveSetupDay : undefined}
+                    removingSetupDay={removingSetupDay}
+                />
+            ) : effectiveStep === "settle" ? (
+                <SettleStep
+                    closeoutGroups={closeoutGroups}
+                    activeGroupId={activeGroupId}
+                    onSelectGroup={setActiveGroupId}
+                    poolSummary={poolSummary}
+                    poolGroupSummary={poolGroupSummary}
+                    groupStatusSummary={groupStatusSummary}
+                    teams={teams}
+                    barTeam={barTeam}
+                    runners={runners}
+                    saveStatus={saveStatus}
+                    draftStatus={draftStatus}
+                    onPoolChange={updatePool}
+                    onToggleContracts={toggleContractVisibility}
+                    onAddContract={addContract}
+                    onUpdateContract={updateContract}
+                    onRemoveContract={removeContract}
+                    onBarPoolChange={updateBarPool}
+                    onBarFoodSalesChange={updateBarFoodSales}
+                    onTeamMemberPointsChange={updateTeamMemberPoints}
+                    onTeamMemberPointsAdjust={adjustTeamMemberPoints}
+                    onBarMemberPointsChange={updateBarMemberPoints}
+                    onBarMemberPointsAdjust={adjustBarMemberPoints}
+                    onRunnerPayoutChange={updateRunnerPayout}
+                />
+            ) : (
+                <ReviewStep
+                    saveFailure={saveFailure}
+                    liveReview={liveReview}
+                    saveBlocked={saveBlocked}
+                    balanceReport={balanceReport}
+                    poolSummary={poolSummary}
+                    reviewMoneyGroups={reviewMoneyGroups}
+                    reviewFloorGroups={reviewFloorGroups}
+                    hasAssignedStaff={hasAssignedStaff}
+                    shiftStatus={shiftStatus}
+                    date={date}
+                    saveStatus={saveStatus}
+                    draftStatus={draftStatus}
+                    isSaving={isSaving}
+                    onFixMoney={() => setStep("settle")}
+                    onFixFloor={() => setStep("floor")}
+                    onConfirmSave={handleConfirmSave}
+                />
+            )}
+        </div>
+    );
 
     return (
-        <div className="space-y-4 sm:space-y-6">
-            {/* Workspace header */}
-            <Card className="!p-0">
-                <header className="hidden sm:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--color-line)]">
-                    <div className="flex flex-col gap-1">
-                        <h2 className="font-display text-base sm:text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                            Shift Workspace — {date}
-                        </h2>
-                        {shiftStatus ? (
-                            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                {shiftStatus === "closed" ? "Closed shift" : "Team setup saved"}
-                            </span>
-                        ) : null}
-                        {saveStatus ? (
-                            <span className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
-                        ) : draftStatus ? (
-                            <span className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
-                        ) : null}
-                    </div>
-                </header>
+        <div className={"space-y-3 sm:space-y-4"
+            + (effectiveStep === "settle" ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
+            {/* The day rail: an ordered, day-level step trail (see DayRail.jsx).
+                Status is always shown; earlier/reachable steps are one tap away
+                (order never forced). */}
+            <DayRail steps={railSteps} onStepClick={goToStep} />
 
-                {loading ? (
-                    <div className="px-6 py-12 text-center text-sm text-[var(--color-ink-soft)]">
-                        Loading shift data…
-                    </div>
-                ) : (
-                    <div className="p-3 sm:p-6 space-y-3">
-                        {/* Team setup */}
-                        <CollapsibleSection
-                            title="Team Floor Setup"
-                            subtitle="Opening setup"
-                            badge={`${diningCount}d · ${barTeam.members.length}b · ${runners.length}r`}
-                            isOpen={teamSetupOpen}
-                            onToggle={handleToggleTeamSetup}
-                        >
-                            <div className="p-3 sm:p-6">
-                                <ShiftSetupDnd
-                                    allEmployees={allEmployees}
-                                    teams={teams} setTeams={setTeams}
-                                    barTeam={barTeam} setBarTeam={setBarTeam}
-                                    runners={runners} setRunners={setRunners}
-                                />
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-5">
-                                    {shiftStatus === "closed" ? (
-                                        <span className="text-xs text-[var(--color-ink-soft)]">
-                                            This shift is already closed and paid out. Roster changes are saved via Calculate Payouts → Confirm & Save Shift below.
-                                        </span>
-                                    ) : (
-                                        <Button
-                                            variant="secondary"
-                                            onClick={handleSaveTeamSetup}
-                                            disabled={isSaving}
-                                        >
-                                            {isSaving ? "Saving..." : "Save Team Setup"}
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
-                        </CollapsibleSection>
-
-                        {/* Money closeout */}
-                        <CollapsibleSection
-                            title="Money Closeout"
-                            subtitle="End of shift"
-                            badge={!moneyCloseoutOpen ? fmtMoney(poolSummary.payoutPool) : null}
-                            isOpen={moneyCloseoutOpen}
-                            onToggle={() => setMoneyCloseoutOpen(o => !o)}
-                        >
-                        <section className="p-4 sm:p-6 space-y-4 max-[560px]:px-3">
-
-                            {validationMessages.length > 0 ? (
-                                <div role="alert" className="px-4 py-3 bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
-                                    <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-danger)] mb-1">
-                                        Review before saving
-                                    </div>
-                                    <ul className="list-disc pl-5 text-sm text-[var(--color-ink)] space-y-0.5">
-                                        {validationMessages.map((message, index) => (
-                                            <li key={`${message}-${index}`}>{message}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            ) : null}
-
-                            {/* Live totals */}
-                            <div className={
-                                "border border-[var(--color-line)] rounded-[var(--radius-md)] bg-[var(--color-surface)] overflow-hidden max-[560px]:hidden"
-                            }>
-                                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 px-5 py-4 border-b border-[var(--color-line)] max-[560px]:px-3 max-[560px]:py-2">
-                                    <div className="flex items-end justify-between gap-3 max-[560px]:w-full">
-                                        <div>
-                                        <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)] max-[560px]:hidden">
-                                            Live shift totals
-                                        </div>
-                                        <div className="font-display text-2xl font-medium tracking-tight tabular-nums text-[var(--color-ink)] max-[560px]:text-xl">
-                                            {fmtMoney(poolSummary.payoutPool)}
-                                        </div>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowLiveTotalDetails(open => !open)}
-                                            className="hidden max-[560px]:inline-flex h-9 items-center rounded-[var(--radius-sm)] border border-[var(--color-line)] px-3 text-xs font-medium text-[var(--color-accent)] bg-[var(--color-surface)]"
-                                        >
-                                            {showLiveTotalDetails ? "Hide details" : "Show details"}
-                                        </button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 text-xs font-mono tabular-nums text-[var(--color-ink-soft)] max-[560px]:hidden">
-                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{diningCount} dining</span>
-                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{barTeam.members.length} bar</span>
-                                        <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-1">{runners.length} runners</span>
-                                    </div>
-                                </div>
-
-                                <div className={(showLiveTotalDetails ? "grid " : "hidden ") + "sm:grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 px-5 py-4 max-[560px]:px-4 max-[560px]:gap-y-3"}>
-                                    <SummaryMetric label="Sales" value={fmtMoney(poolSummary.totalSales)} />
-                                    <SummaryMetric label="Tips CTP" value={fmtMoney(poolSummary.totalTips)} />
-                                    <SummaryMetric label="Gratuity" value={fmtMoney(poolSummary.totalGratuity)} />
-                                    <SummaryMetric label="Cash" value={fmtMoney(poolSummary.totalCash)} />
-                                    <SummaryMetric label="Covers" value={poolSummary.totalCovers.toLocaleString()} />
-                                    <SummaryMetric label="Runner pay" value={fmtMoney(poolSummary.totalRunnerPay)} />
-                                    <SummaryMetric label="Bar transfer" value={fmtMoney(poolSummary.runnerTransfer)} />
-                                    <SummaryMetric label="Dining pts" value={poolSummary.restaurantPoints.toLocaleString()} />
-                                </div>
-
-                                {poolSummary.contractTotal > 0 ? (
-                                    <div className="px-5 py-2 text-xs text-[var(--color-ink-soft)] bg-[var(--color-surface-muted)]/50 border-t border-[var(--color-line)]">
-                                        Contract gratuity included: {fmtMoney(poolSummary.contractTotal)}
-                                    </div>
-                                ) : null}
-                            </div>
-
-                            {/* Pool inputs */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {teams.map((t, idx) => (
-                                    <TeamPoolCloseoutCard
-                                        key={t.teamId}
-                                        team={t}
-                                        teamIndex={idx}
-                                        summarySales={poolSummary.teams[idx].sales}
-                                        summaryPool={poolSummary.teams[idx].payoutPool}
-                                        summaryCovers={poolSummary.teams[idx].covers}
-                                        mobileOpen={activeMobileCloseoutId === t.teamId}
-                                        onMobileToggle={() => toggleMobileCloseoutCard(t.teamId)}
-                                        onPoolChange={updatePool}
-                                        onToggleContracts={toggleContractVisibility}
-                                        onAddContract={addContract}
-                                        onUpdateContract={updateContract}
-                                        onRemoveContract={removeContract}
-                                    />
-                                ))}
-
-                                {/* Bar */}
-                                <BarPoolCloseoutCard
-                                    barTeam={barTeam}
-                                    summarySales={poolSummary.bar.sales}
-                                    summaryPool={poolSummary.bar.payoutPool}
-                                    summaryTransfer={poolSummary.bar.runnerTransfer}
-                                    hasInputData={hasBarCloseoutData}
-                                    mobileOpen={activeMobileCloseoutId === "bar"}
-                                    onMobileToggle={() => toggleMobileCloseoutCard("bar")}
-                                    onBarPoolChange={updateBarPool}
-                                />
-                            </div>
-
-                            <PointAdjustmentsPanel
-                                teams={teams}
-                                barTeam={barTeam}
-                                runners={runners}
-                                totals={{ restaurant: poolSummary.restaurantPoints, bar: poolSummary.barPoints, runnerPay: poolSummary.totalRunnerPay }}
-                                onTeamPointChange={updateTeamMemberPoints}
-                                onTeamPointAdjust={adjustTeamMemberPoints}
-                                onBarPointChange={updateBarMemberPoints}
-                                onBarPointAdjust={adjustBarMemberPoints}
-                                onRunnerPayoutChange={updateRunnerPayout}
-                            />
-
-                            {calculatedReview ? <CalculatedPayoutReview review={calculatedReview} /> : null}
-
-                            {/* Save row */}
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 pt-2 max-[560px]:sticky max-[560px]:bottom-0 max-[560px]:z-20 max-[560px]:-mx-3 max-[560px]:mt-2 max-[560px]:border-t max-[560px]:border-[var(--color-line)] max-[560px]:bg-[var(--color-surface)] max-[560px]:p-3 max-[560px]:shadow-[0_-10px_24px_rgba(15,23,42,0.08)]">
-                                <div className="hidden max-[560px]:flex items-center justify-between gap-3">
-                                    <span className="text-[0.7rem] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                                        Closeout total
-                                    </span>
-                                    <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
-                                        {fmtMoney(poolSummary.payoutPool)}
-                                    </strong>
-                                </div>
-                                {saveStatus ? (
-                                    <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{saveStatus}</span>
-                                ) : draftStatus ? (
-                                    <span aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">{draftStatus}</span>
-                                ) : null}
-                                {calculatedReview ? (
-                                    <Button
-                                        variant="secondary"
-                                        onClick={handleCalculateForReview}
-                                        disabled={isSaving}
-                                        className="max-[560px]:w-full"
-                                    >
-                                        Recalculate Payouts
-                                    </Button>
-                                ) : null}
-                                <Button
-                                    onClick={calculatedReview ? handleConfirmSave : handleCalculateForReview}
-                                    disabled={isSaving}
-                                    className="max-[560px]:w-full"
-                                >
-                                    {isSaving
-                                        ? "Saving…"
-                                        : calculatedReview
-                                            ? "Confirm & Save Shift"
-                                            : "Calculate Payouts"}
-                                </Button>
-                            </div>
-                        </section>
-                        </CollapsibleSection>
-                    </div>
-                )}
-            </Card>
-
+            <div>
+                {stepContent}
+            </div>
         </div>
     );
 }

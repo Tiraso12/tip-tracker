@@ -1,7 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/tailwind.css'
-import './styles/design-system.css'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext';
 

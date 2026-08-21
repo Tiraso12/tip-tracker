@@ -10,7 +10,7 @@ const EyeOffIcon = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
 );
 
-function PasswordField({ id, label, name, value, onChange, showPassword, onToggle, autoComplete }) {
+function PasswordField({ id, label, name, value, onChange, showPassword, onToggle, autoComplete, placeholder }) {
     return (
         <div className="flex flex-col gap-1.5">
             <label
@@ -26,9 +26,9 @@ function PasswordField({ id, label, name, value, onChange, showPassword, onToggl
                     type={showPassword ? "text" : "password"}
                     value={value}
                     onChange={onChange}
-                    placeholder="••••••"
+                    placeholder={placeholder}
                     autoComplete={autoComplete}
-                    className="block w-full h-10 pl-3 pr-10 text-sm bg-[var(--color-surface)] text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] border border-[var(--color-line)] rounded-[var(--radius-sm)] transition-colors duration-150 hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15"
+                    className="block w-full h-10 pl-3 pr-10 text-base bg-[var(--color-surface)] text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] border border-[var(--color-line)] rounded-[var(--radius-sm)] transition-colors duration-150 hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15"
                 />
                 <button
                     type="button"
@@ -50,6 +50,8 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [username, setUsername] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [rememberMe, setRememberMe] = useState(true);
     const [isForgotPassword, setIsForgotPassword] = useState(false);
     const [resetSent, setResetSent] = useState(false);
@@ -71,12 +73,12 @@ const Login = () => {
                 await resetPassword(email);
                 setResetSent(true);
             } else if (isLogin) {
-                if (!email || !password) throw new Error("Please fill in fields");
+                if (!email || !password) throw new Error("Please fill in all fields.");
                 await login(email, password, rememberMe);
             } else {
-                if (!email || !password || !username) throw new Error("Please fill in fields");
+                if (!email || !password || !username || !firstName) throw new Error("Please fill in all required fields.");
                 if (password !== confirmPassword) throw new Error("Passwords do not match");
-                await register(email, password, username);
+                await register(email, password, username, firstName, lastName);
             }
         } catch (err) {
             console.error(err);
@@ -105,7 +107,7 @@ const Login = () => {
             <div className="w-full max-w-md">
                 <div className="mb-8 text-center">
                     <span className="font-display text-2xl font-medium tracking-tight text-[var(--color-ink)]">
-                        TipTracker
+                        Tip Tracker
                     </span>
                 </div>
 
@@ -144,16 +146,44 @@ const Login = () => {
                         />
 
                         {!isLogin && (
-                            <Input
-                                id="login-username"
-                                name="username"
-                                label="Username"
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                placeholder="Display name"
-                                autoComplete="username"
-                            />
+                            <>
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <Input
+                                        id="signup-first-name"
+                                        name="given-name"
+                                        label="First name"
+                                        type="text"
+                                        value={firstName}
+                                        onChange={(e) => setFirstName(e.target.value)}
+                                        placeholder="Sonia"
+                                        autoComplete="given-name"
+                                        maxLength={80}
+                                        required
+                                    />
+                                    <Input
+                                        id="signup-last-name"
+                                        name="family-name"
+                                        label="Last name (optional)"
+                                        type="text"
+                                        value={lastName}
+                                        onChange={(e) => setLastName(e.target.value)}
+                                        placeholder="Alvarez Garcia"
+                                        autoComplete="family-name"
+                                        maxLength={80}
+                                    />
+                                </div>
+                                <Input
+                                    id="login-username"
+                                    name="username"
+                                    label="Login handle"
+                                    type="text"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    placeholder="Choose a login handle"
+                                    autoComplete="username"
+                                    required
+                                />
+                            </>
                         )}
 
                         {!isForgotPassword && (
@@ -166,6 +196,7 @@ const Login = () => {
                                 showPassword={showPassword}
                                 onToggle={togglePassword}
                                 autoComplete={isLogin ? "current-password" : "new-password"}
+                                placeholder="Enter your password"
                             />
                         )}
 
@@ -179,6 +210,7 @@ const Login = () => {
                                 showPassword={showPassword}
                                 onToggle={togglePassword}
                                 autoComplete="new-password"
+                                placeholder="Re-enter your password"
                             />
                         )}
 

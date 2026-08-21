@@ -1,7 +1,7 @@
 import React, { forwardRef } from "react";
 
 const baseField =
-  "block w-full h-10 px-3 text-sm bg-[var(--color-surface)] " +
+  "block w-full h-10 px-3 text-base bg-[var(--color-surface)] " +
   "text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)] " +
   "border border-[var(--color-line)] rounded-[var(--radius-sm)] " +
   "transition-colors duration-150 " +

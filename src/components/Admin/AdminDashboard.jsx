@@ -1,17 +1,39 @@
-import React, { Suspense, lazy, useState, useEffect, useCallback } from "react";
+import React, { Suspense, lazy, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { db } from "../../config/firebase";
-import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "../../context/AuthContext";
-import DayPayoutPanel from "./DayPayoutPanel";
-import { Badge, Button } from "../ui";
-import { toDateKey } from "../../utils/dateUtils";
+import { canApproveAccounts, canReadRoster, canRemoveSettledDay, canRemoveSetupDay, tierLabel } from "../../utils/permissions";
+import DayRailLanding from "./DayRailLanding";
+import { SavedByLine } from "./DayPayoutPanel";
+import BarDatePill from "./BarDatePill";
+import DayChipStrip from "./DayChipStrip";
+import AppBar from "../AppBar/AppBar";
+import { TopProgressBar } from "../ui";
+import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
+import { toDateKey, getCurrentWeek, parseDateKey, formatFullDateKey } from "../../utils/dateUtils";
+import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
+import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../utils/payoutLedger";
+import { removeShiftAtomically, removeSetupShiftAtomically } from "../../utils/closeoutPersistence";
+import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
+import { fullNameFor } from "../../utils/userNames";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
-const AdminReportsPanel = lazy(() => import("./AdminReportsPanel"));
 
-const SHOW_ADMIN_REPORTS = false;
+const ACCOUNT_ICON = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+    </svg>
+);
 
+// The workspace sidebar is DESKTOP-ONLY. A phone gets no top-level nav: the top
+// level has exactly one real destination (Shifts, which is the app), so a menu
+// choosing between it and Team was 90px of banded chrome - 24% of a 390x844
+// screen - to reveal two items, one of which was always the screen you were on.
+// Team now hangs off the account sheet at every width, and the Day Rail is the
+// only navigation on a phone. If a second real destination ever lands (Settings,
+// Payroll, Reports returning), that call gets re-made - do not pre-build for it.
 const NAV_ITEMS = [
     {
         value: "shifts",
@@ -37,49 +59,45 @@ const NAV_ITEMS = [
             </svg>
         ),
     },
-    SHOW_ADMIN_REPORTS ? {
-        value: "reports",
-        label: "Reports",
-        icon: (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="20" x2="18" y2="10" />
-                <line x1="12" y1="20" x2="12" y2="4" />
-                <line x1="6" y1="20" x2="6" y2="14" />
-            </svg>
-        ),
-    } : null,
-].filter(Boolean);
+];
 
-function MenuIcon() {
-    return (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="4" y1="6" x2="20" y2="6" />
-            <line x1="4" y1="12" x2="20" y2="12" />
-            <line x1="4" y1="18" x2="20" y2="18" />
-        </svg>
-    );
-}
-
-function SideNavItem({ item, active, onClick, collapsed }) {
+// The kit's `WsNavItem` (WorkspaceScreen.jsx): a full-width dark row, icon +
+// label + an optional count pill, on the sidebar's own `--color-bar-*` skin
+// (the same dark-pine family the app bar already uses, so the two read as one
+// continuous surface where they meet). Overturns the previous light,
+// collapsible-to-icon-rail sidebar - that collapse toggle was this app's own
+// invention, not in the kit, and is gone along with it: the kit sidebar is a
+// fixed 224px, always showing icon and label.
+function SideNavItem({ item, active, onClick, count }) {
     return (
         <button
             type="button"
             onClick={onClick}
             aria-current={active ? "page" : undefined}
-            title={collapsed ? item.label : undefined}
             className={
-                "group relative w-full flex items-center gap-3 px-3 py-2 text-sm rounded-[var(--radius-sm)] " +
-                "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30 " +
-                (collapsed ? "lg:justify-center lg:px-0 lg:h-10 " : "") +
+                "group w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-[var(--radius-sm)] text-left " +
+                "transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-bar-mint)]/40 " +
                 (active
-                    ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium"
-                    : "text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-muted)]")
+                    ? "bg-[var(--color-bar-hover)] text-[var(--color-bar-ink-soft)] font-semibold"
+                    : "text-[var(--color-bar-ink)]/60 hover:text-[var(--color-bar-ink)] hover:bg-[var(--color-bar-hover)]/60")
             }
         >
-            <span className={active ? "text-[var(--color-accent)]" : "text-[var(--color-ink-muted)] group-hover:text-[var(--color-ink-soft)]"}>
+            <span className={active ? "text-[var(--color-bar-mint)]" : "text-inherit"}>
                 {item.icon}
             </span>
-            <span className={collapsed ? "lg:sr-only" : ""}>{item.label}</span>
+            <span className="flex-1">{item.label}</span>
+            {count != null ? (
+                <span
+                    className={
+                        "font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded-full " +
+                        (active
+                            ? "bg-[var(--color-bar-mint)]/15 text-[var(--color-bar-mint)]"
+                            : "bg-[var(--color-bar-hover)] text-[var(--color-bar-ink)]/55")
+                    }
+                >
+                    {count}
+                </span>
+            ) : null}
         </button>
     );
 }
@@ -92,18 +110,94 @@ function PanelLoading({ label = "Loading..." }) {
     );
 }
 
-function AdminDashboard() {
-    const { logout, user } = useAuth();
+// `onGoToMyPay` is set for anyone who is ALSO paid out of the pool - a captain.
+// It is what makes the workspace one of their two places rather than the only
+// one, and its presence is what moves the bar's home control: see handleHomeClick.
+function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
+    const { user } = useAuth();
     const [allEmployees, setAllEmployees] = useState([]);
     const [employeesLoaded, setEmployeesLoaded] = useState(false);
     const [employeesLoading, setEmployeesLoading] = useState(false);
     const [employeesLoadError, setEmployeesLoadError] = useState("");
     const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
-    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor" | "reports"
+    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor"
     const [daySummary, setDaySummary] = useState(null);
+    const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
+    // Ledger entries for a date whose shift doc is gone. Only ever non-empty in
+    // the orphaned-payouts stage; it is what the landing lists as "this is the
+    // payroll data removing this would delete".
+    const [dayOrphanedEntries, setDayOrphanedEntries] = useState([]);
+    // Who last saved this date, straight off the shift doc: `{ uid, at }`, either
+    // of which can be null on a night saved before those fields were recorded.
+    // The uid is turned into a name by the effect below.
+    const [daySavedBy, setDaySavedBy] = useState(null);
+    // `{ uid, name }`, never a bare name. The uid it was resolved FROM travels
+    // with it so the render that has already switched to a new day - the state
+    // updates land in separate renders - can never pair that day's timestamp
+    // with the previous day's saver. A name is only ever shown against its own
+    // uid; a mismatch shows no name, which is the honest state for one frame.
+    const [daySaver, setDaySaver] = useState(null);
+    const [dayDataDate, setDayDataDate] = useState(null);
     const [dayLoading, setDayLoading] = useState(false);
-    const [navCollapsed, setNavCollapsed] = useState(true);
+    const dayFetchIdRef = useRef(0);
+    // Lightweight, status-only read for the kit's day-chip strip: which of the
+    // week's 7 days are settled (closed) vs still open (setup) vs untouched
+    // (no entry at all). Separate from `fetchDayPayouts`, which loads the full
+    // money for exactly one selected day - the strip only ever needs a status
+    // dot, never a figure, for the six days it is not currently showing.
+    const [weekStatuses, setWeekStatuses] = useState({});
+    const [weekStatusTick, setWeekStatusTick] = useState(0);
+    // uid -> display name, for the "saved by" line. Browsing a week of days is
+    // usually the same one or two people, so this keeps it to one read each.
+    const saverNameCacheRef = useRef(new Map());
+    const [removingShift, setRemovingShift] = useState(false);
+    // Which day-step the shift editor opens on when entered from a landing CTA.
+    const [editorStep, setEditorStep] = useState("floor");
+    // Set only by a completed Confirm & Save, so the confirmation lands on the day
+    // it belongs to instead of on the editor the admin is leaving.
+    const [shiftSaved, setShiftSaved] = useState(false);
+
+    // People waiting on a decision, shown on the app bar's account avatar.
+    // Gated on the SAME predicate that guards the Approve/Deny controls, not on a
+    // role read here - the badge must never advertise work its viewer cannot do,
+    // and when the capability moves it moves in one place.
+    const canApprove = canApproveAccounts(user);
+    const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+
+    // Captains read the roster and colleagues' pay; managers additionally see
+    // the controls that change access, job titles, account status, and temp
+    // profiles. Every write is capability-gated again inside the person view and
+    // refused server-side for a captain. Supervisor off is an ordinary employee,
+    // so it never reaches the workspace or this destination.
+    const canReachTeam = canReadRoster(user);
+    const canRemoveDay = canRemoveSettledDay(user);
+    const canDiscardSetupDay = canRemoveSetupDay(user);
+    const workspaceTier = tierLabel(user);
+
+    // Live, because approving or denying someone has to take them off the count
+    // immediately - including from the Team screen sitting under the same bar.
+    // Scoped query, not the full roster: this runs for the whole session.
+    useEffect(() => {
+        if (!canApprove) {
+            setPendingApprovalCount(0);
+            return undefined;
+        }
+        return onSnapshot(
+            query(collection(db, "users"), where("status", "==", "pending")),
+            (snapshot) => setPendingApprovalCount(snapshot.size),
+            (e) => {
+                // A count nobody can read is not worth a broken bar: fail to no badge.
+                console.error("Failed to watch pending approvals:", e);
+                setPendingApprovalCount(0);
+            }
+        );
+    }, [canApprove]);
+
+    // One progress cue for the whole workspace, driven by every slow action that
+    // registers through the provider below.
+    const pendingActions = usePendingActionsState();
+    const { beginPendingAction, isPending } = pendingActions;
 
     const loadEmployeesIfNeeded = useCallback(async ({ force = false } = {}) => {
         if (employeesLoaded && !force) return;
@@ -122,44 +216,255 @@ function AdminDashboard() {
         }
     }, [employeesLoaded]);
 
+    // The day is no longer blanked before a refetch: a refetch of the date already
+    // on screen (after a save, after backing out of the editor) holds its content
+    // while the progress bar carries the wait. `dayDataDate` is what keeps that
+    // honest - the landing is only handed data for the date it was loaded for, so
+    // a date change shows a load and never the previous day's money.
     const fetchDayPayouts = useCallback(async (date) => {
+        const fetchId = ++dayFetchIdRef.current;
+        const endPendingAction = beginPendingAction();
         setDayLoading(true);
-        setDaySummary(null);
-        setDayShiftStatus(null);
         try {
-            const shiftDoc = await getDoc(doc(db, "shifts", date));
+            const [shiftDoc, payoutEntries] = await Promise.all([
+                getDoc(doc(db, "shifts", date)),
+                fetchPayoutEntriesForDate(db, date),
+            ]);
+            if (fetchId !== dayFetchIdRef.current) return;
             if (shiftDoc.exists()) {
-                const d = shiftDoc.data();
-                setDaySummary(d.summary || null);
-                setDayShiftStatus(d.status || (d.summary || d.payouts ? "closed" : "setup"));
+                const d = applyOpenShiftMemberNames(shiftDoc.data());
+                setDaySummary(attachLedgerPayoutsToSummary(d.summary || null, payoutEntries));
+                // Lift the saved floor plan (already returned here) so the setup
+                // landing can confirm the lineup team-by-team without another fetch.
+                setDayLineup({
+                    teams: Array.isArray(d.teams) ? d.teams : [],
+                    barTeam: d.barTeam || { members: [] },
+                    runners: Array.isArray(d.runners) ? d.runners : [],
+                });
+                setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
+                setDayOrphanedEntries([]);
+                setDaySavedBy({ uid: d.updatedBy || null, at: d.updatedAt || null });
+            } else {
+                // The date has no shift (or Remove just deleted it): held-over
+                // content must not stand.
+                setDaySummary(null);
+                setDayLineup(null);
+                // Payout entries with no shift doc behind them are real payroll
+                // data - the ledger migration and unfinished writes both leave
+                // this shape. Without a status the landing showed the blank
+                // "set up the floor" day, so those entries could not be reached,
+                // let alone removed. A truly empty date (no entries either) keeps
+                // the null status and the untouched blank-day landing.
+                setDayShiftStatus(payoutEntries.length > 0 ? ORPHANED_PAYOUTS_STATUS : null);
+                setDayOrphanedEntries(payoutEntries.length > 0 ? payoutEntries : []);
+                setDaySavedBy(null);
             }
         } catch (e) {
             console.error("Failed to fetch day payouts:", e);
+            if (fetchId !== dayFetchIdRef.current) return;
+            setDaySummary(null);
+            setDayLineup(null);
+            setDayShiftStatus(null);
+            setDayOrphanedEntries([]);
+            setDaySavedBy(null);
         } finally {
-            setDayLoading(false);
+            // A superseded fetch leaves the newer one's state alone.
+            if (fetchId === dayFetchIdRef.current) {
+                setDayDataDate(date);
+                setDayLoading(false);
+            }
+            endPendingAction();
         }
-    }, []);
+    }, [beginPendingAction]);
 
     useEffect(() => {
+        setShiftSaved(false);
         fetchDayPayouts(selectedDate);
     }, [selectedDate, fetchDayPayouts]);
 
+    // The work week `selectedDate` falls in - Friday-anchored, the same
+    // boundary the pay side already uses (`getCurrentWeek`), rather than a
+    // second Monday-start convention just for this strip.
+    const weekDays = useMemo(
+        () => getCurrentWeek(parseDateKey(selectedDate)).map((date) => ({ date, dateKey: toDateKey(date) })),
+        [selectedDate]
+    );
+
     useEffect(() => {
-        if (!SHOW_ADMIN_REPORTS && activeTab === "reports") {
-            setActiveTab("shifts");
+        let cancelled = false;
+        const dateKeys = weekDays.map((d) => d.dateKey);
+        (async () => {
+            try {
+                const snapshot = await getDocs(query(collection(db, "shifts"), where("date", "in", dateKeys)));
+                if (cancelled) return;
+                const next = {};
+                snapshot.docs.forEach((d) => { next[d.id] = d.data().status || "closed"; });
+                setWeekStatuses(next);
+            } catch (e) {
+                // A glance indicator, not the record - the day itself still loads
+                // and reads correctly through `fetchDayPayouts` either way.
+                console.error("Failed to load week statuses:", e);
+                if (!cancelled) setWeekStatuses({});
+            }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [weekDays.map((d) => d.dateKey).join("|"), weekStatusTick]);
+
+    // `shifts/{date}.updatedBy` is a uid, and a uid is not an answer to "who
+    // saved this?" - so it is resolved to a name here, in one document read, and
+    // only when the field is set. Deliberately NOT part of fetchDayPayouts: the
+    // day's money must not wait on a name, so the line fills in behind it. A
+    // uid with no readable profile behind it (a deleted account) resolves to
+    // null and the panel simply drops the "by" half of the line.
+    const savedByUid = daySavedBy?.uid || null;
+    useEffect(() => {
+        if (!savedByUid) {
+            setDaySaver(null);
+            return undefined;
         }
+
+        const cache = saverNameCacheRef.current;
+        if (cache.has(savedByUid)) {
+            setDaySaver({ uid: savedByUid, name: cache.get(savedByUid) });
+            return undefined;
+        }
+
+        let cancelled = false;
+        getDoc(doc(db, "users", savedByUid))
+            .then((snapshot) => {
+                const data = snapshot.exists() ? snapshot.data() : null;
+                const name = data ? (fullNameFor(data, null) || data.username || null) : null;
+                cache.set(savedByUid, name);
+                if (!cancelled) setDaySaver({ uid: savedByUid, name });
+            })
+            .catch((e) => {
+                // A name is the nicety here, not the record: the date and the
+                // money stand without it, so this never breaks the day.
+                console.error("Failed to resolve who saved the shift:", e);
+                if (!cancelled) setDaySaver({ uid: savedByUid, name: null });
+            });
+
+        return () => { cancelled = true; };
+    }, [savedByUid]);
+
+    useEffect(() => {
+        if (!shiftSaved) return undefined;
+        const timeoutId = window.setTimeout(() => setShiftSaved(false), 6000);
+        return () => window.clearTimeout(timeoutId);
+    }, [shiftSaved]);
+
+    // Every screen change starts at the top. The editor is a long scrolling form,
+    // so without this the landing arrives scrolled past its own rail and the saved
+    // confirmation. A programmatic scroll only ever reveals the floating actions
+    // (see FloatingActions), never hides them.
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: "auto" });
     }, [activeTab]);
 
-    const changeDate = (delta) => {
-        const d = new Date(selectedDate + "T12:00:00");
-        d.setDate(d.getDate() + delta);
-        setSelectedDate(toDateKey(d));
+    // Called by the editor on every exit - Cancel, floor Done, and a completed
+    // Confirm & Save - so only an explicit `saved` flag may claim a save happened.
+    const handleEditorClose = (options) => {
+        setActiveTab("shifts");
+        setShiftSaved(options?.saved === true);
+        fetchDayPayouts(selectedDate);
+        setWeekStatusTick((n) => n + 1);
     };
 
-    const handleEditorClose = () => {
-        setActiveTab("shifts");
-        fetchDayPayouts(selectedDate);
-    };
+    // Hard-delete a settled shift for the selected date. This permanently removes
+    // the shift and everyone's payouts for that date from all dashboards (the
+    // employee cards clear live because they subscribe to the ledger), and cannot
+    // be undone. To fix a wrong-date settlement, the admin removes it here and
+    // re-enters the shift on the correct date through the normal flow.
+    const handleRemoveShift = useCallback(async () => {
+        if (removingShift) return;
+
+        const [y, m, d] = selectedDate.split("-");
+        const friendlyDate = new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+        });
+        const confirmed = window.confirm(
+            `Remove the shift for ${friendlyDate}?\n\n` +
+            "This permanently deletes the shift and everyone's payouts for that date " +
+            "from all dashboards. Each employee on this shift will no longer see this " +
+            "date's payout. This cannot be undone.\n\n" +
+            "To move a shift to a different date, remove it here and re-enter it on the correct date."
+        );
+        if (!confirmed) return;
+
+        setRemovingShift(true);
+        // Covers the delete itself; the refetch it hands over to registers its own,
+        // so the bar stays up across both.
+        const endPendingAction = beginPendingAction();
+        try {
+            await removeShiftAtomically({
+                db,
+                date: selectedDate,
+                updatedBy: user?.uid || null,
+            });
+            await fetchDayPayouts(selectedDate);
+            setWeekStatusTick((n) => n + 1);
+        } catch (e) {
+            console.error("Failed to remove shift:", e);
+            alert("Could not remove the shift. Please try again.");
+        } finally {
+            setRemovingShift(false);
+            endPendingAction();
+        }
+    }, [removingShift, selectedDate, user, fetchDayPayouts, beginPendingAction]);
+
+    // Discard an accidental setup-stage day. Lighter than handleRemoveShift:
+    // no payouts, a different confirm, and whoever can create the leftover
+    // (captain) can undo it. Null the landing status BEFORE leaving the
+    // editor so SkipToFloorPlan cannot bounce us back into it.
+    const handleRemoveSetupDay = useCallback(async () => {
+        if (removingShift) return;
+
+        const [y, m, d] = selectedDate.split("-");
+        const friendlyDate = new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+        });
+        const confirmed = window.confirm(
+            `Remove the floor plan for ${friendlyDate}?\n\n` +
+            "This day has not been paid out. Removing it deletes the floor plan " +
+            "and the date will look as if nothing was started."
+        );
+        if (!confirmed) return;
+
+        setRemovingShift(true);
+        const endPendingAction = beginPendingAction();
+        try {
+            await removeSetupShiftAtomically({
+                db,
+                date: selectedDate,
+                updatedBy: user?.uid || null,
+            });
+            setDayShiftStatus(null);
+            setDayLineup(null);
+            setDaySummary(null);
+            setDayOrphanedEntries([]);
+            setWeekStatuses((prev) => {
+                const next = { ...prev };
+                delete next[selectedDate];
+                return next;
+            });
+            setActiveTab("shifts");
+            await fetchDayPayouts(selectedDate);
+            setWeekStatusTick((n) => n + 1);
+        } catch (e) {
+            console.error("Failed to remove setup day:", e);
+            alert("Could not remove this day. Please try again.");
+        } finally {
+            setRemovingShift(false);
+            endPendingAction();
+        }
+    }, [removingShift, selectedDate, user, fetchDayPayouts, beginPendingAction]);
 
     const setActiveTabWithData = useCallback((tab) => {
         setActiveTab(tab);
@@ -168,171 +473,338 @@ function AdminDashboard() {
         }
     }, [loadEmployeesIfNeeded]);
 
-    const handleNavItemClick = useCallback((tab) => {
-        setActiveTabWithData(tab);
-        if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
-            setNavCollapsed(true);
-        }
+    // Enter the day flow (the shift editor) focused on a specific step. The Day
+    // Rail landing CTAs route through here.
+    const enterEditor = useCallback((initialStep = "floor") => {
+        setEditorStep(["settle", "review"].includes(initialStep) ? initialStep : "floor");
+        setActiveTabWithData("editor");
     }, [setActiveTabWithData]);
+
+    // Leaving the shift editor by a control that lives outside it (the workspace menu,
+    // the home button) has to clear the SAME unsaved-work confirmation the editor's own
+    // Cancel does. The editor registers its guard here while it is mounted; without it
+    // these paths walked past the check and threw away money edits on a closed shift
+    // with no prompt at all.
+    const editorLeaveGuardRef = useRef(null);
+    const registerEditorLeaveGuard = useCallback((guard) => {
+        editorLeaveGuardRef.current = guard;
+    }, []);
+
+    // Team's own page header ("Team" / find-a-person subtitle) is redundant
+    // once a person is open - the sticky "Team roster" back control and the
+    // identity card's own name already say where you are, the same way the
+    // Day Rail replaces the editor's title. Mirrors the editor's mobile-hide
+    // treatment below so a phone's short viewport spends its height on the
+    // person, not a repeated title.
+    const [teamDetailOpen, setTeamDetailOpen] = useState(false);
+
+    // True when it is safe to navigate away right now.
+    const confirmLeaveEditor = useCallback(() => {
+        const guard = editorLeaveGuardRef.current;
+        return guard ? guard() : true;
+    }, []);
+
+    // The one way into a top-level tab, shared by the desktop sidebar and the
+    // account sheet's Team item so both clear the editor's leave guard.
+    const handleNavItemClick = useCallback((tab) => {
+        if (!confirmLeaveEditor()) return;
+        // Same re-read handleEditorClose does: a setup shift autosaves while editing,
+        // so the landing would otherwise show the day as it was before the edit.
+        const needsRefresh = activeTab === "editor" && tab === "shifts";
+        setActiveTabWithData(tab);
+        if (needsRefresh) fetchDayPayouts(selectedDate);
+    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
+
+    // Today's Shifts landing, from anywhere, in one tap. TODAY, not the day that
+    // happened to be selected - whoever reaches for it mid-shift wants the shift
+    // they are working, so a day browsed to earlier is not sticky. Routed through
+    // the same leave guard as everything else that exits the editor.
+    const goToTodayShifts = useCallback(() => {
+        if (!confirmLeaveEditor()) return;
+        const today = toDateKey(new Date());
+        // A setup shift autosaves while editing, so the landing has to re-read the day.
+        // Changing the date already refetches through the selectedDate effect; only the
+        // same-day case needs an explicit refresh.
+        const needsRefresh = activeTab === "editor" && today === selectedDate;
+        setSelectedDate(today);
+        setActiveTabWithData("shifts");
+        if (needsRefresh) fetchDayPayouts(today);
+    }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
+
+    // Decided direction: the day-chip strip stays usable while the floor editor
+    // is open (Floor step only - Settle/Review keep the date locked, same as
+    // `BarDatePill`, because those steps carry half-typed money a date swap
+    // could orphan). Exits the editor back to Shifts for the new date; the
+    // normal `stage === "settle"` handling there (`SkipToFloorPlan`) picks the
+    // new day back up, including re-entering its own floor editor if it is
+    // also unsettled - so flipping through a run of open days chains cleanly.
+    const selectDateFromFloorEditor = useCallback((nextDate) => {
+        if (!confirmLeaveEditor()) return;
+        setSelectedDate(nextDate);
+        setActiveTabWithData("shifts");
+    }, [confirmLeaveEditor, setActiveTabWithData]);
+
+    // HOME MEANS THE VIEWER'S OWN HOME, and the two tiers here do not share one.
+    // The manager runs the restaurant and is not paid from the pool, so home is
+    // today's shifts, exactly as it always was. A captain IS paid from the pool,
+    // so home is their own pay - that is the trade the captain chose knowingly:
+    // tonight's shift costs a tap (the account sheet's Shifts item, below) to buy
+    // their own week being where they land. Same leave guard either way.
+    const handleHomeClick = useCallback(() => {
+        if (!onGoToMyPay) return goToTodayShifts();
+        if (!confirmLeaveEditor()) return;
+        onGoToMyPay();
+    }, [onGoToMyPay, goToTodayShifts, confirmLeaveEditor]);
 
     // The sidebar treats "editor" as still belonging to the Shifts section.
     const sidebarValue = activeTab === "editor" ? "shifts" : activeTab;
 
+    // Team in the account sheet. This is the ONLY door to it on a phone, and it is
+    // present at every width so the destination lives in one predictable place
+    // rather than moving between a sidebar and a menu as the viewport changes.
+    //
+    // Shifts joins it for whoever's home is NOT Shifts - a captain, whose home
+    // control goes to their own pay. The rule is one line: a destination is
+    // listed here exactly when the bar's home control does not already lead
+    // there. For the manager, home IS Shifts, so listing it would be noise.
+    const accountItems = [
+        {
+            key: "account",
+            label: "Your account",
+            icon: ACCOUNT_ICON,
+            onClick: onOpenAccount,
+        },
+        ...(onGoToMyPay ? [{
+            key: "shifts",
+            label: NAV_ITEMS[0].label,
+            icon: NAV_ITEMS[0].icon,
+            active: sidebarValue === "shifts",
+            onClick: goToTodayShifts,
+        }] : []),
+        ...NAV_ITEMS
+            .filter((item) => item.value === "users" && canReachTeam)
+            .map((item) => ({
+                key: item.value,
+                label: item.label,
+                icon: item.icon,
+                active: sidebarValue === item.value,
+                // Team is where a pending sign-up is acted on, so the avatar's count
+                // repeats here - the tap from the badge lands on the number's screen.
+                count: pendingApprovalCount,
+                onClick: () => handleNavItemClick(item.value),
+            })),
+    ];
+
+    // Who can be put on a section tonight. The manager is excluded BY IDENTITY,
+    // not by job title: they oversee the operation, never work a section, and
+    // take no share of the pool. Their title is not what keeps them out - today
+    // it happens to be "admin", which the legacy filter beside this catches, but
+    // the pointer is what actually names them and it survives that value being
+    // retired. Assigning them would also pay them zero silently, since
+    // ROLE_POINTS knows no weight for a manager.
+    const floorPlanPool = useMemo(
+        () => allEmployees.filter((emp) =>
+            emp.status === "active" && emp.role !== "admin" && emp.uid !== user?.managerUid
+        ),
+        [allEmployees, user?.managerUid]
+    );
+
+    // Day data is only shown for the date it was loaded for.
+    const dayDataIsCurrent = dayDataDate === selectedDate;
+
+    // The "saved by" line, or nothing. A recorded uid whose name has not landed
+    // yet is still an unanswered question, so the whole line waits: the nameless
+    // form says the record HAS no saver, which is a different night, and showing
+    // it for a frame both misstates the record and reflows the header under it.
+    const daySavedByLine = (() => {
+        if (!dayDataIsCurrent || !daySavedBy?.at) return null;
+        const named = daySaver?.uid === daySavedBy.uid;
+        if (daySavedBy.uid && !named) return null;
+        return { name: named ? daySaver.name : null, at: daySavedBy.at };
+    })();
+
+    // The desktop <h1> mirrors where the day actually is, instead of always
+    // reading "Pay out" (which contradicted a fresh/setup day). The date now
+    // lives once in the app-bar Bar Date pill, so there is no date band here.
+    const SHIFTS_STAGE_TITLE = {
+        "build-floor": "Set up the floor",
+        settle: "Confirm the floor",
+        closed: "Pay out",
+        "orphaned-payouts": "Leftover payouts",
+    };
+
     const headerForTab = () => {
         if (activeTab === "shifts") {
+            const stage = getLandingStage(dayShiftStatus);
+            // A settled day gets the kit's real page header - the specific date
+            // and who saved it - shown at EVERY width (not the usual
+            // desktop-only stage title) and sitting above the day-chip strip, not
+            // buried in the payout card below it. Gated on `dayDataIsCurrent` for
+            // the same reason every other read of `daySummary` is: a date change
+            // must never show the previous day's title for one frame.
+            if (stage === "closed" && dayDataIsCurrent && daySummary) {
+                return {
+                    eyebrow: "Shifts",
+                    title: formatFullDateKey(selectedDate),
+                    savedBy: daySavedByLine,
+                    actions: null,
+                    alwaysVisible: true,
+                };
+            }
             return {
                 eyebrow: "Shifts",
-                title: "Shift Distribution",
+                title: SHIFTS_STAGE_TITLE[stage] || "Shifts",
                 subtitle: null,
-                actions: (
-                    <div className="flex items-center gap-2 max-[560px]:w-full">
-                        <button
-                            type="button"
-                            onClick={() => changeDate(-1)}
-                            title="Previous day"
-                            aria-label="Previous day"
-                            className="h-10 w-10 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-                        </button>
-                        <input
-                            type="date"
-                            value={selectedDate}
-                            aria-label="Select shift date"
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            className="h-10 px-3 text-sm font-mono tabular-nums bg-[var(--color-surface)] text-[var(--color-ink)] border border-[var(--color-line)] rounded-[var(--radius-sm)] hover:border-[var(--color-line-strong)] focus:outline-none focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15 transition-colors max-[560px]:min-w-0 max-[560px]:flex-1"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => changeDate(1)}
-                            title="Next day"
-                            aria-label="Next day"
-                            className="h-10 w-10 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                        >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                        </button>
-                        <Button onClick={() => setActiveTabWithData("editor")}>
-                            Edit Shift
-                        </Button>
-                    </div>
-                ),
+                actions: null,
             };
         }
         if (activeTab === "editor") {
+            // The Day Rail names the active step, so the editor needs no eyebrow,
+            // step labels, or Back action here - the workspace nav handles exit.
             return {
-                eyebrow: `Editing ${selectedDate}`,
-                title: "Shift Editor",
+                eyebrow: null,
+                title: "Edit shift",
                 subtitle: null,
-                actions: (
-                    <Button onClick={handleEditorClose} variant="secondary" size="sm">
-                        ← Back to Shifts
-                    </Button>
-                ),
-            };
-        }
-        if (activeTab === "users") {
-            return {
-                eyebrow: "Team",
-                title: "Team Management",
-                subtitle: "Approve new users, assign roles, and manage active employees.",
+                actions: null,
             };
         }
         return {
-            eyebrow: "Reports",
-            title: "Admin Reports",
-            subtitle: "Generate and export weekly, monthly, or pay-period shift summaries.",
+            eyebrow: "Team",
+            title: "Team",
+            subtitle: "Find a person, check their status, or open their pay history.",
         };
     };
 
     const header = headerForTab();
 
+    // The kit's "Tonight's pool" sidebar card. Only meaningful once a day is
+    // actually settled - `daySummary.balances.totalAvailable` is the same
+    // finalized-pool figure `DayPayoutPanel`'s own audit summary already
+    // trusts, not a new derivation. A setup or empty day has no pool yet, so
+    // it reads as $0.00 / "Not settled" rather than inventing a number.
+    // Labeled off the calendar, not the browsed day, so glancing at a past
+    // date never claims to be reporting "tonight."
+    const todayKey = toDateKey(new Date());
+    const sidebarPoolSettled = dayDataIsCurrent && dayShiftStatus === "closed";
+    const sidebarPoolAmount = sidebarPoolSettled ? (daySummary?.balances?.totalAvailable ?? 0) : 0;
+    const sidebarPoolLabel = selectedDate === todayKey ? "Tonight's pool" : "This day's pool";
+
     return (
+        <PendingActionsContext.Provider value={pendingActions}>
         <div className="min-h-screen bg-[var(--color-bg)]">
-            {/* Top app bar */}
-            <header className="sticky top-0 z-20 h-14 px-4 sm:px-6 flex items-center justify-between bg-[var(--color-surface)] border-b border-[var(--color-line)]">
-                <div className="flex items-center gap-3">
-                    <button
-                        type="button"
-                        onClick={() => setNavCollapsed(prev => !prev)}
-                        aria-expanded={!navCollapsed}
-                        aria-controls="admin-workspace-nav"
-                        aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
-                        title={navCollapsed ? "Open workspace" : "Collapse workspace"}
-                        className="h-9 w-9 inline-flex lg:hidden items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                    >
-                        <MenuIcon />
-                    </button>
-                    <span className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                        TipTracker
-                    </span>
-                    <Badge tone="accent">Admin</Badge>
-                </div>
-                <div className="flex items-center gap-3">
-                    {user?.username ? (
-                        <span className="hidden sm:inline text-xs text-[var(--color-ink-muted)]">
-                            {user.username}
-                        </span>
-                    ) : null}
-                    <Button onClick={logout} variant="secondary" size="sm">
-                        Log Out
-                    </Button>
-                </div>
-            </header>
+            {/* Above the z-40 app bar: the one cue that must stay visible while a
+                write is in flight, including while the floating actions are away. */}
+            <TopProgressBar active={isPending} label="Saving and loading shift data" />
+
+            {/* The top app bar, shared with the pay side - see components/AppBar.
+                The day lives in it on both day screens. On Shifts it is the control
+                that changes the day; in the editor it is a label, because the day
+                being typed against must be readable there and must not be swappable
+                mid-edit. Team has no day. */}
+            <AppBar
+                onHome={handleHomeClick}
+                homeLabel={onGoToMyPay ? "Go to my pay" : "Go to today's shifts"}
+                homeTitle={onGoToMyPay ? "My pay" : "Today's shifts"}
+                tier={workspaceTier}
+                dateControl={
+                    activeTab === "shifts" || activeTab === "editor" ? (
+                        <BarDatePill
+                            selectedDate={selectedDate}
+                            onSelectDate={setSelectedDate}
+                            readOnly={activeTab === "editor"}
+                        />
+                    ) : null
+                }
+                accountItems={accountItems}
+                pendingApprovalCount={pendingApprovalCount}
+            />
 
             <div className="flex flex-col lg:flex-row min-h-[calc(100vh-3.5rem)]">
-                {/* Sidebar */}
-                <aside
-                    id="admin-workspace-nav"
-                    className={
-                        "lg:block lg:shrink-0 lg:border-r border-b lg:border-b-0 border-[var(--color-line)] bg-[var(--color-bg)] transition-[width] duration-200 " +
-                        (navCollapsed ? "hidden lg:w-16" : "block lg:w-60")
-                    }
-                >
-                    <nav className="lg:sticky lg:top-14 p-3 lg:py-4">
-                        <div className={"hidden lg:flex mb-3 " + (navCollapsed ? "justify-center" : "px-1 justify-between items-center")}>
-                            {!navCollapsed ? (
-                                <p className="px-2 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                                    Workspace
-                                </p>
-                            ) : null}
-                            <button
-                                type="button"
-                                onClick={() => setNavCollapsed(prev => !prev)}
-                                aria-expanded={!navCollapsed}
-                                aria-label={navCollapsed ? "Open workspace navigation" : "Collapse workspace navigation"}
-                                title={navCollapsed ? "Open workspace" : "Collapse workspace"}
-                                className="h-8 w-8 inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-line)] bg-[var(--color-surface)] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:border-[var(--color-line-strong)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]/30"
-                            >
-                                <MenuIcon />
-                            </button>
+                {/* Workspace sidebar - desktop only. Rebuilt on the kit's own shape:
+                    a fixed 224px dark-pine column (`WorkspaceScreen.jsx`'s `<aside>`),
+                    not the previous light, icon-rail-collapsible sidebar - that
+                    collapse toggle was this app's own invention and the kit has no
+                    equivalent, so it is gone rather than kept alongside. Phone still
+                    gets no top-level nav at all (unchanged): Team hangs off the
+                    account sheet, and the Day Rail is the only phone navigation. */}
+                <aside className="hidden lg:flex lg:w-56 lg:shrink-0 lg:flex-col bg-[var(--color-bar-bg)]">
+                    <nav className="lg:sticky lg:top-14 flex flex-col lg:min-h-[calc(100vh-3.5rem)]">
+                        <div className="px-4 pt-5 pb-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-bar-ink)]/40">
+                                Workspace
+                            </p>
                         </div>
-                        <p className="lg:hidden px-3 mb-3 text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
-                            Workspace
-                        </p>
-                        <div className="flex lg:flex-col gap-1">
-                            {NAV_ITEMS.map((item) => (
+                        <div className="px-2.5 flex flex-col gap-0.5">
+                            {NAV_ITEMS.filter((item) => item.value !== "users" || canReachTeam).map((item) => (
                                 <SideNavItem
                                     key={item.value}
                                     item={item}
                                     active={sidebarValue === item.value}
                                     onClick={() => handleNavItemClick(item.value)}
-                                    collapsed={navCollapsed}
+                                    count={item.value === "users" && pendingApprovalCount > 0 ? pendingApprovalCount : null}
                                 />
                             ))}
+                        </div>
+                        {/* Kit's bottom block: the day's pool at a glance, then a
+                            direct link to the captain's own pay - present only for
+                            whoever is paid from the pool, same gate `onGoToMyPay`
+                            already carries everywhere else. Routed through the same
+                            leave-guarded handler the app-bar home button uses, not a
+                            bare call to `onGoToMyPay`, so a half-edited shift still
+                            confirms before this link abandons it. */}
+                        <div className="mt-auto px-2.5 pt-3 pb-3.5 border-t border-[var(--color-bar-hover)]">
+                            <div className="rounded-[var(--radius-sm)] bg-[var(--color-bar-hover)]/50 px-3 py-2.5 mb-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-bar-ink)]/40">
+                                    {sidebarPoolLabel}
+                                </p>
+                                <p className="font-mono tabular-nums text-lg text-[var(--color-bar-ink-soft)] mt-1">
+                                    ${sidebarPoolAmount.toFixed(2)}
+                                </p>
+                                <p className="text-[11px] text-[var(--color-bar-ink)]/50 mt-0.5">
+                                    {sidebarPoolSettled ? "Settled" : "Not settled"}
+                                </p>
+                            </div>
+                            {onGoToMyPay ? (
+                                <SideNavItem
+                                    item={{ value: "my-pay", label: "Go to my pay", icon: ACCOUNT_ICON }}
+                                    active={false}
+                                    onClick={handleHomeClick}
+                                />
+                            ) : null}
                         </div>
                     </nav>
                 </aside>
 
                 {/* Main content */}
-                <main className="flex-1 min-w-0 px-4 sm:px-8 py-5 lg:py-10">
+                <main className={
+                    "flex-1 min-w-0 px-2 sm:px-8 pb-5 sm:pt-5 lg:py-10 "
+                    // The editor's mobile header (Edit shift / Set up the floor) is
+                    // hidden below sm - see the header's own className below - so its
+                    // top padding would otherwise be a naked gap with nothing in it.
+                    // The day chips sit close under the app bar there instead, like
+                    // the kit's spine, with just enough top padding to keep them off
+                    // the app bar edge. sm and up keep the full gap - there the header
+                    // shows.
+                    + (activeTab === "editor" ? "pt-2" : "pt-5")
+                }>
                     <div className="max-w-6xl mx-auto">
-                        <header className={
-                            "flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
+                        <header
+                            data-testid={activeTab === "shifts" && header.alwaysVisible ? "settled-day-header" : undefined}
+                            className={
+                            // On mobile Shifts and the editor the content header is
+                            // usually hidden - the Day Rail names the step and sits
+                            // flush under the app bar. Desktop keeps the page title
+                            // for coherence. A settled day is the one exception:
+                            // `header.alwaysVisible` shows the real date and saved-by
+                            // at every width, above the day-chip strip, the way the
+                            // kit's own page header sits above its day chips.
+                            ((activeTab === "shifts" && !header.alwaysVisible) || activeTab === "editor" || (activeTab === "users" && teamDetailOpen) ? "hidden sm:flex " : "flex ") +
+                            "flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-4 border-b border-[var(--color-line)] " +
                             (activeTab === "editor" || activeTab === "shifts" ? "pb-3 mb-3 sm:pb-6 sm:mb-6" : "pb-4 sm:pb-6 mb-4 sm:mb-6")
                         }>
                             <div className={
                                 "flex flex-col gap-1.5 " +
-                                (activeTab === "shifts" ? "hidden sm:flex" : "")
+                                (activeTab === "shifts" && !header.alwaysVisible ? "hidden sm:flex" : "")
                             }>
                                 {header.eyebrow ? (
                                     <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--color-ink-muted)]">
@@ -340,7 +812,9 @@ function AdminDashboard() {
                                     </span>
                                 ) : null}
                                 <h1 className={
-                                    "font-display text-2xl sm:text-4xl font-medium tracking-tight text-[var(--color-ink)] " +
+                                    // 34px at every width, matching the kit's own h1 exactly
+                                    // (WorkspaceScreen.jsx sets it once, not responsively).
+                                    "font-display text-[34px] leading-[1.1] font-medium tracking-tight text-[var(--color-ink)] " +
                                     (activeTab === "editor" ? "hidden sm:block" : "")
                                 }>
                                     {header.title}
@@ -350,18 +824,49 @@ function AdminDashboard() {
                                         {header.subtitle}
                                     </p>
                                 ) : null}
+                                {header.savedBy ? <SavedByLine savedBy={header.savedBy} /> : null}
                             </div>
                             {header.actions ? (
                                 <div className="flex items-center gap-2 shrink-0">{header.actions}</div>
                             ) : null}
                         </header>
 
+                        {/* Kit's week-at-a-glance day chips (WorkspaceScreen.jsx's
+                            `DayChip` row), shown on Shifts and - decided over the
+                            original always-hidden-in-the-editor behavior - during the
+                            floor editor's Floor step too, so a run of open days can be
+                            flipped through without Cancel first. Settle/Review keep the
+                            strip hidden and `BarDatePill` read-only, same as always:
+                            those steps carry half-typed money a date swap could orphan.
+                            Team has no date, so it does not render there. Visible at
+                            every width, like the kit's own `compact` mode keeps it -
+                            unlike the eyebrow/h1 above, not hidden on a phone. */}
+                        {activeTab === "shifts" || (activeTab === "editor" && editorStep === "floor") ? (
+                            <div className="mb-3 sm:mb-6">
+                                <DayChipStrip
+                                    days={weekDays}
+                                    statuses={weekStatuses}
+                                    selectedDate={selectedDate}
+                                    todayKey={todayKey}
+                                    onSelect={activeTab === "editor" ? selectDateFromFloorEditor : setSelectedDate}
+                                />
+                            </div>
+                        ) : null}
+
                         {activeTab === "shifts" ? (
-                            <DayPayoutPanel
-                                date={selectedDate}
-                                summary={daySummary}
-                                status={dayShiftStatus}
-                                loading={dayLoading}
+                            <DayRailLanding
+                                summary={dayDataIsCurrent ? daySummary : null}
+                                lineup={dayDataIsCurrent ? dayLineup : null}
+                                status={dayDataIsCurrent ? dayShiftStatus : null}
+                                orphanedEntries={dayDataIsCurrent ? dayOrphanedEntries : []}
+                                loading={dayLoading || !dayDataIsCurrent}
+                                savedNotice={shiftSaved}
+                                onBuildFloor={() => enterEditor("floor")}
+                                onContinueSettle={() => enterEditor("settle")}
+                                onOpenReview={() => enterEditor("review")}
+                                onEditFloor={() => enterEditor("floor")}
+                                onRemoveShift={canRemoveDay ? handleRemoveShift : undefined}
+                                removingShift={removingShift}
                             />
                         ) : activeTab === "editor" ? (
                             !employeesLoaded && employeesLoading ? (
@@ -369,36 +874,36 @@ function AdminDashboard() {
                             ) : !employeesLoaded && employeesLoadError ? (
                                 <PanelLoading label={employeesLoadError} />
                             ) : (
-                                <Suspense fallback={<PanelLoading label="Loading shift editor..." />}>
+                                <Suspense fallback={<PanelLoading label="Loading shift…" />}>
                                     <ShiftEditorPanel
                                         date={selectedDate}
-                                        allEmployees={allEmployees.filter(emp => emp.status === "active" && emp.role !== "admin")}
+                                        allEmployees={floorPlanPool}
                                         onClose={handleEditorClose}
+                                        initialStep={editorStep}
+                                        onRegisterLeaveGuard={registerEditorLeaveGuard}
+                                        onRemoveSetupDay={canDiscardSetupDay ? handleRemoveSetupDay : undefined}
+                                        removingSetupDay={removingShift}
                                     />
                                 </Suspense>
                             )
-                        ) : activeTab === "users" ? (
-                            !employeesLoaded && employeesLoading ? (
-                                <PanelLoading label="Loading team..." />
-                            ) : !employeesLoaded && employeesLoadError ? (
-                                <PanelLoading label={employeesLoadError} />
-                            ) : (
-                                <Suspense fallback={<PanelLoading label="Loading team management..." />}>
-                                    <TeamManagement
-                                        allEmployees={allEmployees}
-                                        refreshEmployees={() => loadEmployeesIfNeeded({ force: true })}
-                                    />
-                                </Suspense>
-                            )
+                        ) : !employeesLoaded && employeesLoading ? (
+                            <PanelLoading label="Loading team..." />
+                        ) : !employeesLoaded && employeesLoadError ? (
+                            <PanelLoading label={employeesLoadError} />
                         ) : (
-                            <Suspense fallback={<PanelLoading label="Loading reports..." />}>
-                                <AdminReportsPanel />
+                            <Suspense fallback={<PanelLoading label="Loading team management..." />}>
+                                <TeamManagement
+                                    allEmployees={allEmployees}
+                                    onDetailChange={setTeamDetailOpen}
+                                    refreshEmployees={() => loadEmployeesIfNeeded({ force: true })}
+                                />
                             </Suspense>
                         )}
                     </div>
                 </main>
             </div>
         </div>
+        </PendingActionsContext.Provider>
     );
 }
 
