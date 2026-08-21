@@ -17,7 +17,10 @@ approved - before the employee starts working shifts under their own login.**
 
 Do it right at approval time, not at the end of the week and not at the end of the pay
 period. Every night they work while both a temporary profile and a real account exist for
-them is a night that can permanently block the merge.
+them is a night that can end up recorded twice - and a night recorded on both profiles is
+the one night the merge will not move for you. It leaves that night alone on both sides
+rather than overwriting pay that may already have been handed over, and you are left to
+work out by hand which figure is the right one.
 
 ## How to merge
 
