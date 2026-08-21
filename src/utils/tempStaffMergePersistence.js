@@ -27,20 +27,6 @@ export const MERGE_DATES_PER_CHUNK = 12;
 
 const timestamp = (now) => now || new Date().toISOString();
 
-export class TempStaffMergeCollisionError extends Error {
-    constructor(collisions, movedDates = []) {
-        const dates = collisions.map(collision => collision.date).join(", ");
-        super(`Temp staff merge stopped because the target account already has saved payouts on: ${dates}`);
-        this.name = "TempStaffMergeCollisionError";
-        this.collisions = collisions;
-        // Dates whose writes had already committed when this was thrown. The preflight
-        // check throws with none; a clash that only appears once the pieces are running
-        // throws with everything the earlier pieces already moved, so nothing downstream
-        // can tell the manager the merge changed nothing when it changed some of it.
-        this.movedDates = movedDates;
-    }
-}
-
 export function createTempStaffMergeOperationId(tempUid, realUid) {
     const randomPart = globalThis.crypto?.randomUUID?.()
         || Math.random().toString(36).slice(2);
@@ -222,7 +208,7 @@ function buildMergedLegacyTip({ date, tempTip, tempUser, realUser, operationId, 
     };
 }
 
-function buildCollision({ date, sources }) {
+function buildSkippedDate({ date, sources }) {
     return {
         date,
         sources: Array.from(new Set(sources)).sort(),
@@ -230,8 +216,9 @@ function buildCollision({ date, sources }) {
 }
 
 // A date already written by this same temp-profile merge is not a clash. A
-// naive retry after a partial success would otherwise treat our own
-// `mergedFromTempStaff` stamps as a same-date collision and stop the rest.
+// naive retry after a partial success would otherwise read our own
+// `mergedFromTempStaff` stamps as the real account's own pay and skip the
+// dates it just moved.
 export function isMergedFromThisTempStaff(data, tempUid) {
     return Boolean(tempUid) && data?.mergedFromTempStaff?.uid === tempUid;
 }
@@ -289,21 +276,6 @@ export function chunkTempStaffMergePlan(plan, datesPerChunk = MERGE_DATES_PER_CH
     return chunks;
 }
 
-function emptyMergePlan() {
-    return {
-        canMerge: false,
-        collisions: [],
-        migratedDates: [],
-        resumedDates: [],
-        rosterOnlyShiftDates: [],
-        ledgerWrites: [],
-        ledgerDeletes: [],
-        legacyTipWrites: [],
-        legacyTipDeletes: [],
-        shiftUpdates: [],
-    };
-}
-
 export function buildTempStaffMergePlan({
     tempUser,
     realUser,
@@ -322,9 +294,10 @@ export function buildTempStaffMergePlan({
     const targetTipByDate = byDate(targetLegacyTips);
     const shiftByDate = byDate(shiftDocs);
     // `dates` is the MONEY date set: the dates the temp profile holds saved pay on.
-    // It drives the per-date collision block and every ledger/tip write, and it is
-    // deliberately unchanged - a roster-only shift adds no money date. Shift
-    // rewrites are planned separately below, over every shift handed in.
+    // It drives the per-date skip rule and every ledger/tip write, and it is
+    // deliberately unchanged - a roster-only shift adds no money date, so it can
+    // never be skipped. Shift rewrites are planned separately below, over every
+    // shift handed in that is not on a skipped date.
     const dates = sortDates([
         ...tempLedgerByDate.keys(),
         ...tempTipByDate.keys(),
@@ -333,7 +306,13 @@ export function buildTempStaffMergePlan({
             .map(({ date }) => date),
     ]);
 
-    const collisions = dates
+    // THE SKIP RULE: a date the real account already has its own saved pay on is
+    // left exactly as it is - both copies stay put, on the profile that earned
+    // them. Overwriting a payout the employee may already have been paid on is the
+    // one thing a merge must never do, but one such night does not hold the other
+    // dates hostage either: every date the real account has no pay on still moves.
+    // All-or-nothing is per date, not per merge.
+    const skipped = dates
         .map((date) => {
             const sources = [];
             const shiftPayouts = shiftByDate.get(date)?.data?.payouts || {};
@@ -350,16 +329,16 @@ export function buildTempStaffMergePlan({
                 sources.push("legacy shift payout");
             }
 
-            return sources.length > 0 ? buildCollision({ date, sources }) : null;
+            return sources.length > 0 ? buildSkippedDate({ date, sources }) : null;
         })
         .filter(Boolean);
 
-    if (collisions.length > 0) {
-        return {
-            ...emptyMergePlan(),
-            collisions,
-        };
-    }
+    const skippedDates = skipped.map(entry => entry.date);
+    // A skipped date is untouched down to its roster: rewriting the shift would
+    // move that night's legacy payout map onto the real account, which is the
+    // overwrite the skip exists to prevent.
+    const isSkipped = (date) => skippedDates.includes(date);
+    const mergeDates = dates.filter(date => !isSkipped(date));
 
     const ledgerWrites = [];
     const ledgerDeletes = [];
@@ -367,7 +346,7 @@ export function buildTempStaffMergePlan({
     const legacyTipDeletes = [];
     const resumedDates = [];
 
-    dates.forEach((date) => {
+    mergeDates.forEach((date) => {
         const tempLedger = tempLedgerByDate.get(date);
         const targetLedger = targetLedgerByDate.get(date)?.data;
         const ledgerAlreadyMoved = isMergedFromThisTempStaff(targetLedger, tempUser.uid);
@@ -425,6 +404,7 @@ export function buildTempStaffMergePlan({
     // entry, so it never joins `dates` - and leaving it behind is what used to pay
     // a deleted profile once the night was finally settled.
     const shiftUpdates = shiftDocs
+        .filter(({ date }) => !isSkipped(date))
         .map(({ date, data }) => {
             const update = rewriteShiftForTempStaffMerge(data, {
                 tempUser,
@@ -441,12 +421,12 @@ export function buildTempStaffMergePlan({
     // separately, because no saved pay moved on them.
     const rosterOnlyShiftDates = shiftUpdates
         .map(update => update.date)
-        .filter(date => !dates.includes(date));
+        .filter(date => !mergeDates.includes(date));
 
     return {
-        canMerge: true,
-        collisions: [],
-        migratedDates: dates,
+        skipped,
+        skippedDates,
+        migratedDates: mergeDates,
         resumedDates: sortDates(resumedDates),
         rosterOnlyShiftDates,
         ledgerWrites,
@@ -463,7 +443,7 @@ function buildMergeAuditEvent({
     operationId,
     updatedAt,
     updatedBy,
-    plan,
+    outcome,
 }) {
     return {
         type: "temp_staff_merged",
@@ -483,11 +463,11 @@ function buildMergeAuditEvent({
             name: fullNameFor(realUser, null),
             role: realUser.role || null,
         },
-        migratedDates: plan.migratedDates,
-        migratedLedgerDates: plan.ledgerWrites.map(write => write.date),
-        migratedLegacyTipDates: plan.legacyTipWrites.map(write => write.date),
-        updatedShiftDates: plan.shiftUpdates.map(update => update.date),
-        collisionDates: [],
+        migratedDates: outcome.migratedDates,
+        migratedLedgerDates: outcome.ledgerDates,
+        migratedLegacyTipDates: outcome.legacyTipDates,
+        updatedShiftDates: outcome.updatedShiftDates,
+        collisionDates: outcome.skippedDates,
     };
 }
 
@@ -596,11 +576,11 @@ function applyMergeFinalize(transaction, {
     operationId,
     updatedAt,
     updatedBy,
-    plan,
+    outcome,
 }) {
     transaction.update(refs.user(db, realUser.uid), {
         hasShiftHistory: true,
-        hasTipHistory: plan.migratedDates.length > 0 || plan.legacyTipWrites.length > 0 || plan.ledgerWrites.length > 0,
+        hasTipHistory: outcome.migratedDates.length > 0,
     });
     transaction.delete(refs.tempStaff(db, tempUser.uid));
     transaction.set(refs.auditEvent(db, operationId), buildMergeAuditEvent({
@@ -609,7 +589,7 @@ function applyMergeFinalize(transaction, {
         operationId,
         updatedAt,
         updatedBy,
-        plan,
+        outcome,
     }));
 }
 
@@ -647,8 +627,8 @@ async function readMergeDocsForDates({
 
 // Every piece of a chunked merge commits on its own, so a failure part-way through
 // leaves the dates before it already on the real account. Stamping the dates that are
-// already committed onto whatever error comes out is what lets the manager be told the
-// truth: the merge is not all-or-nothing once the pieces start landing.
+// already committed onto whatever error comes out is what lets the manager be told
+// which nights moved before it stopped, instead of a blanket "it failed".
 function runInMergeChunk(movedDates, run) {
     return run().catch((error) => {
         if (error && typeof error === "object") {
@@ -706,10 +686,6 @@ export async function mergeTempStaffIntoAccount({
         updatedBy,
     });
 
-    if (!plan.canMerge) {
-        throw new TempStaffMergeCollisionError(plan.collisions);
-    }
-
     const chunks = chunkTempStaffMergePlan(plan);
     const totalDates = chunks.reduce((sum, chunk) => sum + chunk.dates.length, 0);
     let completedDates = 0;
@@ -722,10 +698,20 @@ export async function mergeTempStaffIntoAccount({
         totalDates,
     });
 
+    // What the pieces actually did, not what the preflight plan hoped they would.
+    // Each piece re-reads its dates inside the transaction, so a night settled on
+    // the real account while the merge is running is skipped by that piece - and
+    // the manager has to be told the truth about that date, not the plan's guess.
     const movedDates = [];
+    const skippedDates = [];
+    const ledgerDates = [];
+    const legacyTipDates = [];
+    const updatedShiftDates = [];
+    const rosterOnlyShiftDates = [];
 
     for (let index = 0; index < chunks.length; index += 1) {
         const chunk = chunks[index];
+        let livePlan = null;
         await runInMergeChunk(movedDates, () => runTransactionFn(db, async (transaction) => {
             const liveDocs = await readMergeDocsForDates({
                 readSnapshot: (ref) => transaction.get(ref),
@@ -735,7 +721,7 @@ export async function mergeTempStaffIntoAccount({
                 tempUser,
                 realUser,
             });
-            const livePlan = buildTempStaffMergePlan({
+            livePlan = buildTempStaffMergePlan({
                 tempUser,
                 realUser,
                 ...liveDocs,
@@ -743,10 +729,6 @@ export async function mergeTempStaffIntoAccount({
                 updatedAt,
                 updatedBy,
             });
-
-            if (!livePlan.canMerge) {
-                throw new TempStaffMergeCollisionError(livePlan.collisions);
-            }
 
             applyPlanWrites(transaction, {
                 db,
@@ -760,7 +742,13 @@ export async function mergeTempStaffIntoAccount({
             });
         }));
 
-        movedDates.push(...chunk.dates);
+        movedDates.push(...livePlan.migratedDates);
+        skippedDates.push(...livePlan.skippedDates);
+        ledgerDates.push(...livePlan.ledgerWrites.map(write => write.date));
+        legacyTipDates.push(...livePlan.legacyTipWrites.map(write => write.date));
+        updatedShiftDates.push(...livePlan.shiftUpdates.map(update => update.date));
+        rosterOnlyShiftDates.push(...livePlan.rosterOnlyShiftDates);
+
         completedDates += chunk.dates.length;
         onProgress?.({
             phase: "moving",
@@ -771,6 +759,15 @@ export async function mergeTempStaffIntoAccount({
         });
     }
 
+    const outcome = {
+        migratedDates: sortDates(movedDates),
+        skippedDates: sortDates([...skippedDates, ...plan.skippedDates]),
+        ledgerDates: sortDates(ledgerDates),
+        legacyTipDates: sortDates(legacyTipDates),
+        updatedShiftDates: sortDates(updatedShiftDates),
+        rosterOnlyShiftDates: sortDates(rosterOnlyShiftDates),
+    };
+
     await runInMergeChunk(movedDates, () => runTransactionFn(db, async (transaction) => {
         applyMergeFinalize(transaction, {
             db,
@@ -780,16 +777,17 @@ export async function mergeTempStaffIntoAccount({
             operationId,
             updatedAt,
             updatedBy,
-            plan,
+            outcome,
         });
     }));
 
     const result = {
         operationId,
         updatedAt,
-        migratedDates: plan.migratedDates,
-        rosterOnlyShiftDates: plan.rosterOnlyShiftDates,
-        updatedShiftDates: plan.shiftUpdates.map(update => update.date),
+        migratedDates: outcome.migratedDates,
+        skippedDates: outcome.skippedDates,
+        rosterOnlyShiftDates: outcome.rosterOnlyShiftDates,
+        updatedShiftDates: outcome.updatedShiftDates,
     };
 
     // The profile is deleted now, so re-check the open nights and hand back anything
@@ -806,34 +804,13 @@ export async function mergeTempStaffIntoAccount({
     }
 }
 
-// The collision is usually caught before anything is written, but a merge long enough to
-// run in pieces can hit one after earlier pieces have already committed. The two cases get
-// different copy: only the first one may say nothing changed.
-export function formatTempStaffMergeCollisionMessage(collisions = [], movedDates = []) {
-    const dates = collisions.map(collision => collision.date).join(", ");
-    const clash = `That date is saved under both the temporary profile and the real account, so moving it over could overwrite a payout already made.`;
-    const nextTime = `Next time, merge the temporary profile as soon as the employee's account is approved, before they start working under their own login.`;
-
-    if (movedDates.length > 0) {
-        const moved = movedDates.join(", ");
-        return `Merge stopped part-way. The target account already has saved payout history on ${dates}.
-
-${clash} ${movedDates.length === 1 ? "This date had" : "These dates had"} already moved to the real account before it stopped, and ${movedDates.length === 1 ? "is" : "are"} no longer on the temporary profile: ${moved}. Everything else stays on the temporary profile.
-
-Do not delete the temporary profile. Sort out the clashing date, then run the merge again to move the rest - re-running is safe and leaves the dates that already moved alone. ${nextTime}`;
-    }
-
-    return `Merge stopped. The target account already has saved payout history on ${dates}. No records were changed.
-
-${clash} The whole merge is stopped, including the other dates, and this history stays on the temporary profile. ${nextTime}`;
-}
-
 // What the manager is told after a merge. It reports what actually moved rather
 // than an unconditional "merged", and it never claims success while a floor plan
 // still names the profile that was just deleted.
 export function formatTempStaffMergeResultMessage({
     realUser,
     migratedDates = [],
+    skippedDates = [],
     rosterOnlyShiftDates = [],
     unresolvedShiftDates = [],
     unresolvedShiftDatesUnknown = false,
@@ -848,9 +825,15 @@ Open ${unresolvedShiftDates.length === 1 ? "that date" : "those dates"} and put 
 
     const lines = [`Temporary profile merged into ${account}.`, ""];
 
-    lines.push(migratedDates.length > 0
-        ? `Payout history moved: ${migratedDates.join(", ")}.`
-        : "No saved payout history to move.");
+    if (migratedDates.length > 0) {
+        lines.push(`Payout history moved: ${migratedDates.join(", ")}.`);
+    } else if (skippedDates.length === 0) {
+        lines.push("No saved payout history to move.");
+    }
+
+    if (skippedDates.length > 0) {
+        lines.push(`Left on the temporary profile, because ${account} already has saved pay of their own on ${skippedDates.length === 1 ? "that night" : "those nights"}: ${skippedDates.join(", ")}. Nothing already paid was overwritten - check ${skippedDates.length === 1 ? "that date" : "those dates"} if you think the same night was recorded twice.`);
+    }
 
     if (rosterOnlyShiftDates.length > 0) {
         lines.push(`Floor plan${rosterOnlyShiftDates.length === 1 ? "" : "s"} updated, with no payout saved yet: ${rosterOnlyShiftDates.join(", ")}.`);
@@ -861,9 +844,4 @@ Open ${unresolvedShiftDates.length === 1 ? "that date" : "those dates"} and put 
     }
 
     return lines.join("\n");
-}
-
-export function isTempStaffMergeCollisionError(error) {
-    return error instanceof TempStaffMergeCollisionError
-        || error?.name === "TempStaffMergeCollisionError";
 }

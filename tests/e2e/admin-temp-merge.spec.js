@@ -9,8 +9,8 @@ import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 // have moved before it disappears: payout history into an empty account and into
 // an account that already has unrelated dates, and an open floor plan that still
 // names the temp profile, which would otherwise settle money onto a profile that
-// no longer exists. The last case is the per-date collision - all or nothing, and
-// it must leave existing payroll untouched.
+// no longer exists. The last case is the per-date rule - a night the real account
+// already has its own pay on is skipped, never overwritten, while the rest moves.
 
 const PROJECT_ID = "demo-tip-tracker-test";
 const ADMIN_EMAIL = "admin-temp-merge@example.com";
@@ -448,7 +448,7 @@ test("merging a temp profile that is on an unsettled shift never pays a deleted 
     });
 });
 
-test("same-date target payout collision is reported and preserves existing payroll data", async ({ page }) => {
+test("a date the target already has pay on is skipped and its payroll data is preserved", async ({ page }) => {
     await seedTempPayout({
         tempUid: "tempCollisionUid",
         tempName: "Temp Collision",
@@ -465,7 +465,8 @@ test("same-date target payout collision is reported and preserves existing payro
         targetUid: "historyTargetUid",
     });
 
-    expect(dialogMessages[1]).toContain("Merge stopped.");
+    expect(dialogMessages[1]).toContain("Temporary profile merged into History Target.");
+    expect(dialogMessages[1]).toContain("Left on the temporary profile");
     expect(dialogMessages[1]).toContain("2026-05-27");
 
     await testEnv.withSecurityRulesDisabled(async (context) => {
@@ -476,6 +477,7 @@ test("same-date target payout collision is reported and preserves existing payro
         const shift = await getDoc(doc(db, "shifts/2026-05-27"));
         const auditEvents = await getDocs(collection(db, "auditEvents"));
 
+        // Neither side of the clashing night is rewritten - both payouts stay as paid.
         expect(existingTargetPayout.exists()).toBe(true);
         expect(existingTargetPayout.data()).toMatchObject({
             uid: "historyTargetUid",
@@ -488,11 +490,18 @@ test("same-date target payout collision is reported and preserves existing payro
             total: 150,
             source: "closeout",
         });
-        expect(tempProfile.exists()).toBe(true);
         expect(shift.data().teams[0].members[0]).toMatchObject({
             uid: "tempCollisionUid",
             name: "Temp Collision",
         });
-        expect(auditEvents.size).toBe(0);
+
+        // The merge itself still finished: the profile is gone and the skip is on record.
+        expect(tempProfile.exists()).toBe(false);
+        expect(auditEvents.size).toBe(1);
+        expect(auditEvents.docs[0].data()).toMatchObject({
+            type: "temp_staff_merged",
+            migratedDates: [],
+            collisionDates: ["2026-05-27"],
+        });
     });
 });

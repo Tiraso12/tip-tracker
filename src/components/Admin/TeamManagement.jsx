@@ -17,9 +17,7 @@ import {
 import { ASSIGNABLE_ROLES, roleLabel, roleSeniorityRank, roleShortLabel } from "../../utils/roleLabels";
 import { firstNameFor, fullNameFor, tempStaffRosterNameFor } from "../../utils/userNames";
 import {
-    formatTempStaffMergeCollisionMessage,
     formatTempStaffMergeResultMessage,
-    isTempStaffMergeCollisionError,
     MERGE_DATES_PER_CHUNK,
     mergeTempStaffIntoAccount,
 } from "../../utils/tempStaffMergePersistence";
@@ -331,7 +329,7 @@ function ManagementActions({
                 <div className="border-b border-[var(--color-line)] px-5 py-4 sm:px-6">
                     <h3 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">Temporary profile</h3>
                     <p className="mt-1 text-xs leading-relaxed text-[var(--color-ink-soft)]">
-                        Merge as soon as the real account is approved. The rule is per date and all-or-nothing: if both profiles have saved payout history on even one same date, the entire merge stops and nothing moves. A long history may take a moment; wait for the result.
+                        Merge as soon as the real account is approved. The rule is per date and all-or-nothing: every date the real account has no saved pay on moves over, and a date it already has pay on is left alone rather than overwritten. A long history may take a moment; wait for the result.
                     </p>
                 </div>
                 <div className="space-y-3 px-5 py-4 sm:px-6">
@@ -624,7 +622,7 @@ function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
         if (!realUser) return;
         const confirmed = window.confirm(
             `Merge temporary profile '${personName(tempPerson)}' into ${personName(realUser)}?\n\n` +
-            "This merge is per date and all-or-nothing. A same-date payout on both profiles stops the entire merge and changes nothing. If it succeeds, saved payout history moves to the real account, every floor plan still listing the temporary profile is updated, and the temporary profile is removed.\n\nA long history may take a moment. Wait for the result; do not delete the temporary profile if it fails."
+            "This merge is per date and all-or-nothing. Saved payout history moves to the real account, every floor plan still listing the temporary profile is updated, and the temporary profile is removed. Any date both profiles have saved pay on is left exactly as it is - never overwritten - and the result tells you which dates those were.\n\nA long history may take a moment. Wait for the result; do not delete the temporary profile if it fails."
         );
         if (!confirmed) return;
 
@@ -649,11 +647,10 @@ function TeamManagement({ allEmployees, refreshEmployees, onDetailChange }) {
             alert(formatTempStaffMergeResultMessage({ realUser, ...result }));
         } catch (error) {
             console.error("Failed to link account:", error);
-            if (isTempStaffMergeCollisionError(error)) {
-                alert(formatTempStaffMergeCollisionMessage(error.collisions, error.movedDates));
-            } else {
-                alert("The temporary profile could not be merged. A long history moves in pieces, so some dates may already be on the real account. Do not delete the temporary profile - run the merge again to move whatever is left. Re-running is safe.");
-            }
+            const movedBeforeFailure = error?.movedDates || [];
+            alert(movedBeforeFailure.length > 0
+                ? `The merge stopped before it finished. ${movedBeforeFailure.length === 1 ? "This date is" : "These dates are"} already on the real account and no longer on the temporary profile: ${movedBeforeFailure.join(", ")}.\n\nDo not delete the temporary profile - run the merge again to move whatever is left. Re-running is safe and leaves what already moved alone.`
+                : "The temporary profile could not be merged. Nothing was moved. Please try again.");
         } finally {
             endPendingAction();
             setLoadingId(null);

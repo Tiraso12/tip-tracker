@@ -5,10 +5,8 @@ import {
     buildTempStaffMergePlan,
     chunkTempStaffMergePlan,
     countTempStaffMergeWrites,
-    formatTempStaffMergeCollisionMessage,
     formatTempStaffMergeResultMessage,
     isMergedFromThisTempStaff,
-    isTempStaffMergeCollisionError,
     MERGE_DATES_PER_CHUNK,
     mergeTempStaffIntoAccount,
     rewriteShiftForTempStaffMerge,
@@ -82,9 +80,8 @@ function buildPlan(overrides = {}) {
 test("plans a clean temp-staff merge into an empty target account", () => {
     const plan = buildPlan();
 
-    assert.equal(plan.canMerge, true);
     assert.deepEqual(plan.migratedDates, ["2026-05-28"]);
-    assert.deepEqual(plan.collisions, []);
+    assert.deepEqual(plan.skippedDates, []);
     assert.equal(plan.ledgerWrites.length, 1);
     assert.equal(plan.ledgerDeletes.length, 1);
     assert.equal(plan.shiftUpdates.length, 1);
@@ -120,9 +117,8 @@ test("allows merge into a non-empty target account when dates do not collide", (
         targetLedgerEntries: [existingTargetPayout],
     });
 
-    assert.equal(plan.canMerge, true);
     assert.deepEqual(plan.migratedDates, ["2026-05-28"]);
-    assert.deepEqual(plan.collisions, []);
+    assert.deepEqual(plan.skippedDates, []);
     assert.equal(plan.ledgerWrites.length, 1);
     assert.equal(plan.ledgerWrites[0].date, "2026-05-28");
     assert.deepEqual(existingTargetPayout.data, {
@@ -137,7 +133,7 @@ test("allows merge into a non-empty target account when dates do not collide", (
     });
 });
 
-test("reports same-date collisions and plans no writes that could overwrite the target payout", () => {
+test("a date the target already has pay on is skipped whole - no write can overwrite that payout", () => {
     const targetPayoutBefore = ledgerEntry("2026-05-28", realUser.uid, {
         tips: 500,
         gratuity: 100,
@@ -147,21 +143,23 @@ test("reports same-date collisions and plans no writes that could overwrite the 
         targetLedgerEntries: [targetPayoutBefore],
     });
 
-    assert.equal(plan.canMerge, false);
-    assert.deepEqual(plan.collisions, [{
+    assert.deepEqual(plan.skipped, [{
         date: "2026-05-28",
         sources: ["canonical ledger"],
     }]);
+    assert.deepEqual(plan.skippedDates, ["2026-05-28"]);
     assert.deepEqual(plan.migratedDates, []);
     assert.deepEqual(plan.ledgerWrites, []);
     assert.deepEqual(plan.ledgerDeletes, []);
     assert.deepEqual(plan.legacyTipWrites, []);
     assert.deepEqual(plan.legacyTipDeletes, []);
+    // The roster is left alone too: rewriting that shift would move its legacy
+    // payout map onto the account that already has pay for the night.
     assert.deepEqual(plan.shiftUpdates, []);
     assert.equal(targetPayoutBefore.data.total, 600);
 });
 
-test("legacy shift payout collisions are detected before rewriting historical payout maps", () => {
+test("a legacy shift payout on the target is a skip, not a rewrite of the historical payout map", () => {
     const plan = buildPlan({
         targetLedgerEntries: [],
         shiftDocs: [shiftDoc("2026-05-28", {
@@ -172,11 +170,12 @@ test("legacy shift payout collisions are detected before rewriting historical pa
         })],
     });
 
-    assert.equal(plan.canMerge, false);
-    assert.deepEqual(plan.collisions, [{
+    assert.deepEqual(plan.skipped, [{
         date: "2026-05-28",
         sources: ["legacy shift payout"],
     }]);
+    assert.deepEqual(plan.migratedDates, []);
+    assert.deepEqual(plan.shiftUpdates, []);
 });
 
 // An unsettled night carries no payouts and no ledger entry, so it is not a money
@@ -206,7 +205,6 @@ test("rewrites an unsettled shift that carries no payouts and reports it separat
         shiftDocs: [shiftDoc("2026-05-28"), unsettledShiftDoc("2026-06-01")],
     });
 
-    assert.equal(plan.canMerge, true);
     // The money date set is untouched: an unsettled night moves no saved pay.
     assert.deepEqual(plan.migratedDates, ["2026-05-28"]);
     assert.equal(plan.ledgerWrites.length, 1);
@@ -220,17 +218,16 @@ test("rewrites an unsettled shift that carries no payouts and reports it separat
     assert.equal(shiftReferencesUid(plan.shiftUpdates[1].data, tempUser.uid), false);
 });
 
-test("a roster-only shift date never turns into a collision on its own", () => {
+test("a roster-only shift date is never skipped on its own", () => {
     // The target already holds saved pay on the unsettled night's date - which the
-    // per-date rule only blocks when the TEMP profile also holds money there. It
-    // does not, so the merge proceeds and the roster is still rewritten.
+    // per-date rule only skips when the TEMP profile also holds money there. It
+    // does not, so that date moves and the roster is still rewritten.
     const plan = buildPlan({
         targetLedgerEntries: [ledgerEntry("2026-06-01", realUser.uid)],
         shiftDocs: [shiftDoc("2026-05-28"), unsettledShiftDoc("2026-06-01")],
     });
 
-    assert.equal(plan.canMerge, true);
-    assert.deepEqual(plan.collisions, []);
+    assert.deepEqual(plan.skippedDates, []);
     assert.deepEqual(plan.migratedDates, ["2026-05-28"]);
     assert.deepEqual(plan.rosterOnlyShiftDates, ["2026-06-01"]);
 });
@@ -343,7 +340,7 @@ function manyDates(count) {
     return Array.from({ length: count }, (_, index) => isoDateFromOffset(index));
 }
 
-test("a date already moved from this temp profile is a resume, not a collision", () => {
+test("a date already moved from this temp profile is a resume, not a skip", () => {
     const alreadyMoved = ledgerEntry("2026-05-28", realUser.uid, {
         tips: 100,
         gratuity: 25,
@@ -365,8 +362,7 @@ test("a date already moved from this temp profile is a resume, not a collision",
         targetLedgerEntries: [alreadyMoved],
     });
 
-    assert.equal(plan.canMerge, true);
-    assert.deepEqual(plan.collisions, []);
+    assert.deepEqual(plan.skippedDates, []);
     assert.deepEqual(plan.resumedDates, ["2026-05-28"]);
     assert.deepEqual(plan.ledgerWrites, []);
     assert.deepEqual(plan.ledgerDeletes, [{ date: "2026-05-28" }]);
@@ -374,7 +370,7 @@ test("a date already moved from this temp profile is a resume, not a collision",
     assert.equal(alreadyMoved.data.total, 125);
 });
 
-test("a real same-date collision still stops the whole plan when another date is only a resume", () => {
+test("a real same-date clash skips only its own date while a resume and a clean date still move", () => {
     const resumed = ledgerEntry("2026-05-27", realUser.uid, {
         mergedFromTempStaff: { uid: tempUser.uid, name: tempUser.name, role: tempUser.role },
     });
@@ -396,14 +392,15 @@ test("a real same-date collision still stops the whole plan when another date is
         ],
     });
 
-    assert.equal(plan.canMerge, false);
-    assert.deepEqual(plan.collisions, [{
+    assert.deepEqual(plan.skipped, [{
         date: "2026-05-28",
         sources: ["canonical ledger"],
     }]);
-    assert.deepEqual(plan.ledgerWrites, []);
-    assert.deepEqual(plan.ledgerDeletes, []);
-    assert.deepEqual(plan.shiftUpdates, []);
+    assert.deepEqual(plan.migratedDates, ["2026-05-27", "2026-05-29"]);
+    assert.deepEqual(plan.ledgerWrites.map(write => write.date), ["2026-05-29"]);
+    assert.deepEqual(plan.ledgerDeletes, [{ date: "2026-05-27" }, { date: "2026-05-29" }]);
+    assert.deepEqual(plan.shiftUpdates.map(update => update.date), ["2026-05-27", "2026-05-29"]);
+    assert.equal(colliding.data.tips, 500);
 });
 
 test("chunks a long history into proven 12-date pieces and keeps each piece under the write cap", () => {
@@ -538,45 +535,110 @@ test("a 50-date history completes in pieces and deletes the temp profile only af
     assert.equal(progress.at(-1).completedDates, 50);
 });
 
-test("a same-date collision stops the live merge with no writes", async () => {
+test("a same-date clash leaves that night alone and still moves every other date", async () => {
+    const clashingDate = "2026-05-28";
+    const cleanDate = "2026-05-27";
     const harness = createMergeHarness();
-    seedLongHistory(harness.store, { dates: ["2026-05-28"] });
-    harness.store[`payouts/2026-05-28/entries/${realUser.uid}`] = ledgerEntry("2026-05-28", realUser.uid, {
+    seedLongHistory(harness.store, { dates: [cleanDate, clashingDate] });
+    harness.store[`payouts/${clashingDate}/entries/${realUser.uid}`] = ledgerEntry(clashingDate, realUser.uid, {
         tips: 500,
         gratuity: 100,
         total: 600,
         source: "closeout",
     }).data;
-    const storeBefore = structuredClone(harness.store);
+    const targetPayoutBefore = structuredClone(harness.store[`payouts/${clashingDate}/entries/${realUser.uid}`]);
+    const tempPayoutBefore = structuredClone(harness.store[`payouts/${clashingDate}/entries/${tempUser.uid}`]);
+    const clashingShiftBefore = structuredClone(harness.store[`shifts/${clashingDate}`]);
 
-    await assert.rejects(
-        () => mergeTempStaffIntoAccount({
-            db: {},
-            tempUser,
-            realUser,
-            updatedBy: "adminUid",
-            refs: harness.refs,
-            readDoc: harness.readDoc,
-            runTransaction: harness.runTransaction,
-            discoverLedgerEntries: async () => [{
-                date: "2026-05-28",
-                data: harness.store[`payouts/2026-05-28/entries/${tempUser.uid}`],
-            }],
-            discoverLegacyTips: async () => [],
-            discoverUnsettledDates: async () => [],
-        }),
-        (error) => isTempStaffMergeCollisionError(error) && error.collisions[0].date === "2026-05-28"
-    );
+    const result = await mergeTempStaffIntoAccount({
+        db: {},
+        tempUser,
+        realUser,
+        updatedBy: "adminUid",
+        operationId: "temp-merge-skip",
+        refs: harness.refs,
+        readDoc: harness.readDoc,
+        runTransaction: harness.runTransaction,
+        discoverLedgerEntries: async () => [cleanDate, clashingDate].map(date => ({
+            date,
+            data: harness.store[`payouts/${date}/entries/${tempUser.uid}`],
+        })),
+        discoverLegacyTips: async () => [],
+        discoverUnsettledDates: async () => [],
+    });
 
-    assert.deepEqual(harness.writes, []);
-    assert.deepEqual(harness.store, storeBefore);
+    assert.deepEqual(result.migratedDates, [cleanDate]);
+    assert.deepEqual(result.skippedDates, [clashingDate]);
+
+    // The clashing night is untouched on both sides - nobody's saved pay is rewritten.
+    assert.deepEqual(harness.store[`payouts/${clashingDate}/entries/${realUser.uid}`], targetPayoutBefore);
+    assert.deepEqual(harness.store[`payouts/${clashingDate}/entries/${tempUser.uid}`], tempPayoutBefore);
+    assert.deepEqual(harness.store[`shifts/${clashingDate}`], clashingShiftBefore);
+
+    // The clean night moved, and the merge still finished: the profile is gone.
+    assert.equal(harness.store[`payouts/${cleanDate}/entries/${tempUser.uid}`], undefined);
+    assert.equal(harness.store[`payouts/${cleanDate}/entries/${realUser.uid}`].uid, realUser.uid);
+    assert.equal(harness.store[`unregisteredStaff/${tempUser.uid}`], undefined);
+    assert.deepEqual(harness.store["auditEvents/temp-merge-skip"].collisionDates, [clashingDate]);
+    assert.deepEqual(harness.store["auditEvents/temp-merge-skip"].migratedDates, [cleanDate]);
+
+    const message = formatTempStaffMergeResultMessage({ realUser, ...result });
+    assert.match(message, /merged into Real Server/);
+    assert.match(message, /Payout history moved: 2026-05-27\./);
+    assert.match(message, /Left on the temporary profile[\s\S]*2026-05-28/);
 });
 
-test("a collision found after the first piece has committed reports the dates that already moved", async () => {
+test("a clash that only appears once the pieces are running skips that date and finishes the rest", async () => {
     const dates = Array.from({ length: 20 }, (_, index) => `2026-05-${String(index + 1).padStart(2, "0")}`);
     const clashingDate = dates[MERGE_DATES_PER_CHUNK];
     const harness = createMergeHarness();
     seedLongHistory(harness.store, { dates });
+
+    const result = await mergeTempStaffIntoAccount({
+        db: {},
+        tempUser,
+        realUser,
+        updatedBy: "adminUid",
+        operationId: "temp-merge-late-clash",
+        refs: harness.refs,
+        readDoc: harness.readDoc,
+        runTransaction: harness.runTransaction,
+        discoverLedgerEntries: async () => dates.map(date => ({
+            date,
+            data: harness.store[`payouts/${date}/entries/${tempUser.uid}`],
+        })),
+        discoverLegacyTips: async () => [],
+        discoverUnsettledDates: async () => [],
+        // The clash appears between pieces: a captain settles that night for the real
+        // account while the merge is still running.
+        onProgress: ({ completedChunks }) => {
+            if (completedChunks === 1) {
+                harness.store[`payouts/${clashingDate}/entries/${realUser.uid}`] = ledgerEntry(clashingDate, realUser.uid, {
+                    source: "closeout",
+                }).data;
+            }
+        },
+    });
+
+    assert.deepEqual(result.skippedDates, [clashingDate]);
+    assert.equal(result.migratedDates.length, dates.length - 1);
+    assert.ok(!result.migratedDates.includes(clashingDate));
+    assert.equal(harness.store[`payouts/${clashingDate}/entries/${realUser.uid}`].source, "closeout");
+    assert.equal(harness.store[`payouts/${clashingDate}/entries/${tempUser.uid}`].uid, tempUser.uid);
+    assert.equal(harness.store[`unregisteredStaff/${tempUser.uid}`], undefined);
+});
+
+test("a failure part-way through reports the dates that already moved", async () => {
+    const dates = Array.from({ length: 20 }, (_, index) => `2026-05-${String(index + 1).padStart(2, "0")}`);
+    const harness = createMergeHarness();
+    seedLongHistory(harness.store, { dates });
+
+    let chunkCount = 0;
+    const runTransaction = async (db, fn) => {
+        chunkCount += 1;
+        if (chunkCount === 2) throw new Error("network lost");
+        return harness.runTransaction(db, fn);
+    };
 
     let thrown = null;
     await assert.rejects(
@@ -587,43 +649,34 @@ test("a collision found after the first piece has committed reports the dates th
             updatedBy: "adminUid",
             refs: harness.refs,
             readDoc: harness.readDoc,
-            runTransaction: harness.runTransaction,
+            runTransaction,
             discoverLedgerEntries: async () => dates.map(date => ({
                 date,
                 data: harness.store[`payouts/${date}/entries/${tempUser.uid}`],
             })),
             discoverLegacyTips: async () => [],
             discoverUnsettledDates: async () => [],
-            // The clash appears between pieces: a captain settles that night for the real
-            // account while the merge is still running.
-            onProgress: ({ completedChunks }) => {
-                if (completedChunks === 1) {
-                    harness.store[`payouts/${clashingDate}/entries/${realUser.uid}`] = ledgerEntry(clashingDate, realUser.uid, {
-                        source: "closeout",
-                    }).data;
-                }
-            },
         }),
         (error) => {
             thrown = error;
-            return isTempStaffMergeCollisionError(error);
+            return error.message === "network lost";
         }
     );
 
     assert.deepEqual(thrown.movedDates, dates.slice(0, MERGE_DATES_PER_CHUNK));
-    assert.equal(thrown.collisions[0].date, clashingDate);
-    assert.ok(harness.store[`unregisteredStaff/${tempUser.uid}`], "the temp profile survives a stopped merge");
-
-    const message = formatTempStaffMergeCollisionMessage(thrown.collisions, thrown.movedDates);
-    assert.ok(!message.includes("No records were changed"));
-    assert.ok(message.includes(dates[0]));
-    assert.ok(message.includes(clashingDate));
+    assert.ok(harness.store[`unregisteredStaff/${tempUser.uid}`], "the profile survives an unfinished merge");
 });
 
-test("a collision found before any write still says nothing changed", () => {
-    const message = formatTempStaffMergeCollisionMessage([{ date: "2026-05-28" }], []);
-    assert.ok(message.includes("No records were changed"));
-    assert.ok(message.includes("2026-05-28"));
+test("the merge message names the nights left on the temporary profile", () => {
+    const skippedOnly = formatTempStaffMergeResultMessage({
+        realUser,
+        migratedDates: [],
+        skippedDates: ["2026-05-28"],
+    });
+    assert.match(skippedOnly, /merged into Real Server/);
+    assert.doesNotMatch(skippedOnly, /No saved payout history to move/);
+    assert.match(skippedOnly, /Left on the temporary profile[\s\S]*2026-05-28/);
+    assert.match(skippedOnly, /Nothing already paid was overwritten/);
 });
 
 test("a retry after a partial success finishes the remaining dates and does not overwrite", async () => {

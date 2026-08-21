@@ -44,44 +44,33 @@ work; skipping it means that night's payout goes to a profile that is gone.
 
 You can then keep assigning them to shifts under their real account.
 
-## What can block the merge
+## When the same night is on both profiles
 
-The merge stops if the employee has a saved payout on the **same date** under both their
-temporary profile and their real account. That happens when the same night was recorded
-twice for the same person - once as temp staff, once under their own account.
+Once in a while the employee has a saved payout on the **same date** under both their
+temporary profile and their real account. That happens when the same night was recorded twice
+for the same person - once as temp staff, once under their own account.
 
-You will see:
+The merge does not stop. That night is **left exactly as it is on both profiles**, every other
+date moves as normal, and the result names the ones that were left:
 
-> Merge stopped. The target account already has saved payout history on <dates>. No records
-> were changed.
+> Left on the temporary profile, because <name> already has saved pay of their own on that
+> night: <dates>.
 
-Nothing is damaged and nothing is lost. The app refuses on purpose: writing the temporary
-payout onto a date the real account already has would quietly overwrite a payout the
-employee may already have been paid on.
+Nothing is damaged and nothing is lost, and nothing already paid is overwritten - that is the
+one thing a merge must never do. Go and look at the dates it names: the same night recorded
+twice usually means somebody was paid twice, or once under each name, and only you can say
+which figure is the right one. The temporary side of that night stays readable in past shifts
+under the temporary name.
 
-Almost always the clash is spotted before anything is written, and it is all or nothing: if
-even one date conflicts, none of the temporary history moves over, including the dates that
-would have been fine.
+Older history on unrelated dates is not a problem at all. An employee can already have weeks of
+shifts under their own account and every temporary date still moves across.
 
-A long history moves in pieces, so once in a while the clash only turns up after some of the
-pieces have landed. Then the message says **Merge stopped part-way** and lists the dates that
-already moved to the real account - those are off the temporary profile now. Leave the
-temporary profile alone, sort out the clashing date, and run the merge again to move the rest;
-re-running does not touch what already moved. The same is true of a merge that fails for any
-other reason part-way through: run it again rather than deleting anything.
+## If the merge stops before it finishes
 
-Older history on unrelated dates is not a problem by itself. An employee can already have
-weeks of shifts under their own account and the merge will still go through, as long as none
-of those dates overlap with a date on the temporary profile.
-
-## If a merge is blocked
-
-- **Leave it.** The old temporary history stays where it is. It is still visible in past
-  shifts under the temporary name, and past payouts stay correct as they were paid.
-- **Re-enter it by hand.** If the employee's real account needs those older numbers, add
-  them to the relevant shifts manually.
-- **Delete the temporary profile** once you no longer need it in shift setup. Past shifts
-  keep the saved name, so old records still read correctly.
+A long history moves in pieces, so a merge that loses the connection part-way can leave some
+dates already on the real account. The message then names the dates that moved. Leave the
+temporary profile alone and run the merge again - re-running is safe and does not touch what
+already moved.
 
 ## Rules of thumb
 
@@ -89,4 +78,5 @@ of those dates overlap with a date on the temporary profile.
   later night - reuse the existing one so all their history stays together.
 - Approve, then merge, then let them log in. That order avoids the problem entirely.
 - Never assign the same person twice on one night, once as temp staff and once under their
-  real account. That is exactly the conflict that blocks the merge.
+  real account. That is the one case the merge cannot resolve for you - it leaves the night
+  alone on both profiles and tells you to go and look at it.
