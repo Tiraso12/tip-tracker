@@ -242,10 +242,12 @@ async function loginAndOpenTeam(page) {
     await page.getByRole("textbox", { name: "Password" }).fill(ADMIN_PASSWORD);
     await page.getByRole("button", { name: "Log In" }).click();
 
-    // Landing (Shifts tab) is ready once the day-step spine renders; the Team
-    // section lives in the workspace nav.
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
-    await page.getByRole("button", { name: "Team", exact: true }).click();
+    // Wait on the workspace nav, not the Day steps rail: this spec's dates are in
+    // the past, so the landing for "today" has no floor plan and the rail is
+    // deliberately hidden there (DayRailLanding). The Team button is always there.
+    const teamNav = page.getByRole("button", { name: "Team", exact: true });
+    await expect(teamNav).toBeVisible();
+    await teamNav.click();
     await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
 }
 

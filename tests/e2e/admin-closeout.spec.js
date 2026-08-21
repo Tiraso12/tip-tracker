@@ -811,9 +811,11 @@ test.describe("mobile floor polish", () => {
         await page.getByRole("menuitem", { name: "Team" }).click();
         await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
 
-        // ...and the app bar's home control is the way back out of it.
+        // ...and the app bar's home control is the way back out of it. Home is
+        // today, which is blank here, so what proves you are back on Shifts is
+        // the build-the-floor landing - the rail is hidden until a floor exists.
         await page.getByRole("button", { name: "Go to today's shifts" }).click();
-        await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Let's set up the floor" })).toBeVisible();
     });
 
     // The nav used to live outside the editor's state machine: Cancel confirmed a

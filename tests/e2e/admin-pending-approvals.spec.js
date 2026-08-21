@@ -100,6 +100,9 @@ async function login(page, email) {
 }
 
 const badge = (page) => page.getByTestId("pending-approvals-badge");
+// The app bar's account button: present at every width and on every day stage,
+// so it is what these tests wait on to know the app is up. The Day steps rail
+// is not - it is hidden on a landing with no floor plan yet (DayRailLanding).
 const accountTrigger = (page) => page.getByRole("button", { name: /^Account:/ });
 
 test.beforeAll(async () => {
@@ -117,7 +120,7 @@ test("the count is real and clears as pending people are approved and denied", a
     await seedUsers({ pending: 2 });
     await login(page, ADMIN_EMAIL);
 
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeVisible();
     await expect(badge(page)).toHaveText("2");
     await expect(accountTrigger(page)).toHaveAccessibleName(/2 people awaiting approval/);
 
@@ -146,7 +149,6 @@ test("no badge renders when nobody is pending", async ({ page }) => {
     await seedUsers({ pending: 0 });
     await login(page, ADMIN_EMAIL);
 
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
     await expect(accountTrigger(page)).toBeVisible();
     await expect(badge(page)).toHaveCount(0);
 });
@@ -237,7 +239,7 @@ test("the badge does not disturb the phone app bar", async ({ page }) => {
     await seedUsers({ pending: 2 });
     await login(page, ADMIN_EMAIL);
 
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeVisible();
     await expect(badge(page)).toBeVisible();
 
     const bar = page.locator("header").first();

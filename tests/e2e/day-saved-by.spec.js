@@ -171,6 +171,10 @@ async function login(page, key) {
     await page.getByLabel("Username or Email").fill(PEOPLE[key].email);
     await page.getByRole("textbox", { name: "Password" }).fill(PASSWORD);
     await page.getByRole("button", { name: "Log In" }).click();
+    // The app bar is up on both halves of the app and at every day stage, so it
+    // is what "logged in" means here. Not the Day steps rail: a landing with no
+    // floor plan yet hides it (DayRailLanding), and today is usually blank.
+    await expect(page.getByRole("button", { name: /^Account:/ })).toBeVisible();
 }
 
 // The captain lands on their own pay; the workspace is one tap away in the
@@ -235,7 +239,6 @@ test("settling a night through the UI leaves the day naming who saved it", async
     // which is where the line has to hold up.
     await page.setViewportSize({ width: 1280, height: 900 });
     await login(page, "manager");
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
     await setShiftDate(page, TODAY);
 
     await page.getByRole("button", { name: /Build floor plan/i }).click();
@@ -276,7 +279,6 @@ test("the manager and a captain both see the same saved-by line, by name", async
     const expected = new RegExp(`^Saved by Nadia Whitfield-Okonkwo · ${WHEN}$`);
 
     await login(page, "manager");
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
     await openSettledDay(page, SETTLED_DAY);
     await expect(savedByLine(page)).toHaveText(expected);
     const asManager = await savedByLine(page).innerText();
@@ -290,7 +292,9 @@ test("the manager and a captain both see the same saved-by line, by name", async
 
     await login(page, "captain");
     await crossToShifts(page);
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    // The workspace opens on today, which this seed leaves blank, so the landing
+    // is the build-the-floor hero and not the rail.
+    await expect(page.getByRole("heading", { name: "Let's set up the floor" })).toBeVisible();
     await openSettledDay(page, SETTLED_DAY);
     await expect(savedByLine(page)).toHaveText(expected);
     await expect(payoutPanel(page)).not.toContainText(uids.captain);
@@ -313,7 +317,6 @@ test("the manager and a captain both see the same saved-by line, by name", async
 test("older nights state only what was recorded, with nothing warning-toned about it", async ({ page }) => {
     await page.setViewportSize(PHONE);
     await login(page, "manager");
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
 
     // A saver was never recorded: the time alone, and no apology for the rest.
     await openSettledDay(page, NO_SAVER_DAY);
@@ -344,7 +347,6 @@ test("older nights state only what was recorded, with nothing warning-toned abou
 test("browsing between days never shows one night's saver against another's timestamp", async ({ page }) => {
     await page.setViewportSize(PHONE);
     await login(page, "manager");
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
 
     await openSettledDay(page, SETTLED_DAY);
     await expect(savedByLine(page)).toContainText("Nadia Whitfield-Okonkwo");
@@ -388,7 +390,6 @@ test("browsing between days never shows one night's saver against another's time
 test("at the supported phone floor the line stays a footnote and the time never breaks across lines", async ({ page }) => {
     await page.setViewportSize(NARROW_PHONE);
     await login(page, "manager");
-    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
     await openSettledDay(page, SETTLED_DAY);
 
     const line = savedByLine(page);
