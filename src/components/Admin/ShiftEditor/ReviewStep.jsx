@@ -49,6 +49,35 @@ function ReviewNotReady({ blockers = [], hasFloorStaff = false, onFixMoney, onFi
     );
 }
 
+// Direction A's own gate (2026-08-23 lock): every assigned dining team and Bar
+// must be marked done on Settle up before Confirm & Save unlocks - independent
+// of, and checked before, the balance gate below. Names which groups are still
+// open (Runners is never one of them) and jumps straight back to fix them.
+function CloseGateBlocked({ closeReadiness, onFixMoney }) {
+    return (
+        <div role="alert" className="space-y-3">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)]/30 bg-[var(--color-warning-soft)] px-4 py-4">
+                <div className="flex items-baseline gap-2">
+                    <span aria-hidden="true" className="text-[var(--color-warning)]">⚠</span>
+                    <div className="space-y-1.5">
+                        <strong className="block text-sm text-[var(--color-ink)]">
+                            {closeReadiness.stillOpen} {closeReadiness.stillOpen === 1 ? "group is" : "groups are"} still open
+                        </strong>
+                        <p className="text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
+                            Every dining team and Bar has to be marked done on Settle up
+                            before this shift can close. Runners is never part of this check.
+                        </p>
+                        <ul className="list-disc pl-4 text-[12.5px] leading-relaxed text-[var(--color-ink)] space-y-0.5">
+                            {closeReadiness.openNames.map((name) => <li key={name}>{name}</li>)}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <FixJump label="Finish in Settle up" onClick={onFixMoney} />
+        </div>
+    );
+}
+
 // Review when the numbers are complete but the shift cannot be saved: it does not
 // balance, and the write path throws on exactly that. This is the sibling of
 // `ReviewNotReady` for the one blocker that survives a complete calculation, and it
@@ -130,6 +159,8 @@ export function ReviewStep({
     saveFailure,
     liveReview,
     saveBlocked,
+    closeGateBlocked,
+    closeReadiness,
     balanceReport,
     poolSummary,
     reviewMoneyGroups,
@@ -169,6 +200,10 @@ export function ReviewStep({
                 Both blocks sit at the top of Review deliberately: a reason
                 below the fold is the same dead end as no reason at all. */}
             {saveFailure ? <SaveFailed failure={saveFailure} /> : null}
+
+            {liveReview.ready && closeGateBlocked ? (
+                <CloseGateBlocked closeReadiness={closeReadiness} onFixMoney={onFixMoney} />
+            ) : null}
 
             {liveReview.ready && saveBlocked ? (
                 <SaveBlocked
@@ -239,8 +274,12 @@ export function ReviewStep({
                     <button
                         type="button"
                         onClick={onConfirmSave}
-                        disabled={isSaving || saveBlocked}
-                        title={saveBlocked ? balanceReport.headline : undefined}
+                        disabled={isSaving || saveBlocked || closeGateBlocked}
+                        title={
+                            closeGateBlocked
+                                ? `${closeReadiness.stillOpen} ${closeReadiness.stillOpen === 1 ? "group is" : "groups are"} still open`
+                                : saveBlocked ? balanceReport.headline : undefined
+                        }
                         className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60 disabled:active:scale-100"
                     >
                         {isSaving ? (

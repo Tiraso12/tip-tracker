@@ -1,18 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { calculateShift } from "../../utils/engine";
 import DayRail from "./DayRail";
 import { getRailSteps } from "../../utils/dayFlow";
-import { getGroupMoneyStatus, summarizeGroupStatuses } from "../../utils/settleStatus";
+import { clearMarkOnEdit, summarizeCloseReadiness } from "../../utils/settleStatus";
 import { saveClosedShiftAtomically } from "../../utils/closeoutPersistence";
 import { buildShiftSetupDraft } from "../../utils/shiftPersistence";
 import { RUNNER_FLAT_RATE } from "../../utils/constants";
+import {
+    applyTeamGroupPatch,
+    buildBarGroupPatch,
+    buildTeamGroupDraft,
+    SETTLE_GROUP_COLLECTION,
+    shouldAcceptRemoteGroupUpdate,
+} from "../../utils/settleGroupPersistence";
 import { getHistoryFlagUpdate, getShiftParticipantUids } from "../../utils/userHistoryFlags";
 import { useAuth } from "../../context/AuthContext";
 import { usePendingActions } from "../../context/PendingActionsContext";
 import {
     applyBarFoodSalesEdit,
+    buildCloseoutGroups,
     buildPayoutReview,
     fmtAmount,
     getBarSummary,
@@ -55,7 +63,7 @@ const DISCARD_EDIT_CONFIRMATION =
     "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
     "current payouts unchanged.";
 
-function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
+function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", initialActiveGroupId = null, onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
     const { user } = useAuth();
     const { beginPendingAction } = usePendingActions();
     const [teams, setTeams] = useState([
@@ -73,8 +81,21 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // Day-step spine (shared by both flow shells): "floor" -> "settle" -> "review".
     // The old two-accordion editor is retired; each step is its own focused screen.
     const [step, setStep] = useState(["settle", "review"].includes(initialStep) ? initialStep : "floor");
-    const [activeGroupId, setActiveGroupId] = useState("team-1");
+    const [activeGroupId, setActiveGroupId] = useState(initialActiveGroupId || "team-1");
     const [draftStatus, setDraftStatus] = useState("");
+    // Parallel Settle up's quiet cue (plan Q9): which group, if any, just had its
+    // "done" mark silently cleared by an edit, so SettleStep can show a fading
+    // inline notice next to that group's Save and Mark Done button.
+    const [unmarkedCueGroupId, setUnmarkedCueGroupId] = useState(null);
+    const unmarkedCueTimeoutRef = useRef(null);
+    const triggerUnmarkedCue = useCallback((groupId) => {
+        setUnmarkedCueGroupId(groupId);
+        if (unmarkedCueTimeoutRef.current) window.clearTimeout(unmarkedCueTimeoutRef.current);
+        unmarkedCueTimeoutRef.current = window.setTimeout(() => setUnmarkedCueGroupId(null), 3000);
+    }, []);
+    useEffect(() => () => {
+        if (unmarkedCueTimeoutRef.current) window.clearTimeout(unmarkedCueTimeoutRef.current);
+    }, []);
     // Fingerprint of the shift as loaded, so the leave-guard can tell an untouched view
     // from one with real edits and only confirm a discard when work would actually be
     // lost. Covers money too - `fingerprintShift` reads pools nested inside teams/barTeam.
@@ -83,6 +104,23 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
     );
+
+    // Live-mirrored so a debounced write (fires up to a second after the
+    // keystroke that scheduled it) reads the LATEST group state rather than a
+    // stale value captured when the timer was set.
+    const teamsRef = useRef(teams);
+    teamsRef.current = teams;
+    const barTeamRef = useRef(barTeam);
+    barTeamRef.current = barTeam;
+    // Which group is actively being edited right now, read from inside the two
+    // live Firestore listeners below (they must not resubscribe on every tab
+    // switch, so they read this ref rather than closing over `activeGroupId`).
+    const activeGroupIdRef = useRef(activeGroupId);
+    activeGroupIdRef.current = activeGroupId;
+    // True once the first shift-doc snapshot has been processed - see the load
+    // effect below. Read from inside that same listener, which cannot close
+    // over the `hasLoadedShift` state without resubscribing on every change.
+    const hasLoadedShiftRef = useRef(false);
 
     const poolSummary = useMemo(() => {
         const teamSummaries = teams.map(getTeamSummary);
@@ -120,74 +158,28 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     }, [teams, barTeam, runners]);
 
     // Descriptors for the switcher rail + entry panel: one entry per dining team, then Bar,
-    // then Runners. Each carries the display name, roster sub-line, live pool, and whether
-    // any money has been entered (drives the status dot / check).
-    const closeoutGroups = useMemo(() => {
-        const teamGroups = teams.map((team, index) => {
-            const pool = poolSummary.teams[index]?.payoutPool ?? 0;
-            const hasPeople = team.members.length > 0;
-            // "Other input" = non-pool money/context (Sales/Cash/Covers). The pool
-            // itself (Tips + Gratuity + contract gratuity) is what funds payouts.
-            const hasOtherInput = toMoney(team.pools?.sales) > 0
-                || toMoney(team.pools?.cash) > 0
-                || toMoney(team.pools?.covers) > 0;
-            return {
-                id: team.teamId,
-                kind: "dining",
-                name: `Team ${index + 1}`,
-                // No "· dining" tag: a numbered Team IS the dining room, so the word only
-                // restated the pill you just tapped. The bar group keeps its tag - there
-                // the pool really is a different one, and that distinction earns a word.
-                sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"}`,
-                poolLabel: "Pool",
-                pool,
-                hasPeople,
-                status: getGroupMoneyStatus({ pool, hasOtherInput, hasPeople }),
-                teamIndex: index,
-            };
-        });
-        const barPool = poolSummary.bar.payoutPool;
-        const barHasPeople = barTeam.members.length > 0;
-        const barHasOtherInput = toMoney(barTeam.pools?.sales) > 0
-            || toMoney(barTeam.pools?.covers) > 0
-            || toMoney(barTeam.pools?.foodSales) > 0;
-        const runnerPool = poolSummary.totalRunnerPay;
-        return [
-            ...teamGroups,
-            {
-                id: "bar",
-                kind: "bar",
-                name: "Bar Team",
-                sub: `${barTeam.members.length} ${barTeam.members.length === 1 ? "member" : "members"} · bar`,
-                poolLabel: "Pool",
-                pool: barPool,
-                hasPeople: barHasPeople,
-                status: getGroupMoneyStatus({ pool: barPool, hasOtherInput: barHasOtherInput, hasPeople: barHasPeople }),
-            },
-            {
-                id: "runners",
-                kind: "runners",
-                name: "Runners",
-                sub: `${runners.length} ${runners.length === 1 ? "runner" : "runners"}`,
-                poolLabel: "Pay",
-                pool: runnerPool,
-                hasPeople: runners.length > 0,
-                status: getGroupMoneyStatus({ pool: runnerPool, hasOtherInput: false, hasPeople: runners.length > 0 }),
-            },
-        ];
-    }, [teams, barTeam, runners, poolSummary]);
-
-    const groupStatusSummary = summarizeGroupStatuses(closeoutGroups);
-    // The count that sits beside the Pool figure counts only the groups that figure is
-    // made of. `payoutPool` is dining CTP + GRT + bar CTP + bar GRT; runner pay is not in
-    // it and never was - it is a deduction off the top, which is why the Runners pill is
-    // labelled "Pay" and not "Pool". Counting Runners there put a group in the headline
-    // that contributes nothing to the money printed next to it, so "5 groups · Pool $X"
-    // described five groups with four groups' money. This changes the COUNT only; the
-    // figure itself is untouched.
-    const poolGroupSummary = summarizeGroupStatuses(
-        closeoutGroups.filter(group => group.kind !== "runners"),
+    // then Runners. Each carries the display name, roster sub-line, live pool, the
+    // money-in status, and the close-readiness ("Save and Mark Done") status. Pulled
+    // out to shiftEditorUtils.js so the day landing's read-only who's-left checklist
+    // can build the exact same rows without opening the editor.
+    const closeoutGroups = useMemo(
+        () => buildCloseoutGroups({ teams, barTeam, runners }),
+        [teams, barTeam, runners]
     );
+
+    // Confirm & Save's gate (Direction A, 2026-08-23 lock): every assigned dining
+    // team AND Bar must be marked done; Runners is excluded by construction.
+    const closeReadiness = useMemo(
+        () => summarizeCloseReadiness(closeoutGroups),
+        [closeoutGroups]
+    );
+    // The count beside the Pool figure counts only the groups that figure is made
+    // of. `payoutPool` is dining CTP + GRT + bar CTP + bar GRT; runner pay is not in
+    // it and never was - it is a deduction off the top, which is why the Runners pill
+    // is labelled "Pay" and not "Pool". Counting Runners there put a group in the
+    // headline that contributes nothing to the money printed next to it, so "5
+    // groups · Pool $X" described five groups with four groups' money.
+    const poolGroupCount = closeoutGroups.filter(group => group.kind !== "runners").length;
 
     // Review's rung 2: every group's money exactly as it was typed at Settle up, all on
     // one screen. Settle up itself shows one group at a time, so this is the only place
@@ -338,6 +330,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     ), [barTeam, liveReview, teams]);
     const saveBlocked = Boolean(balanceReport && !balanceReport.balanced);
 
+    // Direction A's own gate (2026-08-23 lock), independent of the balance check
+    // above: every assigned dining team and Bar must be marked done before
+    // Confirm & Save unlocks. Only while the shift is still being settled - once
+    // closed, a correction re-save asks only that the shift balances, exactly as
+    // it always has (re-marking every group done on every later correction would
+    // be a regression nobody asked for).
+    const closeGateBlocked = shiftStatus !== "closed" && !closeReadiness.ready;
+
     // A failure describes the shift as it was when it was refused. Any edit to the
     // roster or the money makes that description stale, so it goes.
     useEffect(() => {
@@ -357,39 +357,127 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         || runners.some(runner => toMoney(runner.payoutAmount) !== RUNNER_FLAT_RATE)
     ), [barTeam.pools, runners, teams]);
 
+    // Writes exactly one group's money/contracts/markedDone, reading the LATEST
+    // value through the live-mirrored refs above rather than a closure - this is
+    // what makes a debounced write correct even though the timer was scheduled a
+    // full second (and possibly several keystrokes) earlier.
+    const writeGroupNow = useCallback(async (groupId) => {
+        const now = new Date().toISOString();
+        try {
+            if (groupId === "bar") {
+                await updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
+                    pools: barTeamRef.current.pools,
+                    markedDone: Boolean(barTeamRef.current.markedDone),
+                    now,
+                    updatedBy: user?.uid || null,
+                }));
+                return;
+            }
+            const team = teamsRef.current.find(t => t.teamId === groupId);
+            if (!team) return;
+            await setDoc(doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId), buildTeamGroupDraft({
+                pools: team.pools,
+                contracts: team.contracts,
+                markedDone: Boolean(team.markedDone),
+                now,
+                updatedBy: user?.uid || null,
+            }));
+        } catch (e) {
+            console.error(`Failed to save the ${groupId} settle draft:`, e);
+        }
+    }, [date, user?.uid]);
+
+    const pendingGroupSaveRef = useRef({ groupId: null, timeoutId: null });
+
+    // Debounced scoped write for whichever group is actively being typed into -
+    // the direct replacement for the old whole-document autosave's money half.
+    // Called from inside each pool/contract field handler below, not from a
+    // broad effect watching `teams`/`barTeam`: that would also fire whenever a
+    // REMOTE update lands (a different Supervisor's save), rescheduling a write
+    // for a group nobody here actually touched.
+    const scheduleGroupSave = useCallback((groupId) => {
+        const pending = pendingGroupSaveRef.current;
+        if (pending.timeoutId != null) window.clearTimeout(pending.timeoutId);
+        pendingGroupSaveRef.current = {
+            groupId,
+            timeoutId: window.setTimeout(() => {
+                pendingGroupSaveRef.current = { groupId: null, timeoutId: null };
+                writeGroupNow(groupId);
+            }, 1000),
+        };
+    }, [writeGroupNow]);
+
+    // Save-now, used when leaving a group (tab switch, leaving Settle up,
+    // closing the editor) so a debounce in flight is never silently dropped -
+    // only cancelled-and-abandoned, which is what plain effect cleanup would do.
+    const flushPendingGroupSave = useCallback(() => {
+        const pending = pendingGroupSaveRef.current;
+        if (pending.timeoutId == null) return;
+        window.clearTimeout(pending.timeoutId);
+        pendingGroupSaveRef.current = { groupId: null, timeoutId: null };
+        writeGroupNow(pending.groupId);
+    }, [writeGroupNow]);
+
+    // A dining team's or Bar's money/contract fields all funnel through
+    // `settleWrite(groupId)` after updating local state: clear an existing
+    // "done" mark (plan Q9's silent clear, with the quiet cue only when a mark
+    // actually existed), then schedule that group's scoped save. A closed shift
+    // never schedules one - it disables autosave entirely, same as it always
+    // has: those edits persist only through Review -> Confirm & Save.
+    const settleWrite = useCallback((groupId, wasMarkedDone) => {
+        if (shiftStatus === "closed") return;
+        const { justCleared } = clearMarkOnEdit(wasMarkedDone);
+        if (justCleared) triggerUnmarkedCue(groupId);
+        scheduleGroupSave(groupId);
+    }, [scheduleGroupSave, shiftStatus, triggerUnmarkedCue]);
+
     const updatePool = useCallback((teamId, field, value) => {
-        setTeams(prev => prev.map(t =>
-            t.teamId === teamId ? { ...t, pools: { ...t.pools, [field]: value } } : t
-        ));
-    }, []);
+        let wasMarkedDone = false;
+        setTeams(prev => prev.map(t => {
+            if (t.teamId !== teamId) return t;
+            wasMarkedDone = Boolean(t.markedDone);
+            return { ...t, pools: { ...t.pools, [field]: value }, markedDone: false };
+        }));
+        settleWrite(teamId, wasMarkedDone);
+    }, [settleWrite]);
 
     const addContract = useCallback((teamId) => {
-        setTeams(prev => prev.map(t =>
-            t.teamId === teamId ? { ...t, contracts: [...(t.contracts || []), { name: "", gratuity: "" }] } : t
-        ));
-    }, []);
+        let wasMarkedDone = false;
+        setTeams(prev => prev.map(t => {
+            if (t.teamId !== teamId) return t;
+            wasMarkedDone = Boolean(t.markedDone);
+            return { ...t, contracts: [...(t.contracts || []), { name: "", gratuity: "" }], markedDone: false };
+        }));
+        settleWrite(teamId, wasMarkedDone);
+    }, [settleWrite]);
 
     const updateContract = useCallback((teamId, index, field, value) => {
+        let wasMarkedDone = false;
         setTeams(prev => prev.map(t => {
             if (t.teamId === teamId) {
+                wasMarkedDone = Boolean(t.markedDone);
                 const newContracts = [...(t.contracts || [])];
                 newContracts[index] = { ...newContracts[index], [field]: value };
-                return { ...t, contracts: newContracts };
+                return { ...t, contracts: newContracts, markedDone: false };
             }
             return t;
         }));
-    }, []);
+        settleWrite(teamId, wasMarkedDone);
+    }, [settleWrite]);
 
     const removeContract = useCallback((teamId, index) => {
+        let wasMarkedDone = false;
         setTeams(prev => prev.map(t => {
             if (t.teamId === teamId) {
+                wasMarkedDone = Boolean(t.markedDone);
                 const newContracts = [...(t.contracts || [])];
                 newContracts.splice(index, 1);
-                return { ...t, contracts: newContracts };
+                return { ...t, contracts: newContracts, markedDone: false };
             }
             return t;
         }));
-    }, []);
+        settleWrite(teamId, wasMarkedDone);
+    }, [settleWrite]);
 
     const toggleContractVisibility = useCallback((teamId) => {
         setTeams(prev => prev.map(team =>
@@ -398,8 +486,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     }, []);
 
     const updateBarPool = useCallback((field, value) => {
-        setBarTeam(prev => ({ ...prev, pools: { ...prev.pools, [field]: value } }));
-    }, []);
+        let wasMarkedDone = false;
+        setBarTeam(prev => {
+            wasMarkedDone = Boolean(prev.markedDone);
+            return { ...prev, pools: { ...prev.pools, [field]: value }, markedDone: false };
+        });
+        settleWrite("bar", wasMarkedDone);
+    }, [settleWrite]);
 
     // Food sales has one behaviour no other pool field has: it PREFILLS the Runners
     // Fee at 3%, and only while the fee is still tracking that derivation. The rule
@@ -407,8 +500,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // matters here is that entering food sales on a shift settled under the old model
     // leaves that night's typed fee alone rather than silently moving its money.
     const updateBarFoodSales = useCallback((value) => {
-        setBarTeam(prev => ({ ...prev, pools: applyBarFoodSalesEdit(prev.pools || {}, value) }));
-    }, []);
+        let wasMarkedDone = false;
+        setBarTeam(prev => {
+            wasMarkedDone = Boolean(prev.markedDone);
+            return { ...prev, pools: applyBarFoodSalesEdit(prev.pools || {}, value), markedDone: false };
+        });
+        settleWrite("bar", wasMarkedDone);
+    }, [settleWrite]);
 
     const updateRunnerPayout = (uid, value) => {
         setRunners(prev => prev.map(runner =>
@@ -476,25 +574,39 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         }));
     };
 
+    // Two Supervisors, live (2026-08-23 lock): the one-time `getDoc` this used to
+    // be is replaced by a live subscription, so a second Supervisor's Settle up
+    // edits appear on screen instead of only landing behind your back on refetch.
+    // Money/contracts/markedDone for a dining team, though, are NOT read off this
+    // snapshot post-load - they come from the settleGroups listener below, which
+    // is each team's own scoped source of truth (see settleGroupPersistence.js
+    // for why `teams` being an array forces this split). Whichever group is
+    // actively selected (`activeGroupIdRef`) is fully protected from both
+    // listeners while it is being edited, so an unrelated remote write can never
+    // revert in-flight typing - see the same ref's other reads below.
     useEffect(() => {
-        const loadShift = async () => {
-            try {
-                setLoading(true);
-                setHasLoadedShift(false);
-                setDraftStatus("");
-                setShiftStatus(null);
-                const shiftDoc = await getDoc(doc(db, "shifts", date));
-                const emptyTeams = [
-                    { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
-                ];
-                const emptyBar = { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } };
-                let nextTeams = emptyTeams;
+        setLoading(true);
+        setHasLoadedShift(false);
+        setDraftStatus("");
+        setShiftStatus(null);
+        hasLoadedShiftRef.current = false;
+
+        const emptyTeams = [
+            { teamId: "team-1", members: [], pools: { sales: "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" }, contracts: [] }
+        ];
+        const emptyBar = { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } };
+
+        const unsubscribeShift = onSnapshot(
+            doc(db, "shifts", date),
+            (shiftDoc) => {
+                let nextTeamsRoster = emptyTeams;
                 let nextBar = emptyBar;
                 let nextRunners = [];
+                let nextStatus = null;
                 if (shiftDoc.exists()) {
                     const d = applyOpenShiftMemberNames(shiftDoc.data());
                     if (d.teams) {
-                        nextTeams = d.teams.map(t => ({
+                        nextTeamsRoster = d.teams.map(t => ({
                             teamId: t.teamId,
                             members: t.members || [],
                             pools: t.pools || { sales: t.teamSales || "", tips: "", gratuity: "", cash: "", covers: "", contract26Gratuity: "" },
@@ -504,26 +616,122 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     if (d.barTeam) {
                         nextBar = {
                             members: d.barTeam.members || [],
-                            pools: d.barTeam.pools || { sales: "", tips: "", gratuity: "", covers: "" }
+                            pools: d.barTeam.pools || { sales: "", tips: "", gratuity: "", covers: "" },
+                            markedDone: Boolean(d.barTeam.markedDone),
                         };
                     }
                     if (d.runners) nextRunners = d.runners;
-                    setShiftStatus(d.status || (d.summary || d.firstClosedAt || d.payouts ? "closed" : "setup"));
+                    nextStatus = d.status || (d.summary || d.firstClosedAt || d.payouts ? "closed" : "setup");
                 }
-                setTeams(nextTeams);
-                setBarTeam(nextBar);
-                setRunners(nextRunners);
-                // Baseline the loaded shift so Cancel knows whether anything changed.
-                loadedFingerprintRef.current = fingerprintShift(nextTeams, nextBar, nextRunners);
-            } catch (e) {
-                console.error("Failed to load shift:", e);
-            } finally {
+                setShiftStatus(nextStatus);
+
+                const bootstrapping = !hasLoadedShiftRef.current;
+                setTeams(prevTeams => {
+                    if (bootstrapping) return nextTeamsRoster.map(t => ({ ...t, markedDone: false }));
+                    const byId = new Map(prevTeams.map(t => [t.teamId, t]));
+                    return nextTeamsRoster.map(rosterTeam => {
+                        const existing = byId.get(rosterTeam.teamId);
+                        if (!existing) return { ...rosterTeam, markedDone: false };
+                        // Active: fully protected (including its own roster) so an
+                        // unrelated remote write can never revert in-flight edits here.
+                        // Inactive: roster stays fresh; pools/contracts/markedDone stay
+                        // exactly as the settleGroups listener last set them - taking
+                        // them from here too would let a roster-only remote write
+                        // (Floor plan, elsewhere) echo a stale money value backward.
+                        if (rosterTeam.teamId === activeGroupIdRef.current) return existing;
+                        return { ...existing, members: rosterTeam.members };
+                    });
+                });
+                setBarTeam(prev => {
+                    if (bootstrapping || activeGroupIdRef.current !== "bar") return nextBar;
+                    return prev;
+                });
+                setRunners(prev => (
+                    (!bootstrapping && activeGroupIdRef.current === "runners") ? prev : nextRunners
+                ));
+
+                if (bootstrapping) {
+                    // Baseline the loaded shift so Cancel knows whether anything changed.
+                    loadedFingerprintRef.current = fingerprintShift(nextTeamsRoster, nextBar, nextRunners);
+                    hasLoadedShiftRef.current = true;
+                    setHasLoadedShift(true);
+                    setLoading(false);
+                }
+            },
+            (e) => {
+                console.error("Failed to watch shift:", e);
+                hasLoadedShiftRef.current = true;
                 setHasLoadedShift(true);
                 setLoading(false);
             }
+        );
+
+        // A dining team's money/contracts/markedDone, live, one doc per team -
+        // see settleGroupPersistence.js. The first batch this collection ever
+        // delivers is applied unconditionally (even to the active tab): without
+        // that, a returning Supervisor whose default tab happens to be a team
+        // with already-saved money would never see it, because the "protect the
+        // active group" rule below would otherwise treat their own first load as
+        // a remote write to refuse.
+        let settleGroupsBootstrapped = false;
+        const unsubscribeSettleGroups = onSnapshot(
+            collection(db, "shifts", date, SETTLE_GROUP_COLLECTION),
+            (snapshot) => {
+                const isInitialBatch = !settleGroupsBootstrapped;
+                snapshot.docChanges().forEach((change) => {
+                    const groupId = change.doc.id;
+                    if (groupId === "bar") return; // Bar's source of truth is the shift doc itself.
+                    const data = change.type === "removed" ? {} : change.doc.data();
+                    const patch = {
+                        pools: data.pools || {},
+                        contracts: data.contracts || [],
+                        markedDone: Boolean(data.markedDone),
+                    };
+                    setTeams(prev => {
+                        if (!isInitialBatch && !shouldAcceptRemoteGroupUpdate(groupId, activeGroupIdRef.current)) return prev;
+                        if (!prev.some(t => t.teamId === groupId)) return prev;
+                        return applyTeamGroupPatch(prev, groupId, patch);
+                    });
+                });
+                settleGroupsBootstrapped = true;
+            },
+            (e) => console.error("Failed to watch settle group drafts:", e)
+        );
+
+        return () => {
+            unsubscribeShift();
+            unsubscribeSettleGroups();
         };
-        loadShift();
     }, [date]);
+
+    useEffect(() => () => flushPendingGroupSave(), [flushPendingGroupSave]);
+
+    // "Save and Mark Done": commits the group's current fields right now (not on
+    // the trailing debounce) plus the mark itself, in one write - the button's
+    // own name says "save", not just "mark". Never reachable on a closed shift
+    // (SettleStep doesn't render the button there), guarded again here anyway.
+    const handleMarkGroupDone = useCallback((groupId) => {
+        if (shiftStatus === "closed") return;
+        const pending = pendingGroupSaveRef.current;
+        if (pending.groupId === groupId && pending.timeoutId != null) {
+            window.clearTimeout(pending.timeoutId);
+            pendingGroupSaveRef.current = { groupId: null, timeoutId: null };
+        }
+        const now = new Date().toISOString();
+        if (groupId === "bar") {
+            setBarTeam(prev => ({ ...prev, markedDone: true }));
+            updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
+                pools: barTeam.pools, markedDone: true, now, updatedBy: user?.uid || null,
+            })).catch(e => console.error("Failed to save Bar's settle draft:", e));
+            return;
+        }
+        const team = teams.find(t => t.teamId === groupId);
+        if (!team) return;
+        setTeams(prev => prev.map(t => (t.teamId === groupId ? { ...t, markedDone: true } : t)));
+        setDoc(doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId), buildTeamGroupDraft({
+            pools: team.pools, contracts: team.contracts, markedDone: true, now, updatedBy: user?.uid || null,
+        })).catch(e => console.error(`Failed to save the ${groupId} settle draft:`, e));
+    }, [barTeam.pools, date, shiftStatus, teams, user?.uid]);
 
     useEffect(() => {
         // The sole persistence path for a setup shift, covering Floor AND Settle -
@@ -623,14 +831,26 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // confirming is leaving the EDITOR entirely on a dirty closed shift - see
     // confirmLeaveEditor above; switching steps within it never does.
     const goToStep = (key) => {
+        // Leaving Settle up (any direction) flushes rather than abandons a
+        // debounce in flight - see flushPendingGroupSave.
+        if (step === "settle" && key !== "settle") flushPendingGroupSave();
         setStep(key);
     };
 
+    // Direction A: switching tabs stays on Settle up (no navigation), but the
+    // group being LEFT still needs its pending debounce flushed first - the
+    // same reason goToStep flushes above, just one level narrower.
+    const handleSelectGroup = useCallback((groupId) => {
+        flushPendingGroupSave();
+        setActiveGroupId(groupId);
+    }, [flushPendingGroupSave]);
+
     const handleConfirmSave = async () => {
-        // `saveBlocked` mirrors the reconciliation the write path re-runs and throws on,
-        // so this is the same refusal made before anything is attempted rather than
-        // after. The button is disabled in that state; this is the belt to its braces.
-        if (isSaving || !liveReview.ready || saveBlocked) return;
+        // `saveBlocked`/`closeGateBlocked` mirror checks the write path itself
+        // enforces (the balance re-check throws; the close gate is UI-only but
+        // the button is disabled in the same state), so this is the same refusal
+        // made before anything is attempted rather than after.
+        if (isSaving || !liveReview.ready || saveBlocked || closeGateBlocked) return;
 
         const mappedPayoutsForFirebase = liveReview.mappedPayouts;
         const result = liveReview.result;
@@ -750,10 +970,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                 <SettleStep
                     closeoutGroups={closeoutGroups}
                     activeGroupId={activeGroupId}
-                    onSelectGroup={setActiveGroupId}
+                    onSelectGroup={handleSelectGroup}
                     poolSummary={poolSummary}
-                    poolGroupSummary={poolGroupSummary}
-                    groupStatusSummary={groupStatusSummary}
+                    poolGroupCount={poolGroupCount}
+                    closeReadiness={closeReadiness}
+                    onMarkGroupDone={handleMarkGroupDone}
+                    unmarkedCueGroupId={unmarkedCueGroupId}
+                    shiftStatus={shiftStatus}
                     teams={teams}
                     barTeam={barTeam}
                     runners={runners}
@@ -777,6 +1000,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
                     saveFailure={saveFailure}
                     liveReview={liveReview}
                     saveBlocked={saveBlocked}
+                    closeGateBlocked={closeGateBlocked}
+                    closeReadiness={closeReadiness}
                     balanceReport={balanceReport}
                     poolSummary={poolSummary}
                     reviewMoneyGroups={reviewMoneyGroups}

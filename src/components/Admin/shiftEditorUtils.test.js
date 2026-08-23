@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
     applyBarFoodSalesEdit,
+    buildCloseoutGroups,
     buildPayoutReview,
     deriveRunnersFee,
     fmtAmount,
@@ -291,4 +292,39 @@ test("buildPayoutReview's staffTotal (Everyone paid) excludes cash across dining
     // from the fixture to make the total match.
     assert.equal(review.payoutRows.find(row => row.uid === "diningServer").cash, 40);
     assert.equal(review.payoutRows.find(row => row.uid === "bartender").cash, 60);
+});
+
+test("buildCloseoutGroups: Runners is hardcoded done and excluded from the gate", () => {
+    const groups = buildCloseoutGroups({
+        teams: [{ teamId: "team-1", members: [{ uid: "a" }], pools: { tips: "100" }, markedDone: false }],
+        barTeam: { members: [{ uid: "b" }], pools: { tips: "50" }, markedDone: false },
+        runners: [{ uid: "c", payoutAmount: "85" }],
+    });
+    const runnersGroup = groups.find(g => g.id === "runners");
+    assert.equal(runnersGroup.kind, "runners");
+    assert.equal(runnersGroup.markedDone, true);
+    assert.equal(runnersGroup.status, "done");
+    assert.equal(runnersGroup.pool, 85);
+});
+
+test("buildCloseoutGroups: a marked-done dining team reads 'done' even with money still in", () => {
+    const groups = buildCloseoutGroups({
+        teams: [{ teamId: "team-1", members: [{ uid: "a" }], pools: { tips: "300" }, markedDone: true }],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+    });
+    const team1 = groups.find(g => g.id === "team-1");
+    assert.equal(team1.status, "done");
+    assert.equal(team1.pool, 300);
+});
+
+test("buildCloseoutGroups: Bar carries its own markedDone independent of dining teams", () => {
+    const groups = buildCloseoutGroups({
+        teams: [{ teamId: "team-1", members: [{ uid: "a" }], pools: {}, markedDone: false }],
+        barTeam: { members: [{ uid: "b" }], pools: { tips: "40" }, markedDone: true },
+        runners: [],
+    });
+    const bar = groups.find(g => g.id === "bar");
+    assert.equal(bar.status, "done");
+    assert.equal(groups.find(g => g.id === "team-1").status, "working");
 });

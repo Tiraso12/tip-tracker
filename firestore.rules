@@ -314,6 +314,22 @@ service cloud.firestore {
         (!("operationId" in request.resource.data) || request.resource.data.operationId == null || request.resource.data.operationId is string);
     }
 
+    // Parallel Settle up (2026-08-23 lock): a dining team's live scoped draft,
+    // one doc per team under shifts/{shiftId}/settleGroups/{teamId} - see
+    // src/utils/settleGroupPersistence.js for why this exists (Firestore has no
+    // dotted-path update into one element of the `teams` array). Bar needs no
+    // doc here: its scoped write is a dotted-path update straight onto
+    // barTeam.pools/markedDone on the shift doc itself, covered by validShift.
+    function validSettleGroup() {
+      return request.resource.data.keys().hasOnly(["pools", "contracts", "markedDone", "updatedAt", "updatedBy"]) &&
+        request.resource.data.keys().hasAll(["pools", "markedDone", "updatedAt"]) &&
+        request.resource.data.pools is map &&
+        (!("contracts" in request.resource.data) || request.resource.data.contracts is list) &&
+        request.resource.data.markedDone is bool &&
+        isStringOrTimestamp(request.resource.data.updatedAt) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string);
+    }
+
     function validPayoutMeta(shiftDate) {
       return request.resource.data.keys().hasOnly(["date", "ledgerVersion", "updatedAt", "updatedBy", "operationId"]) &&
         request.resource.data.keys().hasAll(["date", "ledgerVersion"]) &&
@@ -538,6 +554,18 @@ service cloud.firestore {
         (hasCaptainAccess() || isSelfServiceShiftNameRestamp());
       allow delete: if hasManagerAccess() ||
         (hasCaptainAccess() && resource.data.status == "setup");
+
+      // Parallel Settle up's per-team drafts (see validSettleGroup above).
+      // Captain tier only - the same tier that already reads/writes the shift
+      // itself at Settle up - and deletable at captain tier too, matching
+      // payouts/{date}/entries below: cleanup rides along with a setup-day
+      // discard or a settled-day removal (closeoutPersistence.js), both of
+      // which are themselves gated on the parent shift's own delete rule.
+      match /settleGroups/{groupId} {
+        allow read: if hasCaptainAccess();
+        allow create, update: if hasCaptainAccess() && validSettleGroup();
+        allow delete: if hasCaptainAccess();
+      }
     }
 
     // Canonical payout ledger. Employees can read only their own exact entry doc.

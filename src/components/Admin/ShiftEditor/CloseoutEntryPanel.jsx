@@ -13,7 +13,60 @@ import { fmtMoney } from "../shiftEditorUtils";
 // floats on the page background with no outer editor Card, same as Floor's TeamCard, so
 // the border/shadow weight below matches Floor's exactly rather than the heavier lift a
 // double-nested panel used to need.
-export function CloseoutEntryPanel({ group, children }) {
+// Direction A's mark-done control (2026-08-23 lock): a "Save and Mark Done"
+// button in the entry panel header, not a checklist dot - see
+// data/tip-tracker-parallel-settle-ui-a/report.md. Disabled while the group
+// is still "on tables" (nothing meaningful entered) - there is nothing to
+// call final yet. Once done, the button itself becomes the affirmative
+// state (green, checked, inert); the only way to undo it is editing a field,
+// which silently clears the mark (plan Q9) and surfaces the quiet cue below
+// rather than requiring a second tap here.
+function MarkDoneControl({ group, onMarkDone, showUnmarkedCue }) {
+    if (group.kind === "runners") {
+        return (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
+                <span aria-hidden="true">✓</span>
+                Always marked done
+            </span>
+        );
+    }
+
+    const isDone = group.status === "done";
+    const canMark = isDone || group.status === "entering";
+
+    return (
+        <span className="inline-flex flex-wrap items-center gap-2">
+            <button
+                type="button"
+                onClick={() => onMarkDone(group.id)}
+                disabled={!canMark || isDone}
+                title={!canMark ? "Enter this group's money before marking it done" : undefined}
+                className={
+                    "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold transition-colors disabled:cursor-not-allowed " +
+                    (isDone
+                        ? "bg-[var(--color-success-soft)] text-[var(--color-success)] disabled:opacity-100"
+                        : "bg-[var(--color-accent)] text-white disabled:opacity-40 hover:opacity-90")
+                }
+            >
+                {isDone ? (
+                    <>
+                        <span aria-hidden="true">✓</span>
+                        Marked done
+                    </>
+                ) : (
+                    "Save and Mark Done"
+                )}
+            </button>
+            {showUnmarkedCue ? (
+                <span role="status" className="text-[11.5px] leading-snug text-[var(--color-warning)]">
+                    ⚠ Marked done cleared - this group was edited after being marked done
+                </span>
+            ) : null}
+        </span>
+    );
+}
+
+export function CloseoutEntryPanel({ group, children, onMarkDone, showUnmarkedCue = false, hideMarkControl = false }) {
     // Titled money card: serif group name left, muted "Money in" / "Take-home" right.
     // The switcher pill above already carries the funded/needs-money dot (visible at
     // every width there), so this head does not repeat that - it names the card and
@@ -47,6 +100,14 @@ export function CloseoutEntryPanel({ group, children }) {
                     <strong className="flex-none font-mono tabular-nums">{exactPool}</strong>
                 </span>
             </div>
+            {/* Direction A's Save and Mark Done row - suppressed on a closed shift
+                (`hideMarkControl`), where this group's done-state no longer gates
+                anything and edits persist only through Review -> Confirm & Save. */}
+            {hideMarkControl ? null : (
+                <div className="px-4 py-2.5 border-b border-[var(--color-line)] bg-[var(--color-surface-muted)]">
+                    <MarkDoneControl group={group} onMarkDone={onMarkDone} showUnmarkedCue={showUnmarkedCue} />
+                </div>
+            )}
             <div className="p-4 max-[560px]:pt-3.5">
                 {children}
             </div>

@@ -12,8 +12,11 @@ export function SettleStep({
     activeGroupId,
     onSelectGroup,
     poolSummary,
-    poolGroupSummary,
-    groupStatusSummary,
+    poolGroupCount,
+    closeReadiness,
+    onMarkGroupDone,
+    unmarkedCueGroupId,
+    shiftStatus,
     teams,
     barTeam,
     runners,
@@ -66,28 +69,28 @@ export function SettleStep({
             <div className="flex items-center justify-between gap-3 max-[560px]:order-2">
                 <span className="inline-flex items-baseline gap-2">
                     <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                        {poolGroupSummary.total} {poolGroupSummary.total === 1 ? "group" : "groups"} · Pool
+                        {poolGroupCount} {poolGroupCount === 1 ? "group" : "groups"} · Pool
                     </span>
                     <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
                         {fmtMoney(poolSummary.payoutPool)}
                     </strong>
                 </span>
-                {/* Phone: the per-tab dots already carry this. Each tab shows its
-                    own group's state in its own colour, right next to the name you
-                    would tap to fix it, so a rolled-up count of the same fact was
-                    the screen saying it twice - once vaguely. Desktop keeps the
-                    roll-up: there the switcher can hold more groups than the eye
-                    counts dots for. */}
-                {groupStatusSummary.total > 0 ? (
-                    groupStatusSummary.needsMoney > 0 ? (
+                {/* Direction A's own gate note (2026-08-23 lock): close-readiness, not
+                    money-in - "N groups still open" until every dining team and Bar
+                    are marked done (Runners excluded). Confirm & Save lives on
+                    Review, not here; this line is Settle up's only status cue.
+                    Phone: the per-tab dots already carry this per-group, so the
+                    rolled-up line stays desktop-only, same as before. */}
+                {shiftStatus !== "closed" && closeReadiness.total > 0 ? (
+                    closeReadiness.stillOpen > 0 ? (
                         <span className="max-[560px]:hidden inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
-                            {groupStatusSummary.needsMoney} still need money
+                            {closeReadiness.stillOpen} {closeReadiness.stillOpen === 1 ? "group" : "groups"} still open
                         </span>
                     ) : (
                         <span className="max-[560px]:hidden inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
                             <span aria-hidden="true">✓</span>
-                            All groups funded
+                            Every dining team and Bar are done
                         </span>
                     )
                 ) : null}
@@ -141,7 +144,13 @@ export function SettleStep({
                 sitting a second layer of padding further in. */}
             <div className="m-0 min-w-0 max-[560px]:!mt-3 max-[560px]:-mx-3">
             {activeGroup && (activeGroup.kind !== "dining" || diningTeam) ? (
-                <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
+                <CloseoutEntryPanel
+                    key={activeGroup.id}
+                    group={activeGroup}
+                    onMarkDone={onMarkGroupDone}
+                    showUnmarkedCue={unmarkedCueGroupId === activeGroup.id}
+                    hideMarkControl={shiftStatus === "closed"}
+                >
                     {activeGroup.kind === "dining" ? (
                         <>
                             <TeamPoolFields

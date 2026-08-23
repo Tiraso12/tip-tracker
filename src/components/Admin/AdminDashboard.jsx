@@ -16,6 +16,7 @@ import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../u
 import { removeShiftAtomically, removeSetupShiftAtomically } from "../../utils/closeoutPersistence";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 import { fullNameFor } from "../../utils/userNames";
+import { applyTeamGroupPatch, SETTLE_GROUP_COLLECTION } from "../../utils/settleGroupPersistence";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -154,6 +155,10 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     const [removingShift, setRemovingShift] = useState(false);
     // Which day-step the shift editor opens on when entered from a landing CTA.
     const [editorStep, setEditorStep] = useState("floor");
+    // Which Settle up group the tab strip preselects when the landing's
+    // who's-left checklist is tapped directly into a group - null defers to
+    // ShiftEditorPanel's own default (the first dining team).
+    const [editorActiveGroupId, setEditorActiveGroupId] = useState(null);
     // Set only by a completed Confirm & Save, so the confirmation lands on the day
     // it belongs to instead of on the editor the admin is leaving.
     const [shiftSaved, setShiftSaved] = useState(false);
@@ -233,15 +238,40 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             if (fetchId !== dayFetchIdRef.current) return;
             if (shiftDoc.exists()) {
                 const d = applyOpenShiftMemberNames(shiftDoc.data());
+                const status = d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup");
+                let lineupTeams = Array.isArray(d.teams) ? d.teams : [];
+                // The who's-left checklist (Direction A, 2026-08-23 lock) needs each
+                // dining team's money/markedDone, which lives in the settleGroups
+                // subcollection during setup - see settleGroupPersistence.js for why.
+                // Only fetched while there's an actual gate to describe; a closed
+                // shift's teams[].pools already carry the final saved numbers.
+                if (status !== "closed") {
+                    try {
+                        const settleGroupsSnapshot = await getDocs(collection(db, "shifts", date, SETTLE_GROUP_COLLECTION));
+                        settleGroupsSnapshot.forEach((groupDoc) => {
+                            if (groupDoc.id === "bar") return; // Bar's markedDone lives on barTeam itself.
+                            const data = groupDoc.data();
+                            lineupTeams = applyTeamGroupPatch(lineupTeams, groupDoc.id, {
+                                pools: data.pools || {},
+                                contracts: data.contracts || [],
+                                markedDone: Boolean(data.markedDone),
+                            });
+                        });
+                    } catch (e) {
+                        // The checklist is a convenience read - a failed fetch here must
+                        // not block the day's own money/lineup, which already loaded.
+                        console.error("Failed to load settle group drafts:", e);
+                    }
+                }
                 setDaySummary(attachLedgerPayoutsToSummary(d.summary || null, payoutEntries));
                 // Lift the saved floor plan (already returned here) so the setup
                 // landing can confirm the lineup team-by-team without another fetch.
                 setDayLineup({
-                    teams: Array.isArray(d.teams) ? d.teams : [],
+                    teams: lineupTeams,
                     barTeam: d.barTeam || { members: [] },
                     runners: Array.isArray(d.runners) ? d.runners : [],
                 });
-                setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
+                setDayShiftStatus(status);
                 setDayOrphanedEntries([]);
                 setDaySavedBy({ uid: d.updatedBy || null, at: d.updatedAt || null });
             } else {
@@ -473,10 +503,14 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         }
     }, [loadEmployeesIfNeeded]);
 
-    // Enter the day flow (the shift editor) focused on a specific step. The Day
-    // Rail landing CTAs route through here.
-    const enterEditor = useCallback((initialStep = "floor") => {
+    // Enter the day flow (the shift editor) focused on a specific step, and
+    // optionally a specific Settle up group - the landing's who's-left
+    // checklist jumps straight into a tapped group's tab (open or already
+    // done, so a mistake can still be corrected) rather than always landing
+    // on the first dining team.
+    const enterEditor = useCallback((initialStep = "floor", groupId = null) => {
         setEditorStep(["settle", "review"].includes(initialStep) ? initialStep : "floor");
+        setEditorActiveGroupId(groupId);
         setActiveTabWithData("editor");
     }, [setActiveTabWithData]);
 
@@ -628,7 +662,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // lives once in the app-bar Bar Date pill, so there is no date band here.
     const SHIFTS_STAGE_TITLE = {
         "build-floor": "Set up the floor",
-        settle: "Confirm the floor",
+        settle: "Settle up",
         closed: "Pay out",
         "orphaned-payouts": "Leftover payouts",
     };
@@ -865,6 +899,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                 onContinueSettle={() => enterEditor("settle")}
                                 onOpenReview={() => enterEditor("review")}
                                 onEditFloor={() => enterEditor("floor")}
+                                onOpenGroup={(groupId) => enterEditor("settle", groupId)}
                                 onRemoveShift={canRemoveDay ? handleRemoveShift : undefined}
                                 removingShift={removingShift}
                             />
@@ -880,6 +915,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                         allEmployees={floorPlanPool}
                                         onClose={handleEditorClose}
                                         initialStep={editorStep}
+                                        initialActiveGroupId={editorActiveGroupId}
                                         onRegisterLeaveGuard={registerEditorLeaveGuard}
                                         onRemoveSetupDay={canDiscardSetupDay ? handleRemoveSetupDay : undefined}
                                         removingSetupDay={removingShift}

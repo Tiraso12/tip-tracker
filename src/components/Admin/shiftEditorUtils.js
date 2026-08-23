@@ -1,6 +1,7 @@
 // Explicit .js extension: this module is unit-tested under `node --test`, which does
 // not resolve extensionless specifiers the way Vite does (engine.js does the same).
-import { ROLE_POINTS, RUNNERS_FEE_FOOD_SALES_RATE } from "../../utils/constants.js";
+import { ROLE_POINTS, RUNNER_FLAT_RATE, RUNNERS_FEE_FOOD_SALES_RATE } from "../../utils/constants.js";
+import { getGroupCloseState } from "../../utils/settleStatus.js";
 
 export const toMoney = (value) => Number(value) || 0;
 export const hasNegative = (value) => Number(value) < 0;
@@ -95,6 +96,79 @@ export function getBarSummary(barTeam) {
         runnerTransfer: toMoney(pools.runners),
         payoutPool: tips + gratuity,
     };
+}
+
+// Descriptors for the Settle up switcher + the day landing's who's-left checklist:
+// one entry per dining team, then Bar, then Runners, each carrying the display
+// name, roster sub-line, live pool, and both the money-in status and the
+// close-readiness status (see settleStatus.js). Pulled out of ShiftEditorPanel
+// so the day landing can build the exact same read-only rows without opening
+// the editor - see docs on Direction A's "reused read-only on the day landing".
+//
+// Runners is hardcoded `markedDone: true` / `status: "done"` - it is excluded
+// from the close gate by construction (kind "runners"), not merely defaulted,
+// so a caller cannot accidentally start gating it by trusting a computed value.
+export function buildCloseoutGroups({ teams = [], barTeam = { members: [], pools: {} }, runners = [] } = {}) {
+    const teamGroups = teams.map((team, index) => {
+        const summary = getTeamSummary(team);
+        const pool = summary.payoutPool;
+        const hasPeople = team.members.length > 0;
+        const hasOtherInput = toMoney(team.pools?.sales) > 0
+            || toMoney(team.pools?.cash) > 0
+            || toMoney(team.pools?.covers) > 0;
+        const markedDone = Boolean(team.markedDone);
+        return {
+            id: team.teamId,
+            kind: "dining",
+            name: `Team ${index + 1}`,
+            sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"}`,
+            poolLabel: "Pool",
+            pool,
+            hasPeople,
+            hasOtherInput,
+            markedDone,
+            status: getGroupCloseState({ hasPeople, pool, hasOtherInput, markedDone }),
+            teamIndex: index,
+        };
+    });
+
+    const barSummary = getBarSummary(barTeam);
+    const barPool = barSummary.payoutPool;
+    const barHasPeople = barTeam.members.length > 0;
+    const barHasOtherInput = toMoney(barTeam.pools?.sales) > 0
+        || toMoney(barTeam.pools?.covers) > 0
+        || toMoney(barTeam.pools?.foodSales) > 0;
+    const barMarkedDone = Boolean(barTeam.markedDone);
+
+    const runnerPool = runners.reduce((sum, runner) => sum + toMoney(runner.payoutAmount || RUNNER_FLAT_RATE), 0);
+
+    return [
+        ...teamGroups,
+        {
+            id: "bar",
+            kind: "bar",
+            name: "Bar Team",
+            sub: `${barTeam.members.length} ${barTeam.members.length === 1 ? "member" : "members"} · bar`,
+            poolLabel: "Pool",
+            pool: barPool,
+            hasPeople: barHasPeople,
+            hasOtherInput: barHasOtherInput,
+            markedDone: barMarkedDone,
+            status: getGroupCloseState({ hasPeople: barHasPeople, pool: barPool, hasOtherInput: barHasOtherInput, markedDone: barMarkedDone }),
+        },
+        {
+            id: "runners",
+            kind: "runners",
+            name: "Runners",
+            sub: `${runners.length} ${runners.length === 1 ? "runner" : "runners"}`,
+            poolLabel: "Pay",
+            pool: runnerPool,
+            hasPeople: runners.length > 0,
+            hasOtherInput: false,
+            markedDone: true,
+            status: "done",
+        },
+    ];
 }
 
 // ---- The bar's Runners Fee and the food sales it comes from ----

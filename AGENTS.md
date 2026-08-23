@@ -118,6 +118,17 @@ Key files: `AdminDashboard.jsx` (shell, day loading), `ShiftEditorPanel.jsx` (ed
 autosave, leave guard), `ShiftEditor/` (the three step components), `DayPayoutPanel.jsx` (settled
 day), `TeamManagement.jsx` (roster and person view).
 Pattern: shell, chrome, and Pullenberg-kit conventions in [docs/UI-CONVENTIONS.md](docs/UI-CONVENTIONS.md).
+Settle up supports concurrent Supervisors while a shift is unsettled: `ShiftEditorPanel.jsx` reads
+the shift via a live `onSnapshot` (not a one-time `getDoc`), and a dining team's money/contracts/
+`markedDone` write to their own `shifts/{date}/settleGroups/{teamId}` doc rather than the whole
+shift doc - `teams` is an array, so Firestore has no dotted-path update into one element of it (see
+`src/utils/settleGroupPersistence.js`). Bar has no such doc: `barTeam` is already a map on the
+shift doc, so its scoped write is a plain dotted-path `updateDoc`. Runners is excluded from the
+done-state gate entirely. Whichever group's tab is currently active is protected from remote
+overwrites (so a live update from elsewhere never reverts in-flight typing); every other group
+stays live-fresh. Direction A: the tab strip stays on Settle up - switching groups never navigates
+away - and the day landing's who's-left checklist (`DayRailLanding.jsx`) is a read-only render of
+the same `buildCloseoutGroups` (`shiftEditorUtils.js`) ShiftEditorPanel itself uses.
 
 ## Pay statement (src/components/Pay/)
 Handles the pay stub: one range of days, CTP/GRT/Total/cash, for a person.
@@ -147,7 +158,8 @@ Key files: `engine.js` (calculation engine, numbered sections), `payoutLedger.js
 reconciliation), `dayFlow.js` (the Floor/Settle/Review rail), `permissions.js` (every capability,
 named once), `roleLabels.js` (role wording), `closeoutPersistence.js` /
 `tempStaffMergePersistence.js` (atomic Firestore batches), `shiftBalance.js` / `saveFailure.js`
-(the Confirm & Save gate).
+(the Confirm & Save gate), `settleStatus.js` (a group's money-in and close-readiness status),
+`settleGroupPersistence.js` (parallel Settle up's per-group scoped Firestore writes).
 Pattern: pure functions, named exports, colocated tests - the WHY behind these files is in
 [docs/MONEY-MODEL.md](docs/MONEY-MODEL.md), [docs/ROLES-AND-PERMISSIONS.md](docs/ROLES-AND-PERMISSIONS.md),
 and [docs/DATA-PERSISTENCE.md](docs/DATA-PERSISTENCE.md).

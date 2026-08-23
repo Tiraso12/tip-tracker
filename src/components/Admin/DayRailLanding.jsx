@@ -1,17 +1,16 @@
-import { useEffect } from "react";
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRail from "./DayRail";
 import FloatingActions from "./FloatingActions";
 import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
 import { getPayoutTotal } from "../../utils/payoutLedger";
 import { roleLabel } from "../../utils/roleLabels";
+import { buildCloseoutGroups } from "./shiftEditorUtils";
 import { Button, Card } from "../ui";
 
 // Approach A landing. The day rail leads with its first incomplete step:
 //  - no floor plan yet   -> first-run hero into Floor plan (step 1)
-//  - floor built (setup) -> no landing for this state; goes straight into the
-//                           (always-editable) Floor plan editor - see
-//                           `SkipToFloorPlan` below
+//  - floor built (setup) -> the parallel-Settle-up who's-left checklist
+//                           (`SettleWhosLeftLanding` below)
 //  - closed / paid       -> the Pay out review (as today), rail all done
 //
 // The friendly date lives once in the app-bar Bar Date pill, so the heroes no
@@ -44,29 +43,109 @@ function EditFab({ onClick, label = "✎ Edit", disabled = false }) {
     );
 }
 
-// Floor built, not yet settled: there is no landing for this state. Compared
-// live against "summarise" and "kit list" directions on 2026-08-16, then again
-// against a "peek first" and a "peek on browse" direction after the day-chip
-// strip exposed a friction the first round could not have seen (browsing the
-// week yanked you into the floor editor on every unsettled day). The captain
-// chose skipping straight into the floor plan both times, so the floor is the
-// first thing you see, rather than a read-only echo of it, before any money is
-// touched - and picked keeping the day-chip strip usable during the floor
-// step itself (`AdminDashboard.jsx`) to resolve the browsing friction, rather
-// than dropping the redirect. Real navigation via `onEditFloor` - the same
-// call the read-only view's old "✎ Edit" FAB used to make - not a placeholder;
-// FloorStep is always directly editable for a setup shift, so "viewing" and
-// "editing" the floor are the same screen.
-function SkipToFloorPlan({ onEditFloor }) {
-    useEffect(() => {
-        onEditFloor?.();
-        // Fire once, on mount - not on every render.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+// A group's tri-state dot, matching RailPill's own reading of getGroupCloseState
+// (settleStatus.js): still-on-tables / entering / done. Reused here rather than
+// imported so the landing stays a pure read of `closeoutGroups`' own `status`
+// field with no dependency on Settle up's own switcher markup.
+function GroupStatusDot({ status }) {
     return (
-        <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">
-            Opening the floor plan…
-        </Card>
+        <span
+            aria-hidden="true"
+            className={
+                "h-[7px] w-[7px] rounded-full flex-none " +
+                (status === "done"
+                    ? "bg-[var(--color-success)]"
+                    : status === "entering"
+                        ? "bg-[var(--color-warning)]"
+                        : "bg-[var(--color-line-strong)]")
+            }
+        />
+    );
+}
+
+// Direction A's day landing (2026-08-23 lock): the first screen for an
+// in-progress day, naming which dining team(s) and Bar are still open so a
+// captain who already saved their own team's numbers can see the rest of the
+// day without reopening Settle up. Every row is clickable, including an
+// already-done group - tapping it jumps straight into Settle up with that
+// group's tab active, and editing it there silently clears the mark (plan Q9)
+// exactly as it would from inside the editor. Runners is listed but always
+// reads Done and is excluded from `closeReadiness` entirely - see
+// buildCloseoutGroups (shiftEditorUtils.js).
+//
+// The tab strip itself stays inside Settle up (Direction A's whole
+// differentiator from B - see data/tip-tracker-parallel-settle-ui-a/report.md);
+// this checklist is only the entry point into it, not a second switcher.
+function SettleWhosLeftLanding({ lineup, onOpenGroup, onContinueSettle }) {
+    const groups = buildCloseoutGroups({
+        teams: lineup?.teams || [],
+        barTeam: lineup?.barTeam || { members: [], pools: {} },
+        runners: lineup?.runners || [],
+    });
+    const gated = groups.filter((group) => group.kind !== "runners" && group.hasPeople);
+    const stillOpen = gated.filter((group) => !group.markedDone);
+    const firstOpenId = stillOpen[0]?.id || groups[0]?.id || null;
+
+    return (
+        <div className="space-y-3 pb-24">
+            <Card className="!p-0">
+                <header className="px-5 py-4 border-b border-[var(--color-line)] flex items-baseline justify-between gap-3">
+                    <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
+                        Settle up
+                    </h2>
+                    {gated.length > 0 ? (
+                        stillOpen.length > 0 ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)]">
+                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
+                                {stillOpen.length} {stillOpen.length === 1 ? "group" : "groups"} still open
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
+                                <span aria-hidden="true">✓</span>
+                                All done
+                            </span>
+                        )
+                    ) : null}
+                </header>
+                <ul className="divide-y divide-[var(--color-line)]">
+                    {groups.map((group) => (
+                        <li key={group.id}>
+                            <button
+                                type="button"
+                                onClick={() => onOpenGroup?.(group.id)}
+                                className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-[var(--color-surface-muted)] min-h-[44px]"
+                            >
+                                <span className="inline-flex items-center gap-2.5 min-w-0">
+                                    <GroupStatusDot status={group.status} />
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm font-semibold text-[var(--color-ink)]">
+                                            {group.name}
+                                        </span>
+                                        <span className="block truncate text-xs text-[var(--color-ink-soft)]">
+                                            {group.sub}
+                                        </span>
+                                    </span>
+                                </span>
+                                <span className="flex-none text-xs font-medium text-[var(--color-ink-soft)]">
+                                    {group.kind === "runners"
+                                        ? "Always done"
+                                        : group.status === "done" ? "Done" : group.status === "entering" ? "Entering" : "Still on tables"}
+                                </span>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+                <div className="px-5 py-4 border-t border-[var(--color-line)]">
+                    <Button
+                        variant="secondary"
+                        onClick={() => (firstOpenId ? onOpenGroup?.(firstOpenId) : onContinueSettle?.())}
+                        className="w-full sm:w-auto"
+                    >
+                        Continue Settle up →
+                    </Button>
+                </div>
+            </Card>
+        </div>
     );
 }
 
@@ -238,23 +317,17 @@ function Hero({ title, body, tall = false, children }) {
     );
 }
 
-function DayRailLanding({ status, summary, lineup, orphanedEntries = [], loading, savedNotice = false, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onRemoveShift, removingShift = false }) {
+function DayRailLanding({ status, summary, lineup, orphanedEntries = [], loading, savedNotice = false, onBuildFloor, onContinueSettle, onOpenReview, onEditFloor, onOpenGroup, onRemoveShift, removingShift = false }) {
     const stage = getLandingStage(status);
     // A refetch of the day already on screen keeps that day on screen - the top
     // progress bar carries the wait. Only a load with nothing to show blanks, which
     // is a first load or a date change (AdminDashboard withholds another date's data).
     const showLoadingCard = loading && !summary && !lineup && !status;
-    // "settle" stage redirects straight into the floor editor (`SkipToFloorPlan`)
-    // rather than rendering here, but the rail steps are still computed for the
-    // one frame before that redirect fires: Floor active, Settle the reachable
-    // "next" pill into the (directly-editable) money screen.
+    // "settle" stage renders the who's-left checklist below - `getRailSteps`'s own
+    // default (no `activeStep`) already reads a "setup" shift as Settle-active,
+    // Floor-done, exactly matching what's on screen here.
     let railSteps = getRailSteps({ shiftStatus: status });
     if (stage === "settle") {
-        railSteps = railSteps.map((s) =>
-            s.key === "floor" ? { ...s, state: "active" }
-                : s.key === "settle" ? { ...s, state: "pending" }
-                    : s
-        );
         // Once a floor plan exists the landing can open Review directly, same as
         // Settle. Review derives its numbers from the day's saved floor plan and
         // money, so there is nothing to calculate first - and if those inputs are
@@ -265,9 +338,7 @@ function DayRailLanding({ status, summary, lineup, orphanedEntries = [], loading
     }
 
     const onStepClick = (key) => {
-        // Floor has no click handler here - landing on this stage already redirects
-        // into the floor editor before a click is possible. Settle and Review open
-        // the editor at that step.
+        if (key === "floor") onEditFloor?.();
         if (key === "settle") onContinueSettle?.();
         if (key === "review") onOpenReview?.();
     };
@@ -332,7 +403,7 @@ function DayRailLanding({ status, summary, lineup, orphanedEntries = [], loading
                     removingShift={removingShift}
                 />
             ) : stage === "settle" ? (
-                <SkipToFloorPlan onEditFloor={onEditFloor} />
+                <SettleWhosLeftLanding lineup={lineup} onOpenGroup={onOpenGroup} onContinueSettle={onContinueSettle} />
             ) : (
                 <Hero
                     tall

@@ -94,13 +94,38 @@ unchanged to the cent.
 
 ## The Confirm & Save gate
 
-**Exactly one thing blocks Confirm & Save: the shift must balance to within five cents.**
+**The write itself blocks on exactly one thing: the shift must balance to within five cents.**
 Everything else on Review is a warning. `saveClosedShiftAtomically` re-runs
 `reconcilePayoutLedger` and throws before building the batch, so Review must never offer a save
 the write path would refuse - `describeShiftBalance` (`src/utils/shiftBalance.js`) mirrors that
 check, disables the button and says which pool the money is stranded in, reading the engine's
 own `balances.poolBalances` (whose entries sum exactly to `overallBalance`) rather than
-re-deriving anything. Keep the two in step.
+re-deriving anything. Keep the two in step. The button itself carries one more, UI-only gate on
+top of this - see "Parallel Settle up's close gate" below - but the atomic write is otherwise
+unchanged: it is still one commit, still gated only on balance.
+
+### Parallel Settle up's close gate
+
+Since 2026-08-23 (Direction A, locked with the captain), the Confirm & Save button is also
+disabled until every assigned dining team and Bar are marked done on Settle up
+(`summarizeCloseReadiness`, `src/utils/settleStatus.js`) - this is checked in
+`ShiftEditorPanel.jsx`'s `closeGateBlocked`, entirely separate from `saveBlocked`'s balance check
+above, and only while the shift is still unsettled (`shiftStatus !== "closed"`; a later correction
+re-save asks only that the shift balances, same as always). Runners is excluded from this gate by
+construction - it defaults done and is never read by `summarizeCloseReadiness`.
+
+Money entered during this unsettled phase writes to a live per-group scoped location rather than
+the whole shift document, so two Supervisors settling different groups at once cannot overwrite
+each other - see `src/utils/settleGroupPersistence.js` for the mechanism and why a dining team
+needs a `shifts/{date}/settleGroups/{teamId}` doc of its own (Bar does not: it's a single map
+field, so its scoped write is a plain dotted-path update).
+
+**One accepted, deliberate risk, not a bug to "fix" without checking back with the captain
+first**: if two Supervisors are ever on the exact SAME group at the same moment, whichever
+scoped write lands last is kept silently - no lock, no warning. Chosen over locking or blocking,
+for simplicity, when the plan was scoped (`data/tip-tracker-parallel-settle-plan/report.md`,
+Q5). It is a narrower race than the whole-document one this feature replaces: it only bites on
+the exact same group, never on two different groups.
 
 `describeSaveFailure` (`src/utils/saveFailure.js`) covers the other end - a save that WAS
 attempted and refused - and its fallback branch must keep carrying the raw error text; the
