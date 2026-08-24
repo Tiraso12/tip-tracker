@@ -73,7 +73,7 @@ branch model - read it rather than trusting a summary here.
   `origin/develop` as current. Before branching, or before trusting a "my base is current"
   check, diff your branch point against local `main`
   (`git log --oneline <your-base>..main`), not `develop`.
-- **Ship through no-mistakes.** It is the default workflow; yolo stays off. PRs target `main`.
+- **Deliver locally.** no-mistakes reviews, tests, lint, and docs run locally. Do not push, open a PR, or change GitHub unless the captain explicitly asks. When they do ask to publish, no-mistakes is the path and yolo stays off.
 - **A negative CTP is correct. Never add a guard, a clamp, or a floor on it.** The captain
   declined that guard deliberately - see
   [docs/MONEY-MODEL.md § A negative CTP is correct](docs/MONEY-MODEL.md#a-negative-ctp-is-correct).
