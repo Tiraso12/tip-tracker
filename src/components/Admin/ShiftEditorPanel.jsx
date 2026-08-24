@@ -1066,33 +1066,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     return (
         <div className={"space-y-3 sm:space-y-4"
             + (effectiveStep === "settle" ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
-            {/* Opening a group from the day landing's who's-left checklist is not a
-                trap: this is the one way back to it that works from every step, at
-                every width, including a phone (which has no sidebar - see
-                AGENTS.md's "no workspace menu on a phone" note). The app bar's home
-                control jumps to TODAY's shifts, not necessarily the date being
-                edited, and used to be the only exit off a phone; that gap is what
-                left a Supervisor covering two teams stuck once they left the
-                checklist. Same navigation `handleNavItemClick("shifts")` already
-                does elsewhere (leave-guarded, refetches this date), just reachable
-                from inside the editor itself rather than only from the sidebar. */}
-            {onBackToLanding ? (
-                <button
-                    type="button"
-                    onClick={onBackToLanding}
-                    className="inline-flex min-h-[44px] items-center gap-1.5 -ml-1 px-1 text-sm font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
-                >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <polyline points="15 6 9 12 15 18" />
-                    </svg>
-                    Back to Shifts
-                </button>
-            ) : null}
-
             {/* The day rail: an ordered, day-level step trail (see DayRail.jsx).
                 Status is always shown; earlier/reachable steps are one tap away
-                (order never forced). */}
-            <DayRail steps={railSteps} onStepClick={goToStep} />
+                (order never forced). `onBack` is the editor exit onto this day's
+                landing - leading the rail so it is reachable from every step and
+                every width, including a phone with no sidebar. */}
+            <DayRail steps={railSteps} onStepClick={goToStep} onBack={onBackToLanding} />
 
             <div>
                 {stepContent}

@@ -708,8 +708,8 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             // The Day Rail names the active step, so the editor needs no eyebrow or
             // step labels here. This header block itself is hidden on a phone
             // (`hidden sm:flex` below), so its own `actions` slot is not where the
-            // editor's exit lives - ShiftEditorPanel renders its own "Back to
-            // Shifts" link above its Day Rail instead, visible at every width.
+            // editor's exit lives - DayRail's optional `onBack` leads the trail
+            // instead, visible at every width.
             return {
                 eyebrow: null,
                 title: "Edit shift",
