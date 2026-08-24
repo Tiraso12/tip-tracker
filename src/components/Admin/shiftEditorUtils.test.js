@@ -6,6 +6,7 @@ import {
     buildCloseoutGroups,
     buildPayoutReview,
     deriveRunnersFee,
+    findViewerGroup,
     fmtAmount,
     getPayoutNonCashTotal,
     getTeamSummary,
@@ -327,4 +328,40 @@ test("buildCloseoutGroups: Bar carries its own markedDone independent of dining 
     const bar = groups.find(g => g.id === "bar");
     assert.equal(bar.status, "done");
     assert.equal(groups.find(g => g.id === "team-1").status, "working");
+});
+
+// Friendly entry (Path 3): the who's-left landing pins whichever group the
+// signed-in viewer is on tonight's floor plan, so this is the lookup that
+// decides whether a pinned card renders at all.
+const FRIENDLY_LINEUP = {
+    teams: [
+        { teamId: "team-1", members: [{ uid: "captainUid", role: "captain" }] },
+        { teamId: "team-2", members: [{ uid: "serverUid", role: "server" }] },
+    ],
+    barTeam: { members: [{ uid: "barUid", role: "bartender" }] },
+};
+
+test("findViewerGroup finds a dining-team member", () => {
+    assert.deepEqual(findViewerGroup(FRIENDLY_LINEUP, "serverUid"), { groupId: "team-2", role: "server" });
+});
+
+test("findViewerGroup finds a Bar member", () => {
+    assert.deepEqual(findViewerGroup(FRIENDLY_LINEUP, "barUid"), { groupId: "bar", role: "bartender" });
+});
+
+test("findViewerGroup returns null for a manager or Supervisor never on the floor plan", () => {
+    assert.equal(findViewerGroup(FRIENDLY_LINEUP, "managerUid"), null);
+});
+
+test("findViewerGroup returns null with no uid or no lineup, rather than throwing", () => {
+    assert.equal(findViewerGroup(FRIENDLY_LINEUP, null), null);
+    assert.equal(findViewerGroup(null, "serverUid"), null);
+    assert.equal(findViewerGroup(undefined, undefined), null);
+});
+
+// Runners is deliberately never scanned - a Runner's group is always Done, so
+// there is nothing for the pinned card to point at.
+test("findViewerGroup never matches a Runner, even though runners carry a uid", () => {
+    const lineup = { ...FRIENDLY_LINEUP, runners: [{ uid: "runnerUid", role: "runner" }] };
+    assert.equal(findViewerGroup(lineup, "runnerUid"), null);
 });

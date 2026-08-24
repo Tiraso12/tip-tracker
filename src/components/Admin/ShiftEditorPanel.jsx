@@ -63,7 +63,7 @@ const DISCARD_EDIT_CONFIRMATION =
     "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
     "current payouts unchanged.";
 
-function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", initialActiveGroupId = null, onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
+function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, initialStep = "floor", initialActiveGroupId = null, onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
     const { user } = useAuth();
     const { beginPendingAction } = usePendingActions();
     const [teams, setTeams] = useState([
@@ -710,6 +710,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
     // the trailing debounce) plus the mark itself, in one write - the button's
     // own name says "save", not just "mark". Never reachable on a closed shift
     // (SettleStep doesn't render the button there), guarded again here anyway.
+    //
+    // Friendly entry (Path 3, decision 3 / build step 5): `onGroupMarkedDone`
+    // fires once the write actually lands, not optimistically - the caller
+    // navigates back to the who's-left landing, and that landing re-reads this
+    // same settleGroups collection, so it must not read "done" before Firestore
+    // does.
     const handleMarkGroupDone = useCallback((groupId) => {
         if (shiftStatus === "closed") return;
         const pending = pendingGroupSaveRef.current;
@@ -722,7 +728,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
             setBarTeam(prev => ({ ...prev, markedDone: true }));
             updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
                 pools: barTeam.pools, markedDone: true, now, updatedBy: user?.uid || null,
-            })).catch(e => console.error("Failed to save Bar's settle draft:", e));
+            }))
+                .then(() => onGroupMarkedDone?.(groupId))
+                .catch(e => console.error("Failed to save Bar's settle draft:", e));
             return;
         }
         const team = teams.find(t => t.teamId === groupId);
@@ -730,8 +738,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, initialStep = "floor", 
         setTeams(prev => prev.map(t => (t.teamId === groupId ? { ...t, markedDone: true } : t)));
         setDoc(doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId), buildTeamGroupDraft({
             pools: team.pools, contracts: team.contracts, markedDone: true, now, updatedBy: user?.uid || null,
-        })).catch(e => console.error(`Failed to save the ${groupId} settle draft:`, e));
-    }, [barTeam.pools, date, shiftStatus, teams, user?.uid]);
+        }))
+            .then(() => onGroupMarkedDone?.(groupId))
+            .catch(e => console.error(`Failed to save the ${groupId} settle draft:`, e));
+    }, [barTeam.pools, date, onGroupMarkedDone, shiftStatus, teams, user?.uid]);
 
     useEffect(() => {
         // The sole persistence path for a setup shift, covering Floor AND Settle -

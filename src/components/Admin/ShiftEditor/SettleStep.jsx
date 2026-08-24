@@ -1,7 +1,8 @@
+import FloatingActions from "../FloatingActions";
 import ScrollRail from "../ScrollRail";
 import { fmtMoney } from "../shiftEditorUtils";
 import { BarPoolFields } from "./BarPoolFields";
-import { CloseoutEntryPanel } from "./CloseoutEntryPanel";
+import { CloseoutEntryPanel, MarkDoneAction } from "./CloseoutEntryPanel";
 import { PointSplitDisclosure } from "./PointSplitDisclosure";
 import { RailPill } from "./RailPill";
 import { RunnerGroup } from "./RunnerGroup";
@@ -147,7 +148,6 @@ export function SettleStep({
                 <CloseoutEntryPanel
                     key={activeGroup.id}
                     group={activeGroup}
-                    onMarkDone={onMarkGroupDone}
                     showUnmarkedCue={unmarkedCueGroupId === activeGroup.id}
                     hideMarkControl={shiftStatus === "closed"}
                 >
@@ -217,6 +217,18 @@ export function SettleStep({
                 </div>
             )}
             </div>
+
+            {/* Save and Mark Done, floated (captain's friendly-entry round-two note,
+                2026-08-24): the same app-wide FloatingActions corner as the Floor/
+                Review screens' primary action, tracking whichever group is active.
+                Hidden on a closed shift, matching CloseoutEntryPanel's own
+                `hideMarkControl` gate - a closed shift's done-state no longer gates
+                anything and edits persist only through Review -> Confirm & Save. */}
+            {activeGroup && shiftStatus !== "closed" ? (
+                <FloatingActions>
+                    <MarkDoneAction group={activeGroup} onMarkDone={onMarkGroupDone} />
+                </FloatingActions>
+            ) : null}
 
             {/* A closed shift disables draft autosave, so surface the live save/
                 draft status inline; a setup shift's money autosaves silently. Settle

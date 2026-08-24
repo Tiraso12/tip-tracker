@@ -171,6 +171,26 @@ export function buildCloseoutGroups({ teams = [], barTeam = { members: [], pools
     ];
 }
 
+// Friendly entry (2026-08-24 lock, Path 3): which group, if any, the signed-in
+// viewer is assigned to on tonight's floor plan - so the day landing can pin
+// "your team" with a one-tap Settle up instead of asking a question the floor
+// plan already answers. Scans dining teams then Bar; a captain covering more
+// than one group (should not happen, but the floor plan doesn't forbid it)
+// resolves to the first match, same left-to-right order the checklist itself
+// reads in. Runners is deliberately never scanned - it is always Done, so
+// there is nothing to pin a Runner to.
+export function findViewerGroup(lineup, uid) {
+    if (!uid) return null;
+    const teams = lineup?.teams || [];
+    for (const team of teams) {
+        const member = (team.members || []).find(m => m.uid === uid);
+        if (member) return { groupId: team.teamId, role: member.role };
+    }
+    const barMember = (lineup?.barTeam?.members || []).find(m => m.uid === uid);
+    if (barMember) return { groupId: "bar", role: barMember.role };
+    return null;
+}
+
 // ---- The bar's Runners Fee and the food sales it comes from ----
 //
 // The fee IS 3% of the bar's total food sales, but the AMOUNT is the field the

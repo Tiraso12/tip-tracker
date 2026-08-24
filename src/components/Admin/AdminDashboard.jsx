@@ -401,6 +401,18 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         setWeekStatusTick((n) => n + 1);
     };
 
+    // Friendly entry (Path 3, decision 3): "Save and Mark Done" returns to the
+    // who's-left landing rather than staying on the group just closed out, so the
+    // captain immediately sees which groups are still open. Only one group's
+    // money was committed here - not the whole shift - so this deliberately does
+    // NOT touch `shiftSaved`/the "Saved. Payouts for this date are recorded."
+    // banner, which is reserved for a full Confirm & Save.
+    const handleGroupMarkedDone = useCallback(() => {
+        setActiveTab("shifts");
+        fetchDayPayouts(selectedDate);
+        setWeekStatusTick((n) => n + 1);
+    }, [selectedDate, fetchDayPayouts]);
+
     // Hard-delete a settled shift for the selected date. This permanently removes
     // the shift and everyone's payouts for that date from all dashboards (the
     // employee cards clear live because they subscribe to the ledger), and cannot
@@ -891,6 +903,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                             <DayRailLanding
                                 summary={dayDataIsCurrent ? daySummary : null}
                                 lineup={dayDataIsCurrent ? dayLineup : null}
+                                viewerUid={user?.uid || null}
                                 status={dayDataIsCurrent ? dayShiftStatus : null}
                                 orphanedEntries={dayDataIsCurrent ? dayOrphanedEntries : []}
                                 loading={dayLoading || !dayDataIsCurrent}
@@ -914,6 +927,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                         date={selectedDate}
                                         allEmployees={floorPlanPool}
                                         onClose={handleEditorClose}
+                                        onGroupMarkedDone={handleGroupMarkedDone}
                                         initialStep={editorStep}
                                         initialActiveGroupId={editorActiveGroupId}
                                         onRegisterLeaveGuard={registerEditorLeaveGuard}

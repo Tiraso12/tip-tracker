@@ -128,7 +128,16 @@ done-state gate entirely. Whichever group's tab is currently active is protected
 overwrites (so a live update from elsewhere never reverts in-flight typing); every other group
 stays live-fresh. Direction A: the tab strip stays on Settle up - switching groups never navigates
 away - and the day landing's who's-left checklist (`DayRailLanding.jsx`) is a read-only render of
-the same `buildCloseoutGroups` (`shiftEditorUtils.js`) ShiftEditorPanel itself uses.
+the same `buildCloseoutGroups` (`shiftEditorUtils.js`) ShiftEditorPanel itself uses. Friendly entry
+(Path 3, on top of Direction A): the checklist pins a "your team tonight" card for whichever group
+the signed-in viewer is on tonight's floor plan (`findViewerGroup`, `shiftEditorUtils.js`, scans
+`teams[].members`/`barTeam.members` by uid; Runners is never scanned - it has nothing to pin to). An
+off-plan viewer (the manager, a covering Supervisor) sees the plain checklist, no card. Save and Mark
+Done is a floating action (`MarkDoneAction`, `ShiftEditor/CloseoutEntryPanel.jsx`, rendered through
+`FloatingActions` from `SettleStep.jsx`), not a button inside the entry panel; the panel keeps only
+the quiet "mark cleared" cue. Marking a group done returns to the who's-left landing
+(`onGroupMarkedDone`, threaded `ShiftEditorPanel` → `AdminDashboard`), and once every gated group is
+done the landing's footer swaps to "All groups closed - Review →".
 
 ## Pay statement (src/components/Pay/)
 Handles the pay stub: one range of days, CTP/GRT/Total/cash, for a person.
