@@ -248,4 +248,29 @@ test.describe("friendly entry into Settle up", () => {
 
         await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
     });
+
+    // Regression (captain-reported, 2026-08-24): opening a team from the
+    // checklist used to be a trap on a phone - there is no sidebar there, and
+    // the account sheet's "Shifts" item jumps to TODAY rather than back to the
+    // day being edited. A Supervisor covering two teams could get into the
+    // first one and never find their way back to pick the second.
+    test("opening a team from the checklist is not a trap: Back to Shifts returns to the same day", async ({ page }) => {
+        await login(page, PEOPLE.captain.email);
+        await setShiftDate(page, TWO_TEAM_DAY);
+
+        await page.getByRole("button", { name: /Team 1/ }).click();
+        await expect(page.getByRole("tab", { name: /Team 1/ })).toHaveAttribute("aria-selected", "true");
+
+        const backLink = page.getByRole("button", { name: "Back to Shifts" });
+        await expect(backLink).toBeVisible();
+        await backLink.click();
+
+        // Back on THIS day's checklist, not today's.
+        await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
+        await expect(page.getByRole("button", { name: /Shift date:/ })).toContainText("Jun 10");
+
+        // A different team is one tap away from there.
+        await page.getByRole("button", { name: /Team 2/ }).click();
+        await expect(page.getByRole("tab", { name: /Team 2/ })).toHaveAttribute("aria-selected", "true");
+    });
 });

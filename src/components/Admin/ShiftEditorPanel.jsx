@@ -63,7 +63,7 @@ const DISCARD_EDIT_CONFIRMATION =
     "Confirm & Save Shift. Leaving now returns to the saved shift and keeps its " +
     "current payouts unchanged.";
 
-function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, initialStep = "floor", initialActiveGroupId = null, onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
+function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBackToLanding, initialStep = "floor", initialActiveGroupId = null, onRegisterLeaveGuard, onRemoveSetupDay, removingSetupDay = false }) {
     const { user } = useAuth();
     const { beginPendingAction } = usePendingActions();
     const [teams, setTeams] = useState([
@@ -706,6 +706,26 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, init
 
     useEffect(() => () => flushPendingGroupSave(), [flushPendingGroupSave]);
 
+    // The sole persistence path for a setup shift, covering Floor AND Settle -
+    // both are directly editable with no lock/Cancel/Done, so this is the only
+    // thing that saves either, INCLUDING creating `shifts/{date}` itself for a
+    // shift built entirely from scratch. Debounced 1s, but flushable: a caller
+    // that is about to navigate away (handleMarkGroupDone below) can force this
+    // write to happen NOW rather than let an unmount silently cancel a still-
+    // pending timer and drop the shift's own creation write - the bug a
+    // Supervisor hit by entering money and marking a brand-new shift's only
+    // team done fast enough that the whole-document save hadn't landed yet.
+    const pendingDraftSaveRef = useRef({ timeoutId: null, run: null });
+
+    const flushPendingDraftSave = useCallback(async () => {
+        const pending = pendingDraftSaveRef.current;
+        if (pending.timeoutId == null) return;
+        window.clearTimeout(pending.timeoutId);
+        await pending.run();
+    }, []);
+
+    useEffect(() => () => flushPendingDraftSave(), [flushPendingDraftSave]);
+
     // "Save and Mark Done": commits the group's current fields right now (not on
     // the trailing debounce) plus the mark itself, in one write - the button's
     // own name says "save", not just "mark". Never reachable on a closed shift
@@ -715,7 +735,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, init
     // fires once the write actually lands, not optimistically - the caller
     // navigates back to the who's-left landing, and that landing re-reads this
     // same settleGroups collection, so it must not read "done" before Firestore
-    // does.
+    // does. It also awaits `flushPendingDraftSave` alongside its own write - a
+    // shift built from scratch this same visit may still have its very first
+    // whole-document save (the one that creates `shifts/{date}` and the floor
+    // plan on it) sitting on the 1s debounce below; without the flush, marking
+    // done navigates away, the panel unmounts, and that pending save is
+    // cancelled before it ever lands - the landing then reads no shift at all.
     const handleMarkGroupDone = useCallback((groupId) => {
         if (shiftStatus === "closed") return;
         const pending = pendingGroupSaveRef.current;
@@ -726,9 +751,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, init
         const now = new Date().toISOString();
         if (groupId === "bar") {
             setBarTeam(prev => ({ ...prev, markedDone: true }));
-            updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
-                pools: barTeam.pools, markedDone: true, now, updatedBy: user?.uid || null,
-            }))
+            Promise.all([
+                flushPendingDraftSave(),
+                updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
+                    pools: barTeam.pools, markedDone: true, now, updatedBy: user?.uid || null,
+                })),
+            ])
                 .then(() => onGroupMarkedDone?.(groupId))
                 .catch(e => console.error("Failed to save Bar's settle draft:", e));
             return;
@@ -736,24 +764,25 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, init
         const team = teams.find(t => t.teamId === groupId);
         if (!team) return;
         setTeams(prev => prev.map(t => (t.teamId === groupId ? { ...t, markedDone: true } : t)));
-        setDoc(doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId), buildTeamGroupDraft({
-            pools: team.pools, contracts: team.contracts, markedDone: true, now, updatedBy: user?.uid || null,
-        }))
+        Promise.all([
+            flushPendingDraftSave(),
+            setDoc(doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId), buildTeamGroupDraft({
+                pools: team.pools, contracts: team.contracts, markedDone: true, now, updatedBy: user?.uid || null,
+            })),
+        ])
             .then(() => onGroupMarkedDone?.(groupId))
             .catch(e => console.error(`Failed to save the ${groupId} settle draft:`, e));
-    }, [barTeam.pools, date, onGroupMarkedDone, shiftStatus, teams, user?.uid]);
+    }, [barTeam.pools, date, flushPendingDraftSave, onGroupMarkedDone, shiftStatus, teams, user?.uid]);
 
     useEffect(() => {
-        // The sole persistence path for a setup shift, covering Floor AND Settle -
-        // both are directly editable with no lock/Cancel/Done, so this is the only
-        // thing that saves either. Stays off for a closed shift: edits there persist
-        // only through Review -> Confirm & Save (see handleConfirmSave below).
+        // Stays off for a closed shift: edits there persist only through
+        // Review -> Confirm & Save (see handleConfirmSave below).
         if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
-        let cancelled = false;
         const wasAlreadySetup = shiftStatus === "setup";
-        const timeoutId = window.setTimeout(async () => {
+        const run = async () => {
+            pendingDraftSaveRef.current = { timeoutId: null, run: null };
             setDraftStatus("Saving draft...");
             try {
                 await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
@@ -768,21 +797,25 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, init
                 // profile on every autosave tick while actively editing.
                 if (!wasAlreadySetup) await markUserHistoryFlags("setup");
 
-                if (!cancelled) {
-                    setShiftStatus("setup");
-                    setDraftStatus("Draft saved.");
-                }
+                setShiftStatus("setup");
+                setDraftStatus("Draft saved.");
             } catch (e) {
                 console.error("Failed to autosave closeout draft:", e);
-                if (!cancelled) {
-                    setDraftStatus("Draft autosave failed.");
-                }
+                setDraftStatus("Draft autosave failed.");
             }
-        }, 1000);
+        };
+
+        const timeoutId = window.setTimeout(run, 1000);
+        pendingDraftSaveRef.current = { timeoutId, run };
 
         return () => {
-            cancelled = true;
-            window.clearTimeout(timeoutId);
+            // Only this instance's own still-pending timer - a flush (or the
+            // timer firing normally) already cleared the ref itself, and must
+            // not be cancelled out from under it by a later render's cleanup.
+            if (pendingDraftSaveRef.current.timeoutId === timeoutId) {
+                window.clearTimeout(timeoutId);
+                pendingDraftSaveRef.current = { timeoutId: null, run: null };
+            }
         };
     }, [
         barTeam,
@@ -1033,6 +1066,29 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, init
     return (
         <div className={"space-y-3 sm:space-y-4"
             + (effectiveStep === "settle" ? " max-[560px]:space-y-0" : " max-[560px]:space-y-2")}>
+            {/* Opening a group from the day landing's who's-left checklist is not a
+                trap: this is the one way back to it that works from every step, at
+                every width, including a phone (which has no sidebar - see
+                AGENTS.md's "no workspace menu on a phone" note). The app bar's home
+                control jumps to TODAY's shifts, not necessarily the date being
+                edited, and used to be the only exit off a phone; that gap is what
+                left a Supervisor covering two teams stuck once they left the
+                checklist. Same navigation `handleNavItemClick("shifts")` already
+                does elsewhere (leave-guarded, refetches this date), just reachable
+                from inside the editor itself rather than only from the sidebar. */}
+            {onBackToLanding ? (
+                <button
+                    type="button"
+                    onClick={onBackToLanding}
+                    className="inline-flex min-h-[44px] items-center gap-1.5 -ml-1 px-1 text-sm font-medium text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="15 6 9 12 15 18" />
+                    </svg>
+                    Back to Shifts
+                </button>
+            ) : null}
+
             {/* The day rail: an ordered, day-level step trail (see DayRail.jsx).
                 Status is always shown; earlier/reachable steps are one tap away
                 (order never forced). */}

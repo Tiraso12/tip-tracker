@@ -705,8 +705,11 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             };
         }
         if (activeTab === "editor") {
-            // The Day Rail names the active step, so the editor needs no eyebrow,
-            // step labels, or Back action here - the workspace nav handles exit.
+            // The Day Rail names the active step, so the editor needs no eyebrow or
+            // step labels here. This header block itself is hidden on a phone
+            // (`hidden sm:flex` below), so its own `actions` slot is not where the
+            // editor's exit lives - ShiftEditorPanel renders its own "Back to
+            // Shifts" link above its Day Rail instead, visible at every width.
             return {
                 eyebrow: null,
                 title: "Edit shift",
@@ -928,6 +931,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                         allEmployees={floorPlanPool}
                                         onClose={handleEditorClose}
                                         onGroupMarkedDone={handleGroupMarkedDone}
+                                        onBackToLanding={() => handleNavItemClick("shifts")}
                                         initialStep={editorStep}
                                         initialActiveGroupId={editorActiveGroupId}
                                         onRegisterLeaveGuard={registerEditorLeaveGuard}

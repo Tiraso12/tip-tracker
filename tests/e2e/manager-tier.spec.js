@@ -301,6 +301,9 @@ test("a Supervisor-on captain can discard an accidental setup day and still cann
     await expect(removeShift(page)).toHaveCount(0);
 
     await setShiftDate(page, EMPTY_DAY);
+    // Direction A: a setup day with an (even empty) floor plan lands on the
+    // who's-left checklist, not an auto-redirect into the floor editor.
+    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Floor" }).click();
     await expect(page.getByRole("button", { name: "Remove this day" })).toBeVisible();
     await expect(removeShift(page)).toHaveCount(0);
 

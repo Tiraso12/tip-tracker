@@ -241,6 +241,17 @@ async function closeTeamPicker(page) {
 
 // Setup-shift Settle up flow. Floor and money are directly editable and autosave;
 // Review is reached from the day rail because it derives from the live inputs.
+//
+// Parallel Settle up's close gate (Direction A, 2026-08-23 lock): Confirm & Save
+// stays locked until every assigned dining team and Bar are marked done, so this
+// helper's callers all assign a single dining team (no Bar members) and need
+// Save and Mark Done, floated bottom-right, before Review offers an enabled
+// Confirm & Save Shift. Friendly entry (Path 3, 2026-08-24 lock): Save and Mark
+// Done itself returns to the who's-left landing rather than staying in Settle
+// up - with the only gated group now done, its footer swaps to a direct
+// "All groups closed - Review ->" handoff, which this helper follows instead
+// of the day rail's own Review step (that rail no longer exists on screen once
+// the mark-done write lands).
 async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
@@ -249,8 +260,14 @@ async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
+    // Wait for the whole-shift roster autosave to land before marking done: the
+    // landing this returns to re-reads the shift doc, and racing that read
+    // against an in-flight first autosave (blank day -> "setup") can catch it
+    // before the floor plan just assigned is on the doc at all.
+    await expect(page.getByText("Draft saved.")).toBeVisible();
+    await page.getByRole("button", { name: "Save and Mark Done" }).click();
 
-    await rail.getByRole("button", { name: "Review" }).click();
+    await page.getByRole("button", { name: "All groups closed - Review →" }).click();
     await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
 }
 
@@ -570,8 +587,12 @@ test("an accidental setup day can be removed from the floor plan", async ({ page
 
     await setShiftDate(page, date);
 
-    // Setup days skip into the floor editor. The discard lives there, not on
-    // the closed-day danger zone, and its confirm is the lighter copy.
+    // Direction A's who's-left checklist is the landing for a setup day with an
+    // existing floor plan (no more auto-redirect into the floor editor) - reach
+    // the floor editor through its own Day Rail step, same as the checklist's
+    // own rail. The discard lives there, not on the closed-day danger zone, and
+    // its confirm is the lighter copy.
+    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Floor plan" }).click();
     await expect(page.getByRole("button", { name: "Remove this day" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Remove this shift" })).toHaveCount(0);
 
@@ -678,15 +699,14 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
 
-        // A saved setup shift opens straight into the editable floor plan.
+        // Direction A: a setup shift with an existing floor plan lands on the
+        // who's-left checklist, not an auto-redirect into the floor editor -
+        // Floor plan is one rail tap away from there, same as Settle and Review.
+        const rail = page.getByRole("navigation", { name: "Day steps" });
+        await rail.getByRole("button", { name: "Floor" }).click();
         await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
         await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toHaveCount(0);
         await expect(page.getByRole("button", { name: "✓ Done", exact: true })).toHaveCount(0);
-        const rail = page.getByRole("navigation", { name: "Day steps" });
-
-        // Tapping Floor keeps the same directly editable floor step.
-        await rail.getByRole("button", { name: "Floor" }).click();
-        await expect(page.getByRole("button", { name: "Add restaurant team" })).toBeVisible();
 
         // Advancing to Settle shows editable money fields immediately.
         await rail.getByRole("button", { name: "Settle" }).click();
@@ -739,6 +759,9 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
 
+        // Direction A: reach the floor editor from the who's-left checklist's
+        // own Day Rail rather than an auto-redirect.
+        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Floor" }).click();
         await openTeamPicker(page, "Team 1");
         await assignFromPool(page, "Back One");
         await closeTeamPicker(page);
