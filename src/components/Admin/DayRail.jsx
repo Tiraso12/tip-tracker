@@ -34,10 +34,10 @@ import { getNextStep } from "../../utils/dayFlow";
 // row above the rail read as leftover chrome, the page header that could host
 // it is hidden on a phone, and the app bar's home control jumps to TODAY not
 // this date. A hairline keeps it from reading as "previous step" opposite Next.
-function DayRail({ steps, onStepClick, onBack, className = "" }) {
+function DayRail({ steps, onStepClick, onBack, className = "", hideNext = false }) {
     const activeKey = steps.find((step) => step.state === "active")?.key ?? null;
     const nextStep = activeKey ? steps.find((step) => step.key === getNextStep(activeKey)) : null;
-    const canAdvance = Boolean(nextStep?.clickable);
+    const canAdvance = !hideNext && Boolean(nextStep?.clickable);
 
     return (
         <nav

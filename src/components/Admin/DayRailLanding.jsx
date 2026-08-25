@@ -63,49 +63,6 @@ function GroupStatusDot({ status }) {
     );
 }
 
-// Friendly entry, Path 3 (2026-08-24 lock): a pinned "your team tonight" card
-// above the who's-left checklist, for whichever group the signed-in viewer is
-// on tonight's floor plan (`findViewerGroup`, shiftEditorUtils.js). One tap
-// straight to Settle up on that group, instead of picking it out of the list
-// below by eye. Off-plan viewers (the manager, a covering Supervisor, or
-// nobody yet assigned) see no card at all - see data/tip-tracker-friendly-entry-flow
-// report.md decision 2; there is nothing honest to pin them to.
-function PinnedYourTeamCard({ group, role, onOpenGroup }) {
-    if (!group) return null;
-    const isDone = group.status === "done";
-
-    return (
-        <Card className="!p-0 border-[var(--color-accent)]/30" data-testid="pinned-your-team-card">
-            <div className="flex items-center justify-between gap-3 px-5 py-4">
-                <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
-                        Your team tonight
-                    </p>
-                    <p className="mt-0.5 truncate font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
-                        {group.name}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-[var(--color-ink-soft)]">
-                        Working as {roleLabel(role)}
-                    </p>
-                </div>
-                {/* Decision 6: once your own group is marked done the card goes quiet -
-                    muted, "✓ Settled", no button - rather than offering a tap back into
-                    a group that has nothing left to enter. */}
-                {isDone ? (
-                    <span className="flex-none inline-flex items-center gap-1.5 rounded-full bg-[var(--color-success-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--color-success)]">
-                        <span aria-hidden="true">✓</span>
-                        Settled
-                    </span>
-                ) : (
-                    <Button onClick={() => onOpenGroup?.(group.id)} className="flex-none">
-                        Settle up →
-                    </Button>
-                )}
-            </div>
-        </Card>
-    );
-}
-
 // Direction A's day landing (2026-08-23 lock): the first screen for an
 // in-progress day, naming which dining team(s) and Bar are still open so a
 // captain who already saved their own team's numbers can see the rest of the
@@ -119,7 +76,7 @@ function PinnedYourTeamCard({ group, role, onOpenGroup }) {
 // The tab strip itself stays inside Settle up (Direction A's whole
 // differentiator from B - see data/tip-tracker-parallel-settle-ui-a/report.md);
 // this checklist is only the entry point into it, not a second switcher.
-function SettleWhosLeftLanding({ lineup, viewerUid, onOpenGroup, onContinueSettle, onOpenReview }) {
+function SettleWhosLeftLanding({ lineup, viewerUid, onOpenGroup, onOpenReview }) {
     const groups = buildCloseoutGroups({
         teams: lineup?.teams || [],
         barTeam: lineup?.barTeam || { members: [], pools: {} },
@@ -127,8 +84,10 @@ function SettleWhosLeftLanding({ lineup, viewerUid, onOpenGroup, onContinueSettl
     });
     const gated = groups.filter((group) => group.kind !== "runners" && group.hasPeople);
     const stillOpen = gated.filter((group) => !group.markedDone);
-    const firstOpenId = stillOpen[0]?.id || groups[0]?.id || null;
-    // Path 3: the viewer's own group, if the floor plan carries their uid.
+    // Path 3: the viewer's own group, if the floor plan carries their uid -
+    // surfaced only as the "· yours" row hint (Settle-landing review decision 1,
+    // 2026-08-25: the pinned card and its "Continue Settle up" footer are gone,
+    // every tap into Settle up now goes through a row).
     const viewerGroup = findViewerGroup(lineup, viewerUid);
     const pinnedGroup = viewerGroup ? groups.find((group) => group.id === viewerGroup.groupId) : null;
     // Decision 5: once nothing is left open, the footer's job changes from
@@ -138,9 +97,6 @@ function SettleWhosLeftLanding({ lineup, viewerUid, onOpenGroup, onContinueSettl
 
     return (
         <div className="space-y-3 pb-24">
-            {pinnedGroup ? (
-                <PinnedYourTeamCard group={pinnedGroup} role={viewerGroup.role} onOpenGroup={onOpenGroup} />
-            ) : null}
             <Card className="!p-0">
                 <header className="px-5 py-4 border-b border-[var(--color-line)] flex items-baseline justify-between gap-3">
                     <h2 className="font-display text-lg font-medium tracking-tight text-[var(--color-ink)]">
@@ -182,30 +138,25 @@ function SettleWhosLeftLanding({ lineup, viewerUid, onOpenGroup, onContinueSettl
                                         </span>
                                     </span>
                                 </span>
-                                <span className="flex-none text-xs font-medium text-[var(--color-ink-soft)]">
+                                <span className={
+                                    "flex-none text-xs font-medium " +
+                                    (group.status === "empty" ? "text-[var(--color-ink-muted)]" : "text-[var(--color-ink-soft)]")
+                                }>
                                     {group.kind === "runners"
                                         ? "Always done"
-                                        : group.status === "done" ? "Done" : group.status === "entering" ? "Entering" : "Still on tables"}
+                                        : group.status === "done" ? "Done" : group.status === "entering" ? "Entering" : group.status === "empty" ? "Not staffed tonight" : "Still on tables"}
                                 </span>
                             </button>
                         </li>
                     ))}
                 </ul>
-                <div className="px-5 py-4 border-t border-[var(--color-line)]">
-                    {allClosed ? (
+                {allClosed ? (
+                    <div className="px-5 py-4 border-t border-[var(--color-line)]">
                         <Button onClick={() => onOpenReview?.()} className="w-full sm:w-auto">
                             All groups closed - Review →
                         </Button>
-                    ) : (
-                        <Button
-                            variant="secondary"
-                            onClick={() => (firstOpenId ? onOpenGroup?.(firstOpenId) : onContinueSettle?.())}
-                            className="w-full sm:w-auto"
-                        >
-                            Continue Settle up →
-                        </Button>
-                    )}
-                </div>
+                    </div>
+                ) : null}
             </Card>
         </div>
     );
@@ -419,7 +370,12 @@ function DayRailLanding({ status, summary, lineup, viewerUid = null, orphanedEnt
                 mostly-greyed-out labels above a screen already saying "let's set up the
                 floor" - the same words twice, once as a breadcrumb no tap does anything
                 on. */}
-            {stage === "closed" || stage === "build-floor" ? null : <DayRail steps={railSteps} onStepClick={onStepClick} />}
+            {/* Settle-landing review (2026-08-25): the rail's Next duplicates the kept
+                "All groups closed - Review ->" footer once every group is done, and
+                otherwise points past groups still open - so the landing hides it.
+                Editor steps (ShiftEditorPanel.jsx) keep their Next pill; it does
+                honest work there. */}
+            {stage === "closed" || stage === "build-floor" ? null : <DayRail steps={railSteps} onStepClick={onStepClick} hideNext />}
 
             {/* The Confirm & Save confirmation lands here, on the day it is about,
                 rather than on the editor screen the admin has just left. Inside the
@@ -469,7 +425,6 @@ function DayRailLanding({ status, summary, lineup, viewerUid = null, orphanedEnt
                     lineup={lineup}
                     viewerUid={viewerUid}
                     onOpenGroup={onOpenGroup}
-                    onContinueSettle={onContinueSettle}
                     onOpenReview={onOpenReview}
                 />
             ) : (

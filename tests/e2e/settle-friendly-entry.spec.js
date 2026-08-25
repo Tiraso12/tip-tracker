@@ -3,19 +3,22 @@ import { test, expect } from "@playwright/test";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { doc, setDoc } from "firebase/firestore";
 
-// Friendly entry into Settle up, Path 3 (2026-08-24 lock, on top of Direction A):
-// a pinned "your team tonight" card for whoever the signed-in captain is on
-// tonight's floor plan, one tap to Settle up on that group, Save and Mark Done as
-// a floating action, and a return to the who's-left landing that shows who is
-// still open - see data/tip-tracker-friendly-entry-flow/report.md build step 8.
+// Friendly entry into Settle up, Path 3 (2026-08-24 lock, on top of Direction A),
+// as narrowed by the Settle-landing review (2026-08-25): the who's-left checklist
+// marks whichever group the signed-in captain is on tonight's floor plan with a
+// "· yours" hint, and every row - not a pinned card or footer button - carries
+// the tap into Settle up. Save and Mark Done is a floating action, and saving
+// returns to the who's-left landing - see
+// data/tip-tracker-settle-landing-review/report.md ("The decided landing").
 //
 // Three cases, matching the report's own spec:
-//   1. A captain seeded on Team 2: the pinned card names Team 2, one tap opens
-//      Team 2's tab, Save and Mark Done floats, and saving returns to the
+//   1. A captain seeded on Team 2: the row reads "Team 2 · yours", tapping it
+//      opens Team 2's tab, Save and Mark Done floats, and saving returns to the
 //      landing with Team 2 settled and the rest of the day still counted.
-//   2. The manager (never on a floor plan) sees no pinned card at all.
+//   2. The manager (never on a floor plan) sees the plain checklist, no "· yours"
+//      hint on any row.
 //   3. Every gated group already done: the landing offers "All groups closed -
-//      Review →" instead of "Continue Settle up", and it opens Review.
+//      Review →", and it opens Review.
 
 const PROJECT_ID = "demo-tip-tracker-test";
 const PASSWORD = "Password123!";
@@ -52,9 +55,9 @@ async function clearAuthUsers() {
 }
 
 // A saved-but-not-settled ("setup") day with two dining teams: Team 1 (a
-// server, nothing entered) and Team 2 (the captain, who the pinned card
-// should recognize). Both are open, so the checklist's "still open" count has
-// something to count once Team 2 is marked done.
+// server, nothing entered) and Team 2 (the captain, whose row should carry
+// the "· yours" hint). Both are open, so the checklist's "still open" count
+// has something to count once Team 2 is marked done.
 async function seedTwoTeamDay(db) {
     await setDoc(doc(db, `shifts/${TWO_TEAM_DAY}`), {
         date: TWO_TEAM_DAY,
@@ -181,22 +184,18 @@ test.beforeEach(async () => {
 test.describe("friendly entry into Settle up", () => {
     test.use({ viewport: IPHONE_17_PRO });
 
-    test("a captain on Team 2 gets a pinned one-tap card, and Save and Mark Done floats", async ({ page }) => {
+    test("a captain on Team 2 gets a '· yours' row hint, and Save and Mark Done floats", async ({ page }) => {
         await login(page, PEOPLE.captain.email);
         await setShiftDate(page, TWO_TEAM_DAY);
 
-        // The pinned card names the captain's own group and how they worked it -
-        // not Team 1, which is also open tonight but not theirs.
-        const pinnedCard = page.getByTestId("pinned-your-team-card");
-        await expect(pinnedCard.getByText("Your team tonight")).toBeVisible();
-        await expect(pinnedCard.getByText("Team 2", { exact: true })).toBeVisible();
-        await expect(pinnedCard.getByText(/Working as Captain/)).toBeVisible();
+        // The checklist marks the captain's own group - not Team 1, which is
+        // also open tonight but not theirs.
+        const yoursRow = page.getByRole("button", { name: /Team 2/ });
+        await expect(yoursRow.getByText("· yours")).toBeVisible();
 
-        // The checklist below still lists everyone, with the pinned group marked.
-        await expect(page.getByText("Team 2 · yours")).toBeVisible();
-
-        // One tap from the pinned card straight into Team 2's tab.
-        await pinnedCard.getByRole("button", { name: "Settle up →" }).click();
+        // Tapping the row opens Team 2's tab - the row carries every tap now,
+        // there is no separate pinned card or "Settle up →" button.
+        await yoursRow.click();
         await expect(page.getByRole("tab", { name: /Team 2/ })).toHaveAttribute("aria-selected", "true");
 
         // Enter Team 2's money.
@@ -213,20 +212,19 @@ test.describe("friendly entry into Settle up", () => {
         await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
         await expect(page.getByRole("tab", { name: /Team 2/ })).toHaveCount(0);
 
-        // Decision 6: the pinned card goes quiet once your own group is done.
-        await expect(pinnedCard.getByText("Settled")).toBeVisible();
-        await expect(page.getByRole("button", { name: "Settle up →", exact: true })).toHaveCount(0);
+        // Settle-landing review decision 1: the pinned card and its quiet
+        // "✓ Settled" state are gone - your own group just reads "Done" in the list.
+        await expect(page.getByRole("button", { name: /Team 2/ }).getByText("Done")).toBeVisible();
 
         // The rest of the day is still counted - Team 1 has nothing entered yet.
         await expect(page.getByText("1 group still open")).toBeVisible();
     });
 
-    test("the manager, never on a floor plan, sees the plain checklist with no pinned card", async ({ page }) => {
+    test("the manager, never on a floor plan, sees the plain checklist with no '· yours' hint", async ({ page }) => {
         await login(page, PEOPLE.manager.email);
         await setShiftDate(page, TWO_TEAM_DAY);
 
         await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
-        await expect(page.getByTestId("pinned-your-team-card")).toHaveCount(0);
         await expect(page.getByText("· yours")).toHaveCount(0);
 
         // Every group is still one tap away, same as Direction A's plain landing.
