@@ -147,6 +147,13 @@ screen matched to the kit:
   leaving the editor does not revert already-persisted draft changes. Explicitly undo test data
   with the same UI (remove the teams) rather than assuming an exit reverted it. On a closed shift
   the leave guard still asks before dropping unsaved Review work.
+- That autosave is **silent when it succeeds** - there is no "Draft saved." confirmation on any
+  step, by the captain's own call, because the hint sat on screen looking like unfinished work.
+  Only failure speaks: "Draft autosave failed." shows on Floor plan, Settle up and Review alike
+  and stays up until a later write lands. So never wait on an on-screen cue to know a draft
+  persisted - read the `shifts/{date}` doc (that is what `settleMoneyAndReview` in
+  `tests/e2e/admin-closeout.spec.js` polls). `ShiftEditorPanel.jsx`'s `lastSavedFingerprintRef`
+  carries why the write is gated at all.
 
 ### Shell and payout screen rebuilds
 
