@@ -204,7 +204,7 @@ test.describe("friendly entry into Settle up", () => {
         await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("75");
 
         // Save and Mark Done is a floating action, not a button inside the panel.
-        const floatingDone = page.getByRole("button", { name: "Save and Mark Done" });
+        const floatingDone = page.getByRole("button", { name: "Done" });
         await expect(floatingDone).toBeVisible();
         await floatingDone.click();
 

@@ -236,7 +236,7 @@ async function settleSavedShift(page, { sales, tips, gratuity, cash }) {
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
-    await page.getByRole("button", { name: "Save and Mark Done" }).click();
+    await page.getByRole("button", { name: "Done" }).click();
 
     await page.getByRole("button", { name: "All groups closed - Review →" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();

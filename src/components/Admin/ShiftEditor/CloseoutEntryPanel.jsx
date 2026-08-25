@@ -53,10 +53,10 @@ export function MarkDoneAction({ group, onMarkDone }) {
             {isDone ? (
                 <>
                     <span aria-hidden="true">✓</span>
-                    Marked done
+                    Done
                 </>
             ) : (
-                "Save and Mark Done"
+                "Done"
             )}
         </button>
     );

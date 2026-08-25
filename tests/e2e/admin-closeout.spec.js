@@ -274,7 +274,7 @@ async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
         });
         return savedSales;
     }).toBe(sales);
-    await page.getByRole("button", { name: "Save and Mark Done" }).click();
+    await page.getByRole("button", { name: "Done" }).click();
 
     await page.getByRole("button", { name: "All groups closed - Review →" }).click();
     await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();

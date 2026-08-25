@@ -258,7 +258,7 @@ test("settling a night through the UI leaves the day naming who saved it", async
     // Confirm & Save stays locked until Team 1 (the only gated group here, no
     // Bar members) is marked done; Save and Mark Done returns to the who's-left
     // landing, whose footer then hands off straight into Review.
-    await page.getByRole("button", { name: "Save and Mark Done" }).click();
+    await page.getByRole("button", { name: "Done" }).click();
     await page.getByRole("button", { name: "All groups closed - Review →" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
 
