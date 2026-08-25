@@ -266,10 +266,14 @@ async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     // before the floor plan just assigned is on the doc at all. Autosave is
     // silent on screen (no "Draft saved." hint), so poll the shift doc itself
     // for the money that was just typed rather than any on-screen cue.
-    await expect.poll(async () => testEnv.withSecurityRulesDisabled(async (context) => {
-        const shiftDoc = await getDoc(doc(context.firestore(), `shifts/${SHIFT_DATE}`));
-        return shiftDoc.data()?.teams?.[0]?.pools?.sales;
-    })).toBe(sales);
+    let savedSales;
+    await expect.poll(async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const shiftDoc = await getDoc(doc(context.firestore(), `shifts/${SHIFT_DATE}`));
+            savedSales = shiftDoc.data()?.teams?.[0]?.pools?.sales;
+        });
+        return savedSales;
+    }).toBe(sales);
     await page.getByRole("button", { name: "Save and Mark Done" }).click();
 
     await page.getByRole("button", { name: "All groups closed - Review →" }).click();

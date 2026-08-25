@@ -243,16 +243,20 @@ export function ReviewStep({
                 </p>
             ) : null}
 
-            {/* The only channel left for save progress and autosave failure:
-                the editor no longer has a workspace header, and this used to be
-                `sm:hidden` because that header carried the same string on
-                desktop. It does not exist any more, so the modifier only hid
-                "Draft autosave failed." from every screen wider than a phone -
-                and that string is the one the captain must not miss, since it
-                stays up until a later write actually lands. */}
-            {(saveStatus || draftStatus) ? (
+            {/* Two different audiences for one slot. "Saving…" stays phone-only:
+                the floating primary below already says "Saving shift…" beside a
+                spinner, so at any wider width this line would just print the
+                same news twice. The autosave failure has no such second cue
+                anywhere in the editor - the workspace header that used to carry
+                it is gone - so it shows at every width, and stays up until a
+                later write actually lands. */}
+            {saveStatus ? (
+                <p aria-live="polite" aria-atomic="true" className="sm:hidden text-xs text-[var(--color-ink-soft)]">
+                    {saveStatus}
+                </p>
+            ) : draftStatus ? (
                 <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
-                    {saveStatus || draftStatus}
+                    {draftStatus}
                 </p>
             ) : null}
 
