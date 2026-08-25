@@ -35,6 +35,9 @@ export function summarizeGroupStatuses(groups = []) {
 // a parallel-close model needs to trust one group's numbers as final while
 // another is still open. Runners never calls this: it defaults done and stays
 // out of the gate entirely (the captain's lock excludes it, unlike Bar).
+//   empty    -> nobody on this group in the floor plan - the day landing reads
+//               it as "Not staffed tonight", deliberately NOT "still on
+//               tables": an unstaffed group is not waiting on anyone.
 //   working  -> nothing meaningful entered yet ("still on tables")
 //   entering -> money or other input typed, but not yet marked done
 //   done     -> markedDone is true - the explicit "Save and Mark Done" action
