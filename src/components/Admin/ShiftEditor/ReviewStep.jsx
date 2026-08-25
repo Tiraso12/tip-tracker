@@ -243,13 +243,15 @@ export function ReviewStep({
                 </p>
             ) : null}
 
-            {/* Phone only. The step's warnings block is suppressed above, so
-                this is the only channel left for save progress and failure on a
-                narrow screen - but the desktop workspace header already carries
-                the very same string, and rendering both printed "Draft saved."
-                twice on one screen. */}
+            {/* The only channel left for save progress and autosave failure:
+                the editor no longer has a workspace header, and this used to be
+                `sm:hidden` because that header carried the same string on
+                desktop. It does not exist any more, so the modifier only hid
+                "Draft autosave failed." from every screen wider than a phone -
+                and that string is the one the captain must not miss, since it
+                stays up until a later write actually lands. */}
             {(saveStatus || draftStatus) ? (
-                <p aria-live="polite" aria-atomic="true" className="sm:hidden text-xs text-[var(--color-ink-soft)]">
+                <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
                     {saveStatus || draftStatus}
                 </p>
             ) : null}
