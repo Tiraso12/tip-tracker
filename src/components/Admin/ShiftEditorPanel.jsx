@@ -1088,7 +1088,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                 (order never forced). `onBack` is the editor exit onto this day's
                 landing - leading the rail so it is reachable from every step and
                 every width, including a phone with no sidebar. */}
-            <DayRail steps={railSteps} onStepClick={goToStep} onBack={onBackToLanding} />
+            <DayRail steps={railSteps} onStepClick={goToStep} onBack={onBackToLanding} hideNext={effectiveStep === "settle"} />
 
             <div>
                 {stepContent}
