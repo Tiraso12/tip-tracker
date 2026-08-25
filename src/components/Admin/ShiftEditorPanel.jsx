@@ -100,6 +100,12 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     // from one with real edits and only confirm a discard when work would actually be
     // lost. Covers money too - `fingerprintShift` reads pools nested inside teams/barTeam.
     const loadedFingerprintRef = useRef("");
+    // The fingerprint as of the last successful whole-shift autosave write. A
+    // successful setDoc echoes back through the shift's own onSnapshot listener,
+    // which replaces teams/barTeam/runners with freshly-mapped objects even when
+    // nothing actually changed - without this check that identity churn re-arms
+    // the autosave effect and writes (and re-writes) the same data forever.
+    const lastSavedFingerprintRef = useRef("");
     const realEmployeeUids = useMemo(
         () => new Set((allEmployees || []).map(employee => employee.uid).filter(Boolean)),
         [allEmployees]
@@ -653,6 +659,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                 if (bootstrapping) {
                     // Baseline the loaded shift so Cancel knows whether anything changed.
                     loadedFingerprintRef.current = fingerprintShift(nextTeamsRoster, nextBar, nextRunners);
+                    // What's in Firestore right now already counts as "saved" -
+                    // otherwise re-opening an already-setup shift would fire one
+                    // pointless autosave write before anything was even edited.
+                    lastSavedFingerprintRef.current = loadedFingerprintRef.current;
                     hasLoadedShiftRef.current = true;
                     setHasLoadedShift(true);
                     setLoading(false);
@@ -780,10 +790,15 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
+        // Setup money autosaves silently - no write, no re-arm, when nothing
+        // has actually changed since the last successful save (see
+        // `lastSavedFingerprintRef` above).
+        const fingerprint = fingerprintShift(teams, barTeam, runners);
+        if (fingerprint === lastSavedFingerprintRef.current) return undefined;
+
         const wasAlreadySetup = shiftStatus === "setup";
         const run = async () => {
             pendingDraftSaveRef.current = { timeoutId: null, run: null };
-            setDraftStatus("Saving draft...");
             try {
                 await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
                     date,
@@ -798,7 +813,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                 if (!wasAlreadySetup) await markUserHistoryFlags("setup");
 
                 setShiftStatus("setup");
-                setDraftStatus("Draft saved.");
+                lastSavedFingerprintRef.current = fingerprint;
+                setDraftStatus("");
             } catch (e) {
                 console.error("Failed to autosave closeout draft:", e);
                 setDraftStatus("Draft autosave failed.");
