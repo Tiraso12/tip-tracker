@@ -1022,6 +1022,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                     setBarTeam={setBarTeam}
                     runners={runners}
                     setRunners={setRunners}
+                    draftStatus={draftStatus}
                     onRemoveSetupDay={shiftStatus === "setup" ? onRemoveSetupDay : undefined}
                     removingSetupDay={removingSetupDay}
                 />

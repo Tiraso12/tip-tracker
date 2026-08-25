@@ -31,6 +31,7 @@ export function FloorStep({
     setBarTeam,
     runners,
     setRunners,
+    draftStatus,
     onRemoveSetupDay,
     removingSetupDay = false,
 }) {
@@ -47,6 +48,11 @@ export function FloorStep({
                 runners={runners} setRunners={setRunners}
                 readOnly={false}
             />
+            {draftStatus ? (
+                <p aria-live="polite" aria-atomic="true" className="mt-3 text-xs text-[var(--color-ink-soft)]">
+                    {draftStatus}
+                </p>
+            ) : null}
             {onRemoveSetupDay ? (
                 <RemoveEmptySetupDay onRemove={onRemoveSetupDay} removing={removingSetupDay} />
             ) : null}
