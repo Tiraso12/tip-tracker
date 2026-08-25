@@ -252,14 +252,14 @@ test.describe("friendly entry into Settle up", () => {
     // the account sheet's "Shifts" item jumps to TODAY rather than back to the
     // day being edited. A Supervisor covering two teams could get into the
     // first one and never find their way back to pick the second.
-    test("opening a team from the checklist is not a trap: Back to Shifts returns to the same day", async ({ page }) => {
+    test("opening a team from the checklist is not a trap: the rail's Back control returns to the same day", async ({ page }) => {
         await login(page, PEOPLE.captain.email);
         await setShiftDate(page, TWO_TEAM_DAY);
 
         await page.getByRole("button", { name: /Team 1/ }).click();
         await expect(page.getByRole("tab", { name: /Team 1/ })).toHaveAttribute("aria-selected", "true");
 
-        const backLink = page.getByRole("button", { name: "Back to Shifts" });
+        const backLink = page.getByRole("button", { name: "Back", exact: true });
         await expect(backLink).toBeVisible();
         await backLink.click();
 

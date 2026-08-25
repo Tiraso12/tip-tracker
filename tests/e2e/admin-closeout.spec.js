@@ -1067,6 +1067,11 @@ test.describe("app bar at supported phone widths", () => {
                 const dayChips = [...document.querySelectorAll('[aria-label="Select a day this week"] button')];
                 const dayRail = document.querySelector('[aria-label="Day steps"]');
                 const railButtons = [...dayRail.querySelectorAll("button")];
+                // The rail leads with the editor's Back chevron (DayRail.jsx), which is
+                // an icon-only control - the step trail this asserts on starts after it.
+                const stepButtons = railButtons.filter(
+                    (button) => button.getAttribute("aria-label") !== "Back",
+                );
                 return {
                     viewportWidth,
                     appBar: rectFor(appBar),
@@ -1074,9 +1079,10 @@ test.describe("app bar at supported phone widths", () => {
                     firstDayChip: rectFor(dayChips[0]),
                     lastDayChip: rectFor(dayChips[dayChips.length - 1]),
                     dayRail: rectFor(dayRail),
-                    firstRailButton: {
-                        ...rectFor(railButtons[0]),
-                        text: railButtons[0].innerText,
+                    firstRailButton: rectFor(railButtons[0]),
+                    firstStepButton: {
+                        ...rectFor(stepButtons[0]),
+                        text: stepButtons[0].innerText,
                     },
                     controls: [...appBar.querySelectorAll("button")].map((button) => ({
                         label: button.getAttribute("aria-label"),
@@ -1093,7 +1099,8 @@ test.describe("app bar at supported phone widths", () => {
             expect(chrome.dayRail.left).toBeGreaterThanOrEqual(0);
             expect(chrome.dayRail.right).toBeLessThanOrEqual(viewport.width);
             expect(chrome.firstRailButton.left).toBeGreaterThanOrEqual(0);
-            expect(chrome.firstRailButton.text).toBe("Floor plan");
+            expect(chrome.firstStepButton.left).toBeGreaterThanOrEqual(0);
+            expect(chrome.firstStepButton.text).toBe("Floor plan");
 
             const stepControl = /^(Previous|Next) (day|week)$/;
             const dateControl = /^Shift date:/;
