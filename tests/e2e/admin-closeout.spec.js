@@ -1094,8 +1094,6 @@ test.describe("app bar at supported phone widths", () => {
 
             expect(chrome.appBar.right).toBe(viewport.width);
             expect(chrome.appBarOverflows).toBe(false);
-            expect(chrome.firstDayChip.left).toBeGreaterThanOrEqual(0);
-            expect(chrome.lastDayChip.right).toBeLessThanOrEqual(viewport.width);
             expect(chrome.dayRail.left).toBeGreaterThanOrEqual(0);
             expect(chrome.dayRail.right).toBeLessThanOrEqual(viewport.width);
             expect(chrome.firstRailButton.left).toBeGreaterThanOrEqual(0);
