@@ -180,6 +180,6 @@ captain has had that shape removed twice. The component decides neither who may 
 **Receipt-photo / OCR prefill for Settle is a future feature, not now.** The captain parked it
 on 2026-08-17 - do not build any OCR, photo upload, or Settle prefill. Research lives at the
 firstmate home (`data/tip-tracker-receipt-ocr-scout/report.md`,
-`data/receipt-ocr-lab-on-device-research/report.md`). Contracts are REO 26%/27% of the
-guest-check Gratuity, not a server-sales line - keep that distinction in mind if this is picked
-back up.
+`data/receipt-ocr-lab-on-device-research/report.md`). Contracts are 27% of the guest-check
+Gratuity as of 2026-08-26; older paid nights used 26%. Not a server-sales line - keep that
+distinction in mind if this is picked back up.
