@@ -352,7 +352,9 @@ function DayRailLanding({ status, summary, lineup, viewerUid = null, orphanedEnt
 
     const onStepClick = (key) => {
         if (key === "floor") onEditFloor?.();
-        if (key === "settle") onContinueSettle?.();
+        // On the settle landing (who's-left checklist), the Settle crumb is already
+        // the active step - clicking it should be a no-op, not re-enter the editor.
+        if (key === "settle" && stage !== "settle") onContinueSettle?.();
         if (key === "review") onOpenReview?.();
     };
 

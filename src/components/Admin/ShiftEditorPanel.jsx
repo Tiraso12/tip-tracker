@@ -893,6 +893,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         // Leaving Settle up (any direction) flushes rather than abandons a
         // debounce in flight - see flushPendingGroupSave.
         if (step === "settle" && key !== "settle") flushPendingGroupSave();
+
+        // From Floor, Settle navigates to the landing (who's-left list), not into
+        // the editor's Settle step. Only a tapped row enters Settle with a group id.
+        if (step === "floor" && key === "settle") {
+            onBackToLanding?.();
+            return;
+        }
+
         setStep(key);
     };
 
