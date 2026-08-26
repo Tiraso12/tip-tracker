@@ -232,7 +232,7 @@ async function settleSavedShift(page, { sales, tips, gratuity, cash }) {
     await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
 
     await rail.getByRole("button", { name: "Settle" }).click();
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
+    await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);

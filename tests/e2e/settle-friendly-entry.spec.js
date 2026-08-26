@@ -199,7 +199,7 @@ test.describe("friendly entry into Settle up", () => {
         await expect(page.getByRole("tab", { name: /Team 2/ })).toHaveAttribute("aria-selected", "true");
 
         // Enter Team 2's money.
-        await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("800");
+        await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill("800");
         await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("150");
         await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("75");
 

@@ -105,9 +105,26 @@ export function CloseoutEntryPanel({ group, children, showUnmarkedCue = false, h
                 <span className="flex-none text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--color-ink-muted)] max-[560px]:hidden">
                     {moneyLabel}
                 </span>
-                <span className="hidden max-[560px]:inline-flex items-center gap-1.5 min-w-0 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
-                    <span className="truncate">{pillDescriptor}</span>
-                    <strong className="flex-none font-mono tabular-nums">{exactPool}</strong>
+                <span className="hidden max-[560px]:flex items-center gap-1.5 min-w-0 flex-wrap justify-end">
+                    <span className="inline-flex items-center gap-1.5 min-w-0 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
+                        <span className="truncate">{pillDescriptor}</span>
+                        <strong className="flex-none font-mono tabular-nums">{exactPool}</strong>
+                    </span>
+                    {/* Dining only, per the captain: the phone pill also carries Net revenue
+                        and Cash so a server can confirm what they typed without opening the
+                        card - bar keeps just CTP + GRT for now. */}
+                    {group.kind === "dining" ? (
+                        <>
+                            <span className="inline-flex items-center gap-1 min-w-0 rounded-full bg-[var(--color-surface-muted)] px-2 py-1 text-[10.5px] font-medium text-[var(--color-ink-muted)]">
+                                <span className="truncate">Net rev</span>
+                                <strong className="flex-none font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(group.sales)}</strong>
+                            </span>
+                            <span className="inline-flex items-center gap-1 min-w-0 rounded-full bg-[var(--color-surface-muted)] px-2 py-1 text-[10.5px] font-medium text-[var(--color-ink-muted)]">
+                                <span className="truncate">Cash</span>
+                                <strong className="flex-none font-mono tabular-nums text-[var(--color-ink)]">{fmtMoney(group.cash)}</strong>
+                            </span>
+                        </>
+                    ) : null}
                 </span>
             </div>
             {/* The unmarked-done cue - suppressed on a closed shift (`hideMarkControl`),

@@ -251,7 +251,7 @@ test("settling a night through the UI leaves the day naming who saved it", async
 
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
+    await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill("1000");
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("200");
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("100");
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("50");

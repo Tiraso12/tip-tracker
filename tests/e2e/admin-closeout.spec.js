@@ -256,7 +256,7 @@ async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
 
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
+    await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
@@ -720,7 +720,7 @@ test.describe("mobile floor polish", () => {
         // Advancing to Settle shows editable money fields immediately.
         await rail.getByRole("button", { name: "Settle" }).click();
         await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
-        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toBeEnabled();
+        await expect(page.getByRole("spinbutton", { name: "Net revenue", exact: true })).toBeEnabled();
     });
 
     test("the day-step rail is Floor -> Settle -> Review with no Pay out step", async ({ page }) => {
@@ -915,11 +915,11 @@ test.describe("mobile floor polish", () => {
         await setShiftDate(page, date);
 
         await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
-        const sales = page.getByRole("spinbutton", { name: "Sales", exact: true });
+        const sales = page.getByRole("spinbutton", { name: "Net revenue", exact: true });
         await expect(sales).toBeVisible();
         await expect(sales).toBeEnabled();
         await sales.fill("500");
-        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toHaveValue("500");
+        await expect(page.getByRole("spinbutton", { name: "Net revenue", exact: true })).toHaveValue("500");
 
         await expect.poll(async () => {
             let value = "";

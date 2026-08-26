@@ -124,6 +124,8 @@ export function buildCloseoutGroups({ teams = [], barTeam = { members: [], pools
             sub: `${team.members.length} ${team.members.length === 1 ? "member" : "members"}`,
             poolLabel: "Pool",
             pool,
+            sales: summary.sales,
+            cash: summary.cash,
             hasPeople,
             hasOtherInput,
             markedDone,
