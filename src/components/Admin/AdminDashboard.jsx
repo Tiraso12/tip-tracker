@@ -577,18 +577,6 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         if (needsRefresh) fetchDayPayouts(today);
     }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
 
-    // Decided direction: the day-chip strip stays usable while the floor editor
-    // is open (Floor step only - Settle/Review keep the date locked, same as
-    // `BarDatePill`, because those steps carry half-typed money a date swap
-    // could orphan). Exits the editor back to Shifts for the new date; the
-    // normal `stage === "settle"` handling there (`SkipToFloorPlan`) picks the
-    // new day back up, including re-entering its own floor editor if it is
-    // also unsettled - so flipping through a run of open days chains cleanly.
-    const selectDateFromFloorEditor = useCallback((nextDate) => {
-        if (!confirmLeaveEditor()) return;
-        setSelectedDate(nextDate);
-        setActiveTabWithData("shifts");
-    }, [confirmLeaveEditor, setActiveTabWithData]);
 
     // HOME MEANS THE VIEWER'S OWN HOME, and the two tiers here do not share one.
     // The manager runs the restaurant and is not paid from the pool, so home is
@@ -881,11 +869,8 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                         </header>
 
                         {/* Kit's week-at-a-glance day chips (WorkspaceScreen.jsx's
-                            `DayChip` row), shown on Shifts and - decided over the
-                            original always-hidden-in-the-editor behavior - during the
-                            floor editor's Floor step too, so a run of open days can be
-                            flipped through without Cancel first. Settle/Review keep the
-                            strip hidden and `BarDatePill` read-only, same as always:
+                            `DayChip` row), shown only on the Shifts day-picker landing.
+                            Settle/Review keep the strip hidden and `BarDatePill` read-only:
                             those steps carry half-typed money a date swap could orphan.
                             Team has no date, so it does not render there. Visible at
                             every width, like the kit's own `compact` mode keeps it -
@@ -894,14 +879,14 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                             The settle landing (who's-left checklist) hides chips too - it
                             shows when a floor exists but unsettled, and belongs to Settle
                             up (not day-picking). */}
-                        {(activeTab === "shifts" && getLandingStage(dayShiftStatus) !== "settle") || (activeTab === "editor" && editorStep === "floor") ? (
+                        {activeTab === "shifts" && getLandingStage(dayShiftStatus) !== "settle" ? (
                             <div className="mb-3 sm:mb-6">
                                 <DayChipStrip
                                     days={weekDays}
                                     statuses={weekStatuses}
                                     selectedDate={selectedDate}
                                     todayKey={todayKey}
-                                    onSelect={activeTab === "editor" ? selectDateFromFloorEditor : setSelectedDate}
+                                    onSelect={setSelectedDate}
                                 />
                             </div>
                         ) : null}
