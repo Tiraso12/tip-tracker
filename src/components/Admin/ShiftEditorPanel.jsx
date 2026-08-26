@@ -232,7 +232,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                 entries: [
                     moneyEntry("CTP", barTeam.pools?.tips),
                     moneyEntry("GRT", barTeam.pools?.gratuity),
-                    moneyEntry("Sales", barTeam.pools?.sales),
+                    moneyEntry("Net revenue", barTeam.pools?.sales),
                     // Food sales funds nothing - it is what the fee below is derived
                     // from - but it belongs in a row whose whole job is "every number
                     // you typed, on one screen": a fee that looks wrong is checked
