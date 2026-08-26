@@ -141,10 +141,9 @@ function AuditSummary({ summary }) {
             <StatColumn label="Inputs">
                 <StatLine label="Team net revenue" value={fmt(summary.derivedValues?.totalTeamSales)} strong />
                 <StatLine label="Contract Grat" value={fmt(summary.derivedValues?.grtContractTotal)} />
-                <StatLine
-                    label={`DCTP (${fmt(summary.derivedValues?.baseTeamCTP)}) + BCTP (${fmt(summary.derivedValues?.barCTP)})`}
-                    value={fmt(summary.derivedValues?.ctpTotal)}
-                />
+                {summary.derivedValues?.contractSales != null && <StatLine label="Contract net revenue" value={fmt(summary.derivedValues?.contractSales)} />}
+                <StatLine label="DCTP" value={fmt(summary.derivedValues?.baseTeamCTP)} />
+                <StatLine label="BCTP" value={fmt(summary.derivedValues?.barCTP)} />
                 <StatLine label="Cash Total" value={fmt(summary.derivedValues?.baseTeamCash)} />
                 <StatLine label="Grat Total" value={fmt(summary.derivedValues?.grtTotal)} />
             </StatColumn>
