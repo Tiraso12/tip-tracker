@@ -46,6 +46,8 @@ function ReviewDisclosure({ title, meta, open, onToggle, children }) {
 export function CalculatedPayoutReview({
     review,
     poolAvailable,
+    diningNetRevenue = 0,
+    barNetRevenue = 0,
     barPoolEntered = 0,
     runnersFeeTransfer = 0,
     availableCash = 0,
@@ -244,6 +246,15 @@ export function CalculatedPayoutReview({
                 onToggle={() => toggle("totals")}
             >
                 <div className="space-y-4">
+                    {/* The captain's own two figures, ahead of everything the engine
+                        derives: each dining team's Net revenue summed, and the bar
+                        card's Net revenue - the same `pools.sales` shown on their
+                        respective Settle up cards, not a payout or a pool split. */}
+                    <div className="space-y-1.5">
+                        <LedgerRow label="Dining room net revenue" value={fmtMoney(diningNetRevenue)} testId="totals-dining-net-revenue" />
+                        <LedgerRow label="Bar net revenue" value={fmtMoney(barNetRevenue)} testId="totals-bar-net-revenue" />
+                    </div>
+
                     {/* The dining ledger, then the three destinations it resolves into.
                         There is deliberately NO parallel bar ledger: the captain's call,
                         and a correct one - the footer below already names dining take-home,

@@ -217,6 +217,8 @@ export function ReviewStep({
                 <CalculatedPayoutReview
                     review={liveReview}
                     poolAvailable={poolSummary.payoutPool}
+                    diningNetRevenue={poolSummary.restaurantSales}
+                    barNetRevenue={poolSummary.bar.sales}
                     barPoolEntered={poolSummary.bar.payoutPool}
                     runnersFeeTransfer={poolSummary.runnerTransfer}
                     availableCash={poolSummary.totalCash}
