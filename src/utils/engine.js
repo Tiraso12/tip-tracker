@@ -17,6 +17,20 @@ const n = (val) => Number(val) || 0;
 const r2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
 const sumProp = (arr, prop) => arr.reduce((sum, item) => sum + n(item[prop]), 0);
 
+// Contracts / REO gratuity rate. Fixed by the restaurant's contract, not per-shift
+// or per-team - see docs/MONEY-MODEL.md. It stepped from 26% to 27% for shifts
+// dated 2026-08-26 onward; nights already paid at 26% stay 26% forever, so the
+// cutoff is keyed on the SHIFT's own date, never the clock when someone opens the
+// editor. `date` missing (undated calls - old tests, any leftover caller) stays on
+// the pre-change rate rather than silently jumping to 27%.
+const CONTRACT_RATE_CHANGE_DATE = '2026-08-26';
+const CONTRACT_RATE_BEFORE = 0.26;
+const CONTRACT_RATE_AFTER = 0.27;
+function getContractRate(date) {
+    if (!date) return CONTRACT_RATE_BEFORE;
+    return date >= CONTRACT_RATE_CHANGE_DATE ? CONTRACT_RATE_AFTER : CONTRACT_RATE_BEFORE;
+}
+
 /**
  * Reconciles rounding errors by adjusting the last item in an array 
  * so the sum of a specific key exactly matches the target total.
@@ -101,7 +115,8 @@ export function calculateShift(inputs) {
     // Total Gratuity Available (Regular + Contract)
     const grtTotalAvailable = totalTeamGrt + barGRT + grtContractTotal;
 
-    const contractSales = grtContractTotal / 0.26 || 0;
+    const contractRate = getContractRate(config.date);
+    const contractSales = grtContractTotal / contractRate || 0;
 
     let regularSalesBase = totalTeamSales - contractSales;
     if (contractSales > totalTeamSales) {

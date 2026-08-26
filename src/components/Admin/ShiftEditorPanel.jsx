@@ -306,7 +306,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         const blockers = validateShiftInputs({ teams, barTeam, runners });
         if (blockers.length > 0) return { ready: false, blockers, warnings: [] };
 
-        const result = calculateShift({ teams, barTeam, runners });
+        const result = calculateShift({ teams, barTeam, runners, date });
         const mappedPayouts = mapPayoutsForFirebase(result);
         if (Object.keys(mappedPayouts).length === 0) {
             return {
@@ -325,7 +325,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
             warnings: result.validations || [],
             ...buildPayoutReview(result, mappedPayouts),
         };
-    }, [hasLoadedShift, teams, barTeam, runners]);
+    }, [hasLoadedShift, teams, barTeam, runners, date]);
 
     // The one rule that blocks a save on a complete calculation. Derived on every
     // render alongside `liveReview` so Review can withhold the save BEFORE the press

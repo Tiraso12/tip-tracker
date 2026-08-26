@@ -58,6 +58,19 @@ and had to be corrected on 2026-08-12. Two allocations look like deductions and 
   figure has nothing to disagree with and stays quiet rather than being marked for having been
   typed under the old model.
 
+## The contract gratuity rate is fixed, not per-contract, and it stepped once
+
+Contract sales are inferred from the gratuity actually charged (`grtContractTotal / rate` in
+`engine.js` §1, `getContractRate`), never entered directly - so the rate has to be right without
+anyone typing it. It was a flat 26% until the restaurant raised it to **27% for shifts dated
+2026-08-26 onward**; a night already paid at 26% stays 26% forever, so the cutoff is keyed on the
+**shift's own date**, never the clock when someone opens the editor or re-saves it. There is no
+per-contract rate field and no 26/27 picker in the UI - one date-keyed constant in `engine.js` is
+the only place the rate lives. `ShiftEditorPanel.jsx` passes its `date` prop (the night being
+viewed, not today) into `calculateShift` for exactly this reason; a call that omits `date`
+(undated tests, any leftover caller) stays on 26% rather than silently jumping to 27%.
+`src/utils/engine.test.js` pins both sides of the cutoff.
+
 ## A negative CTP is correct
 
 **Never add a guard, a clamp or a floor.** In the captain's own words: the bar's fees are paid

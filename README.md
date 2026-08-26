@@ -10,7 +10,7 @@ A payout `total` is CTP (charged tip) + GRT (gratuity). Cash is always paid and 
 
 ## The Problem It Solves
 
-Distributing tips by hand is slow and easy to get wrong. Multiple teams with different sales, role-based point weights, a fixed 26% contract, bar allocations, flat-rate runners, and a captain override all have to balance. This app replaces the spreadsheet with an engine that does that instantly and prints a payout sheet for the night.
+Distributing tips by hand is slow and easy to get wrong. Multiple teams with different sales, role-based point weights, a fixed contract rate, bar allocations, flat-rate runners, and a captain override all have to balance. This app replaces the spreadsheet with an engine that does that instantly and prints a payout sheet for the night.
 
 ---
 
@@ -128,7 +128,7 @@ The engine (`src/utils/engine.js`) is a pure function: it takes a normalized shi
 - **The dining room is one pool, not one per team.** Money is entered per team because that is how a night is counted at the pass, but a single house-wide point value pays every dining employee. Splitting per team would pay two servers differently for the same night's work, so this is deliberate policy and not a bug to "fix".
 - **The bar is a separate pool with its own point value.** The bar allocation moves money from the dining pools to the bar pools: it never leaves the staff, so it is a subtraction on the dining ledger and an addition on the bar one, and never a deduction from the two combined. Nobody in `barTeam` means no allocation at all, because a bartender working a section as a captain must not carve out a bar pool that has no one in it.
 - **Cash is never inside a total.** A payout total is charged tip plus gratuity, for every role. Cash is real money the employee is paid, but it is handed over separately and weekly, so folding it into a total would describe a payment that never happened that way.
-- **Contract gratuity is the input; contract sales are inferred.** The 26% is fixed by the contract, so the shift is entered as the gratuity that was actually charged and the engine works the sales back out of it. The number typed in is the one printed on the contract, and nobody has to re-derive it under time pressure.
+- **Contract gratuity is the input; contract sales are inferred.** The rate is fixed by the contract (26% through 2026-08-25, 27% from 2026-08-26 on - keyed on the shift's own date, not per-contract), so the shift is entered as the gratuity that was actually charged and the engine works the sales back out of it. The number typed in is the one printed on the contract, and nobody has to re-derive it under time pressure.
 - **Runner pay leaves the pool entirely**, off the top of dining charged tips, unlike the bar allocation above. On a pure contract night that can drive dining charged tips negative; that is expected and informational, not an error.
 - **Rounding is reconciled against the pool, not per person.** Every payout is rounded to the cent and the last one absorbs the remainder, so the amounts on screen add up to exactly the money that existed.
 - **Every shift is balanced double-entry**, and Confirm & Save will not go through until it does. Money that silently fails to balance is money someone is short at the end of the night.

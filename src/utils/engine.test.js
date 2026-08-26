@@ -254,6 +254,64 @@ test("pure contract/buyout shift: no regular sales, no bar team, runners paid fr
     assert.ok(captain.total > server.total);
 });
 
+// Contracts / REO gratuity stepped from 26% to 27% for shifts dated 2026-08-26
+// onward (restaurant rule change, not an engine choice) - see docs/MONEY-MODEL.md.
+// The cutoff keys on the SHIFT's own date, never the clock when the editor is
+// opened, so an already-paid 26% night stays 26% forever even if it's re-saved
+// today.
+test("contract sales divide by 26% for a shift dated before the 2026-08-26 rate change", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [{ uid: "server-1", name: "Server One", role: "server" }],
+                pools: { sales: 0, tips: 0, cash: 0, gratuity: 0 },
+                contracts: [{ gratuity: 260 }],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+        date: "2026-08-25",
+    });
+
+    assert.equal(result.derivedValues.contractSales, 1000);
+});
+
+test("contract sales divide by 27% for a shift dated 2026-08-26 or later", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [{ uid: "server-1", name: "Server One", role: "server" }],
+                pools: { sales: 0, tips: 0, cash: 0, gratuity: 0 },
+                contracts: [{ gratuity: 270 }],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+        date: "2026-08-26",
+    });
+
+    assert.equal(result.derivedValues.contractSales, 1000);
+});
+
+test("contract sales stay on 26% when no date is passed (undated callers never jump to 27%)", () => {
+    const result = calculateShift({
+        teams: [
+            {
+                teamId: "team-1",
+                members: [{ uid: "server-1", name: "Server One", role: "server" }],
+                pools: { sales: 0, tips: 0, cash: 0, gratuity: 0 },
+                contracts: [{ gratuity: 260 }],
+            },
+        ],
+        barTeam: { members: [], pools: {} },
+        runners: [],
+    });
+
+    assert.equal(result.derivedValues.contractSales, 1000);
+});
+
 test("reconciles rounding to keep distributed totals balanced", () => {
     const result = calculateShift({
         teams: [
