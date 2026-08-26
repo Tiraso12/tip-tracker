@@ -127,6 +127,14 @@ export function CalculatedPayoutReview({
     const diningPoolEntered = (Number(poolAvailable) || 0) - (Number(barPoolEntered) || 0);
     const feeTransfer = Number(runnersFeeTransfer) || 0;
 
+    // Not entered directly - the captain only types a contract's gratuity, so the
+    // engine derives the sales that gratuity implies at the fixed 26% contract rate
+    // (engine.js `contractSales = grtContractTotal / 0.26`). It is already included
+    // inside `diningNetRevenue` (every team's whole `pools.sales`), not additional
+    // money - shown only as a breakout of what's already counted above, and only
+    // when a contract actually put money into it.
+    const contractSales = Number(result.derivedValues?.contractSales) || 0;
+
     const overallBalance = Number(result.balances?.overallBalance) || 0;
     const balanced = Math.abs(overallBalance) <= 0.05;
     // One row open at a time: the spot-check card is the point of the screen and must
@@ -252,6 +260,14 @@ export function CalculatedPayoutReview({
                         respective Settle up cards, not a payout or a pool split. */}
                     <div className="space-y-1.5">
                         <LedgerRow label="Dining room net revenue" value={fmtMoney(diningNetRevenue)} testId="totals-dining-net-revenue" />
+                        {contractSales > 0 ? (
+                            <LedgerRow
+                                label="Contract sales"
+                                sub="derived from contract gratuity at 26%, included above"
+                                value={fmtMoney(contractSales)}
+                                testId="totals-contract-sales"
+                            />
+                        ) : null}
                         <LedgerRow label="Bar net revenue" value={fmtMoney(barNetRevenue)} testId="totals-bar-net-revenue" />
                     </div>
 
