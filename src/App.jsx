@@ -5,7 +5,7 @@ import PayView from "./components/Pay/PayView";
 import AccountView from "./components/Account/AccountView";
 import { useAuth } from "./context/AuthContext";
 import { canOpenShiftWorkspace, hasOwnPayRecord } from "./utils/permissions";
-import { loadPlace, savePlace } from "./utils/placeMemory";
+import { loadPlace, savePlace, canPersistSurface } from "./utils/placeMemory";
 
 const AdminDashboard = lazy(() => import("./components/Admin/AdminDashboard"));
 
@@ -46,6 +46,16 @@ function App() {
   // sense for this uid (a workspace note for someone who can no longer open
   // it, or simply nothing saved yet).
   const [surface, setSurface] = useState("pay");
+  // Which uid the restore effect below has actually run for. STATE, not a
+  // ref: the restore effect and the save effect both fire in the same commit
+  // the instant `user.uid` first becomes set (both depend on it), and
+  // setSurface from restore is only scheduled, not applied, in that commit -
+  // so a ref flipped "true" there would still let save fire with this
+  // render's stale pre-restore `surface` ("pay") and clobber the note the
+  // restore effect just read. Using state instead forces one extra render
+  // between "restore decided" and "save may run," so save always sees a
+  // `surface` that has actually landed. See canPersistSurface (placeMemory.js).
+  const [restoredUid, setRestoredUid] = useState(null);
   useEffect(() => {
     if (!user?.uid) return;
     const place = loadPlace(user.uid);
@@ -56,6 +66,7 @@ function App() {
     } else {
       setSurface("pay");
     }
+    setRestoredUid(user.uid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
 
@@ -63,10 +74,12 @@ function App() {
   // AdminDashboard's own effect, which also carries the tab/date/step/settle
   // group that belong with it - writing a bare `{surface: "workspace"}` here
   // on every render would otherwise race with and clobber that richer entry.
+  // Gated on canPersistSurface so this never fires with the pre-restore
+  // default before the restore effect's setSurface has actually rendered.
   useEffect(() => {
-    if (!user?.uid || surface === "workspace") return;
+    if (!canPersistSurface({ uid: user?.uid, restoredUid }) || surface === "workspace") return;
     savePlace(user.uid, { surface });
-  }, [user?.uid, surface]);
+  }, [user?.uid, surface, restoredUid]);
 
   if (loading) {
     return (

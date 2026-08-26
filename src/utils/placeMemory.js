@@ -78,3 +78,17 @@ export function savePlace(uid, place) {
         // Nothing to recover - see comment above.
     }
 }
+
+// Whether it is safe, right now, to persist a top-level surface for this uid.
+// A restore-then-save pair of effects (App.jsx) fires in the SAME commit the
+// moment `user.uid` first becomes available: the restore effect calls
+// setSurface(...) but that update is only scheduled, not applied yet, so a
+// save effect with no guard would still see the pre-restore default ("pay")
+// and overwrite the just-restored note before it was ever rendered. Gating
+// the save on `restoredUid === uid` - a piece of STATE the restore effect
+// sets alongside setSurface, not a ref - forces one extra render between
+// "restore decided" and "save is allowed to run," so save only ever writes
+// a surface value that has actually been rendered.
+export function canPersistSurface({ uid, restoredUid }) {
+    return Boolean(uid) && restoredUid === uid;
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadPlace, savePlace } from "./placeMemory.js";
+import { loadPlace, savePlace, canPersistSurface } from "./placeMemory.js";
 
 function stubStorage() {
     const store = new Map();
@@ -99,4 +99,54 @@ test("an invalid editorStep and non-string settleGroupId are coerced to safe def
         surface: "workspace",
         workspace: { tab: "editor", date: "2026-08-26", editorStep: "floor", settleGroupId: null },
     });
+});
+
+test("canPersistSurface refuses to save before restore has run for this uid", () => {
+    assert.equal(canPersistSurface({ uid: "uid-1", restoredUid: null }), false);
+    assert.equal(canPersistSurface({ uid: "uid-1", restoredUid: "uid-2" }), false);
+    assert.equal(canPersistSurface({ uid: null, restoredUid: "uid-1" }), false);
+    assert.equal(canPersistSurface({ uid: "uid-1", restoredUid: "uid-1" }), true);
+});
+
+// Regression for the reload-lands-on-My-pay bug the captain reported: App.jsx
+// has two effects that both depend on user.uid - restore (reads the saved
+// place, calls setSurface) and save (persists the current surface). Both
+// fire in the SAME commit the instant uid first becomes set. This models
+// that commit sequence directly against the real functions, without a React
+// test harness, gated the way canPersistSurface is meant to be used.
+test("restore-then-save in the same commit never clobbers the just-restored surface", () => {
+    stubStorage();
+    savePlace("uid-1", { surface: "workspace" });
+
+    // Commit 1: uid just became "uid-1". Component state before this commit's
+    // effects run: surface="pay" (the pre-login default), restoredUid=null.
+    let surface = "pay";
+    let restoredUid = null;
+
+    // Restore effect runs first (declared first in App.jsx): decides the
+    // real surface and marks this uid as restored - but neither has
+    // reached a render yet, so `surface` in this commit is still "pay".
+    const place = loadPlace("uid-1");
+    const restoredSurface = place?.surface === "workspace" ? "workspace" : "pay";
+    const nextRestoredUid = "uid-1";
+
+    // Save effect runs next, in the SAME commit, seeing the OLD surface/
+    // restoredUid closure values (React hasn't re-rendered between them).
+    if (canPersistSurface({ uid: "uid-1", restoredUid }) && surface !== "workspace") {
+        savePlace("uid-1", { surface });
+    }
+    // Without the guard this would already have written {surface:"pay"},
+    // clobbering the workspace note - assert it did NOT happen.
+    assert.deepEqual(loadPlace("uid-1"), { surface: "workspace" });
+
+    // Commit 2: the scheduled state updates land, so this render's closures
+    // now see the restored values.
+    surface = restoredSurface;
+    restoredUid = nextRestoredUid;
+    if (canPersistSurface({ uid: "uid-1", restoredUid }) && surface !== "workspace") {
+        savePlace("uid-1", { surface });
+    }
+    // surface === "workspace" here, so save still correctly no-ops (that
+    // surface is AdminDashboard's to persist) and the note survives intact.
+    assert.deepEqual(loadPlace("uid-1"), { surface: "workspace" });
 });
