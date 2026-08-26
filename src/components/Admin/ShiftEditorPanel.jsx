@@ -215,7 +215,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                     moneyEntry("CTP", pools.tips),
                     moneyEntry("GRT", pools.gratuity),
                     moneyEntry("Cash", pools.cash),
-                    moneyEntry("Sales", pools.sales),
+                    moneyEntry("Net revenue", pools.sales),
                     ...contracts.map((contract, contractIndex) => (
                         moneyEntry(`Contract ${contract.name || contractIndex + 1}`, contract.gratuity)
                     )),

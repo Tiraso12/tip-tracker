@@ -139,7 +139,7 @@ function AuditSummary({ summary }) {
     const details = (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-5 bg-[var(--color-surface-muted)]/50 border border-[var(--color-line)] rounded-[var(--radius-md)]">
             <StatColumn label="Inputs">
-                <StatLine label="Team Sales" value={fmt(summary.derivedValues?.totalTeamSales)} strong />
+                <StatLine label="Team net revenue" value={fmt(summary.derivedValues?.totalTeamSales)} strong />
                 <StatLine label="Contract Grat" value={fmt(summary.derivedValues?.grtContractTotal)} />
                 <StatLine
                     label={`DCTP (${fmt(summary.derivedValues?.baseTeamCTP)}) + BCTP (${fmt(summary.derivedValues?.barCTP)})`}
