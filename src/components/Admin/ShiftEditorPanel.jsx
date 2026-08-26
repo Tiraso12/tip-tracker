@@ -895,8 +895,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         if (step === "settle" && key !== "settle") flushPendingGroupSave();
 
         // From Floor, Settle navigates to the landing (who's-left list), not into
-        // the editor's Settle step. Only a tapped row enters Settle with a group id.
-        if (step === "floor" && key === "settle") {
+        // the editor's Settle step - but only while the shift is still open. A
+        // closed shift's landing is Pay out (DayRailLanding), not the who's-left
+        // list, so bouncing there would strand the admin outside the editor
+        // entirely; a closed shift enters Settle directly instead.
+        if (step === "floor" && key === "settle" && shiftStatus !== "closed") {
             onBackToLanding?.();
             return;
         }

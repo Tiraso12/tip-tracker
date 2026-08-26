@@ -545,7 +545,12 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
 
     // Closed shift roster edits go straight through Review without an old lock step.
+    // Floor -> Settle on a closed shift must stay in the editor (this rail tap used
+    // to bounce back to the Pay out landing, same as the who's-left landing does for
+    // an open shift - but a closed shift has no who's-left list to land on).
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit shift" })).toHaveCount(0);
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
     await expectSettledLanding(page);
