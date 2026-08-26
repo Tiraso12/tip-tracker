@@ -5,6 +5,7 @@ import PayView from "./components/Pay/PayView";
 import AccountView from "./components/Account/AccountView";
 import { useAuth } from "./context/AuthContext";
 import { canOpenShiftWorkspace, hasOwnPayRecord } from "./utils/permissions";
+import { loadPlace, savePlace } from "./utils/placeMemory";
 
 const AdminDashboard = lazy(() => import("./components/Admin/AdminDashboard"));
 
@@ -34,10 +35,38 @@ function App() {
   // their own pay: that is the shape the captain chose, knowing it costs a tap
   // to reach tonight's shift, because the pool pays them and their week is
   // theirs to check. The account sheet is how they cross, in either direction.
+  //
+  // A reload restores that place instead of always resetting here: the
+  // captain chose "remember on this phone," not an address-bar URL, so the
+  // note lives in localStorage keyed by uid (placeMemory.js) rather than in
+  // react-router. Workspace's own tab/date/step/settle-group is restored by
+  // AdminDashboard itself, which is the only place that knows it - here we
+  // only decide which of the three top-level surfaces to land on, and fall
+  // back to today's default the moment the saved surface no longer makes
+  // sense for this uid (a workspace note for someone who can no longer open
+  // it, or simply nothing saved yet).
   const [surface, setSurface] = useState("pay");
   useEffect(() => {
-    setSurface("pay");
+    if (!user?.uid) return;
+    const place = loadPlace(user.uid);
+    if (place?.surface === "workspace" && canOpenWorkspace) {
+      setSurface("workspace");
+    } else if (place?.surface === "account") {
+      setSurface("account");
+    } else {
+      setSurface("pay");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid]);
+
+  // Persists "pay" and "account" here. "workspace" is intentionally left to
+  // AdminDashboard's own effect, which also carries the tab/date/step/settle
+  // group that belong with it - writing a bare `{surface: "workspace"}` here
+  // on every render would otherwise race with and clobber that richer entry.
+  useEffect(() => {
+    if (!user?.uid || surface === "workspace") return;
+    savePlace(user.uid, { surface });
+  }, [user?.uid, surface]);
 
   if (loading) {
     return (

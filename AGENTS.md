@@ -173,7 +173,10 @@ reconciliation), `dayFlow.js` (the Floor/Settle/Review rail), `permissions.js` (
 named once), `roleLabels.js` (role wording), `closeoutPersistence.js` /
 `tempStaffMergePersistence.js` (atomic Firestore batches), `shiftBalance.js` / `saveFailure.js`
 (the Confirm & Save gate), `settleStatus.js` (a group's money-in and close-readiness status),
-`settleGroupPersistence.js` (parallel Settle up's per-group scoped Firestore writes).
+`settleGroupPersistence.js` (parallel Settle up's per-group scoped Firestore writes),
+`placeMemory.js` (which screen/tab/date/step a viewer was last on, in localStorage keyed by
+uid - not react-router, not Firestore; App.jsx and AdminDashboard.jsx each own writing their own
+surface so two writers never race on one entry - see the module's own comments).
 Pattern: pure functions, named exports, colocated tests - the WHY behind these files is in
 [docs/MONEY-MODEL.md](docs/MONEY-MODEL.md), [docs/ROLES-AND-PERMISSIONS.md](docs/ROLES-AND-PERMISSIONS.md),
 and [docs/DATA-PERSISTENCE.md](docs/DATA-PERSISTENCE.md).

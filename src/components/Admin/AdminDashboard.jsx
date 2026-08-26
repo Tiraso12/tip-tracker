@@ -17,6 +17,7 @@ import { removeShiftAtomically, removeSetupShiftAtomically } from "../../utils/c
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 import { fullNameFor } from "../../utils/userNames";
 import { applyTeamGroupPatch, SETTLE_GROUP_COLLECTION } from "../../utils/settleGroupPersistence";
+import { loadPlace, savePlace } from "../../utils/placeMemory";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -120,8 +121,20 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     const [employeesLoaded, setEmployeesLoaded] = useState(false);
     const [employeesLoading, setEmployeesLoading] = useState(false);
     const [employeesLoadError, setEmployeesLoadError] = useState("");
-    const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
-    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor"
+    // Restoring "where the day was left" on mount (a reload, or coming back
+    // from Pay/Account): read once, structurally validated by placeMemory.js.
+    // A tab this viewer can no longer reach (Team, if roster access changed)
+    // falls back to Shifts rather than rendering a screen with nothing on it.
+    // Money is never in this note - only the tab, the date, and the step.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const restoredPlace = useMemo(() => loadPlace(user?.uid || null), []);
+    const restoredWorkspace = restoredPlace?.surface === "workspace" ? restoredPlace.workspace : null;
+    const [selectedDate, setSelectedDate] = useState(() => restoredWorkspace?.date || toDateKey(new Date()));
+    const [activeTab, setActiveTab] = useState(() => {
+        const tab = restoredWorkspace?.tab;
+        if (tab === "users" && !canReadRoster(user)) return "shifts";
+        return tab || "shifts";
+    }); // "shifts" | "users" | "editor"
     const [daySummary, setDaySummary] = useState(null);
     const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
@@ -153,12 +166,13 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // usually the same one or two people, so this keeps it to one read each.
     const saverNameCacheRef = useRef(new Map());
     const [removingShift, setRemovingShift] = useState(false);
-    // Which day-step the shift editor opens on when entered from a landing CTA.
-    const [editorStep, setEditorStep] = useState("floor");
+    // Which day-step the shift editor opens on when entered from a landing CTA
+    // - or, on a fresh mount, restored from where the editor was left.
+    const [editorStep, setEditorStep] = useState(() => restoredWorkspace?.editorStep || "floor");
     // Which Settle up group the tab strip preselects when the landing's
     // who's-left checklist is tapped directly into a group - null defers to
     // ShiftEditorPanel's own default (the first dining team).
-    const [editorActiveGroupId, setEditorActiveGroupId] = useState(null);
+    const [editorActiveGroupId, setEditorActiveGroupId] = useState(() => restoredWorkspace?.settleGroupId ?? null);
     // Set only by a completed Confirm & Save, so the confirmation lands on the day
     // it belongs to instead of on the editor the admin is leaving.
     const [shiftSaved, setShiftSaved] = useState(false);
@@ -220,6 +234,29 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             setEmployeesLoading(false);
         }
     }, [employeesLoaded]);
+
+    // A mount restored straight onto Editor or Team needs the same employee
+    // list a normal tap into either would have fetched via setActiveTabWithData
+    // - only relevant once, right after the initial (possibly restored) tab is
+    // known.
+    useEffect(() => {
+        if (activeTab === "editor" || activeTab === "users") {
+            loadEmployeesIfNeeded();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Keeps the "place" note (placeMemory.js) current with whatever the
+    // workspace is actually showing, so a reload comes back here. This is the
+    // ONLY writer for surface "workspace" - App.jsx owns "pay"/"account" - so
+    // the two never race on the same localStorage entry. No money fields.
+    useEffect(() => {
+        if (!user?.uid) return;
+        savePlace(user.uid, {
+            surface: "workspace",
+            workspace: { tab: activeTab, date: selectedDate, editorStep, settleGroupId: editorActiveGroupId },
+        });
+    }, [user?.uid, activeTab, selectedDate, editorStep, editorActiveGroupId]);
 
     // The day is no longer blanked before a refetch: a refetch of the date already
     // on screen (after a save, after backing out of the editor) holds its content
