@@ -12,7 +12,7 @@ function ContractRow({ contract, index, onUpdateContract, onRemoveContract }) {
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="26% Gratuity Amount"
+                    placeholder="27% Gratuity Amount"
                     value={contract.gratuity}
                     onChange={(e) => onUpdateContract(index, "gratuity", e.target.value)}
                     className={NUMERIC_INPUT + " !pl-6"}

@@ -173,7 +173,7 @@ export const generateShiftReport = async (date, summary) => {
 
     if (summary.normalizedInputs?.contract26Gratuity > 0) {
         doc.setTextColor(...PRIMARY_COLOR);
-        doc.text(`Contract Shift (26% Grat: ${currency(summary.normalizedInputs.contract26Gratuity)})`, 40, 160);
+        doc.text(`Contract Shift (27% Grat: ${currency(summary.normalizedInputs.contract26Gratuity)})`, 40, 160);
     }
 
     // 4. Employee Payouts Table

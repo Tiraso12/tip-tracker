@@ -263,7 +263,7 @@ export function CalculatedPayoutReview({
                         {contractSales > 0 ? (
                             <LedgerRow
                                 label="Contract sales"
-                                sub="derived from contract gratuity at 26%, included above"
+                                sub="derived from contract gratuity at 27%, included above"
                                 value={fmtMoney(contractSales)}
                                 testId="totals-contract-sales"
                             />
