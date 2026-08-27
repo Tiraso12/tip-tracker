@@ -235,6 +235,11 @@ export const AuthProvider = ({ children }) => {
     };
 
     const deletePartiallyRegisteredAuthUser = async (firebaseUser, email, password) => {
+        // Rolling back the Auth account is what stops a failed sign-up from leaving
+        // the orphan this whole path exists to repair. Firebase refuses a delete on
+        // a stale session, so refresh the token first and re-prove the password if
+        // it still objects - the credential is right here, and giving up would keep
+        // the email permanently unusable to its own owner.
         try {
             await firebaseUser.getIdToken(true);
             await firebaseUser.delete();
@@ -264,6 +269,14 @@ export const AuthProvider = ({ children }) => {
         return existingUser;
     };
 
+    // An Auth account with no `users/{uid}` behind it is an orphan: a sign-up that
+    // died between creating the login and writing the profile, or a profile an admin
+    // deleted. Its email is taken, so a fresh sign-up cannot have it, and logging in
+    // is a dead end - the observer signs a profile-less session straight back out.
+    // Signing up again with the same email and password is therefore the repair, and
+    // the sign-in below is how this proves the person typing owns that email before
+    // writing them a profile. A session that DOES have a profile is refused here, so
+    // nothing can ever be written over a real account.
     const getAuthOnlyUserForRegistration = async (email, password) => {
         let existingUser;
         try {

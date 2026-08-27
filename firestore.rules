@@ -233,6 +233,13 @@ service cloud.firestore {
         (!("isSupervisor" in request.resource.data) || request.resource.data.isSupervisor is bool);
     }
 
+    // The email is compared case-insensitively on purpose. Sign-up canonicalises
+    // the address to lower case so the profile and the mapping carry one spelling
+    // of it, while the Auth token carries it however the account was created - so
+    // an exact match would refuse the handle claim of anyone who typed a capital
+    // letter. Lowering both sides still binds the mapping to the signed-in
+    // account's own address; it only stops caring how that address was typed.
+    // `tests/rules/profile-self-service.test.js` pins it.
     function validUsernameMapping(username) {
       return request.resource.data.keys().hasOnly(["uid", "username", "email", "createdAt"]) &&
         request.resource.data.keys().hasAll(["uid", "username", "email"]) &&

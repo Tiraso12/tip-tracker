@@ -71,6 +71,13 @@ viewed, not today) into `calculateShift` for exactly this reason; a call that om
 (undated tests, any leftover caller) stays on 26% rather than silently jumping to 27%.
 `src/utils/engine.test.js` pins both sides of the cutoff.
 
+**A percentage on screen is quoted, never typed.** Every place that says the rate out loud - the
+contract gratuity field's placeholder, Review's "Contract sales" sub-label, the shift PDF - reads
+it from `formatContractRate(date)` in `engine.js`, keyed on the same shift date the engine
+divided by. A literal `27%` in a label is a second home for the number: it would silently
+mislabel every pre-cutoff night the captain reopens, beside an amount that was derived at 26%,
+with nothing on screen to say so.
+
 ## A negative CTP is correct
 
 **Never add a guard, a clamp or a floor.** In the captain's own words: the bar's fees are paid
