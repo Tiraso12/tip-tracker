@@ -59,11 +59,34 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const registrationInProgressRef = useRef(false);
+    const authEventSeqRef = useRef(0);
 
     useEffect(() => {
         let unsubscribe;
 
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            // Every auth event is stamped, and only the newest one is allowed to
+            // commit state. `register` signs in mid-attempt and signs straight back
+            // out when the answer is no, so two invocations of this callback are in
+            // flight at once: without the stamp the older one finishes its profile
+            // reads AFTER the sign-out has landed and calls setUser anyway, leaving
+            // the app rendering a signed-in user whose auth.currentUser is already
+            // null - every Firestore read then fails permission-denied until a reload.
+            const seq = ++authEventSeqRef.current;
+            const isCurrentAuthEvent = () => authEventSeqRef.current === seq;
+
+            // A registration attempt owns the user state for its whole span. It signs
+            // in only to prove the person typing owns an email or handle that is
+            // already taken, and signs out again on refusal. Mapping that interim
+            // sign-in here would render the dashboard for an account that already
+            // exists and unmount the very form the refusal has to be reported on, so
+            // the message would never reach the screen. `register` sets the user
+            // itself, once the profile write has actually landed.
+            if (firebaseUser && registrationInProgressRef.current) {
+                if (isCurrentAuthEvent()) setLoading(false);
+                return;
+            }
+
             if (firebaseUser) {
                 // Profile state is the authorization source of truth. Missing
                 // or unreadable state must not become an active employee.
@@ -88,15 +111,14 @@ export const AuthProvider = ({ children }) => {
                         lastName = profile.lastName || "";
                         createdAt = profile.createdAt || null;
                         isSupervisor = profile.isSupervisor === true;
-                    } else if (registrationInProgressRef.current) {
-                        role = "unassigned";
-                        status = "pending";
                     } else {
                         // User was deleted from Firestore by an Admin
                         console.warn("User document not found. Auto-logging out.");
                         await signOut(auth);
-                        setUser(null);
-                        setLoading(false);
+                        if (isCurrentAuthEvent()) {
+                            setUser(null);
+                            setLoading(false);
+                        }
                         return;
                     }
                 } catch (e) {
@@ -131,8 +153,10 @@ export const AuthProvider = ({ children }) => {
                     managerUid,
                     createdAt,
                 };
+                if (!isCurrentAuthEvent()) return;
                 setUser(mappedUser);
             } else {
+                if (!isCurrentAuthEvent()) return;
                 setUser(null);
             }
             setLoading(false);
@@ -248,6 +272,7 @@ export const AuthProvider = ({ children }) => {
 
         let firebaseUser = null;
         let createdAuthUser = false;
+        let registeredProfile = null;
         try {
             registrationInProgressRef.current = true;
             await setPersistence(auth, browserSessionPersistence);
@@ -281,12 +306,13 @@ export const AuthProvider = ({ children }) => {
             }
 
             const canonicalEmail = normalizeEmail(firebaseUser.email || cleanEmail);
-            await writeRegistrationProfile(firebaseUser, buildRegistrationProfile(firebaseUser, {
+            registeredProfile = buildRegistrationProfile(firebaseUser, {
                 email: canonicalEmail,
                 username: cleanUsername,
                 firstName: cleanFirstName,
                 lastName: cleanLastName,
-            }));
+            });
+            await writeRegistrationProfile(firebaseUser, registeredProfile);
         } catch (err) {
             if (firebaseUser && createdAuthUser) {
                 try {
@@ -304,17 +330,24 @@ export const AuthProvider = ({ children }) => {
         }
 
         // A self-registered account is pending with no title and no switch - the
-        // same safe defaults firestore.rules enforces on the create.
-        setUser(prev => ({
-            ...prev,
-            username: cleanUsername,
-            firstName: cleanFirstName,
-            lastName: cleanLastName,
-            role: "unassigned",
-            status: "pending",
-            isSupervisor: false,
+        // same safe defaults firestore.rules enforces on the create. Built whole
+        // from the profile that was just written rather than merged onto whatever
+        // the auth observer happened to leave behind: the observer stays out of a
+        // registration attempt entirely, so there is no earlier state to merge onto
+        // and PendingApproval needs the name and email this carries.
+        setUser({
+            uid: registeredProfile.uid,
+            username: registeredProfile.username,
+            firstName: registeredProfile.firstName,
+            lastName: registeredProfile.lastName,
+            email: registeredProfile.email,
             emailVerified: true,
-        }));
+            role: registeredProfile.role,
+            status: registeredProfile.status,
+            isSupervisor: false,
+            managerUid: null,
+            createdAt: registeredProfile.createdAt,
+        });
         return firebaseUser;
     };
 

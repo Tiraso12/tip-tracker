@@ -350,6 +350,44 @@ test("sign-up over an orphan with the wrong password names the reset-then-sign-u
     });
 });
 
+// The "I forgot I already have an account" retry: a fully registered, active person
+// signs up again with their real email, the right password, and a free handle.
+// register() signs in to check, finds a profile, and refuses. The refusal has to
+// reach the screen - it used to be swallowed, because the interim sign-in rendered
+// the dashboard and unmounted the very form the message is set on, leaving a blank
+// signup form with no explanation.
+test("signing up again with an existing account shows the refusal instead of flashing the app", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill(SERVER_EMAIL);
+    await page.getByLabel("First name").fill("Sam");
+    await page.getByLabel("Last name (optional)").fill("Server");
+    await page.getByLabel("Login handle").fill("sam-again");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByText(/An account with this email already exists/i)).toBeVisible();
+    // Still on the signup form, signed out - not the dashboard and not the pending screen.
+    await expect(page.getByRole("button", { name: "Create Account" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeHidden();
+
+    // The refused attempt claimed nothing: the handle is still free and the real
+    // account keeps the profile it already had.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const mapping = await getDoc(doc(db, "usernames/sam-again"));
+        expect(mapping.exists()).toBe(false);
+
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === SERVER_EMAIL);
+        expect(profile?.data()).toMatchObject({ username: "Sam Server", role: "server", status: "active" });
+    });
+});
+
 test("the badge does not disturb the phone app bar", async ({ page }) => {
     await page.setViewportSize(PHONE_VIEWPORT);
     await seedUsers({ pending: 2 });
