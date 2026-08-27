@@ -59,11 +59,12 @@ const Login = () => {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const { login, register, resetPassword } = useAuth();
+    const { login, register, resetPassword, authNotice, clearAuthNotice } = useAuth();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        clearAuthNotice();
         setLoading(true);
         setResetSent(false);
 
@@ -121,9 +122,9 @@ const Login = () => {
                         </p>
                     </header>
 
-                    {error && (
+                    {(error || authNotice) && (
                         <div className="mb-4 px-3 py-2 text-sm text-[var(--color-danger)] bg-[var(--color-danger-soft)] border border-[var(--color-danger)]/20 rounded-[var(--radius-sm)]">
-                            {error}
+                            {error || authNotice}
                         </div>
                     )}
 

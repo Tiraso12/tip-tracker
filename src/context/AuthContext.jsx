@@ -20,6 +20,13 @@ const normalizeUsername = (username) => username.trim().toLowerCase();
 const normalizeEmail = (email) => email.trim().toLowerCase();
 const EMAIL_EXISTS_MESSAGE = "An account with this email already exists. Log in or reset your password.";
 const HANDLE_EXISTS_MESSAGE = "Login handle already in use.";
+// Signed in, but no staff profile behind it - a signup that only got as far as
+// creating the Auth account, or a profile an admin deleted. The observer signs that
+// session straight back out, which on the login form changes nothing on screen, so
+// it has to say why and name the one action that repairs it.
+const AUTH_ONLY_ACCOUNT_MESSAGE =
+    "This email has a sign in but no staff profile yet. "
+    + "Use Sign up with the same email and password to finish setting it up.";
 const PASSWORD_MISMATCH_MESSAGE =
     "An account already uses this email, but that password does not match it. "
     + "Log in with the correct password, or reset it and sign up again with the new one.";
@@ -58,6 +65,8 @@ function registrationSignInError(error, credentialMessage) {
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    // Why the last auth event ended signed out, for a screen that cannot infer it.
+    const [authNotice, setAuthNotice] = useState("");
     const registrationInProgressRef = useRef(false);
     const authEventSeqRef = useRef(0);
 
@@ -114,6 +123,11 @@ export const AuthProvider = ({ children }) => {
                     } else {
                         // User was deleted from Firestore by an Admin
                         console.warn("User document not found. Auto-logging out.");
+                        // Recorded before the sign-out, not after: signing out is
+                        // itself the next auth event, so by the time it resolves this
+                        // invocation is no longer the current one and may commit
+                        // nothing. The null event it raises owns clearing the user.
+                        if (isCurrentAuthEvent()) setAuthNotice(AUTH_ONLY_ACCOUNT_MESSAGE);
                         await signOut(auth);
                         if (isCurrentAuthEvent()) {
                             setUser(null);
@@ -174,6 +188,8 @@ export const AuthProvider = ({ children }) => {
             console.error("Logout failed", error);
         }
     };
+
+    const clearAuthNotice = () => setAuthNotice("");
 
     const login = async (identifier, password, rememberMe = false) => {
         const trimmedIdentifier = identifier.trim();
@@ -270,6 +286,13 @@ export const AuthProvider = ({ children }) => {
         const usernameKey = normalizeUsername(cleanUsername);
         const usernameRef = doc(db, 'usernames', usernameKey);
 
+        // The session as it stood BEFORE this attempt. Cleanup keys on the session
+        // itself rather than on `firebaseUser`, which is only assigned once a sign-in
+        // helper has fully returned: a failure between a successful sign-in and that
+        // assignment (a forced token refresh timing out, the profile read throwing)
+        // would otherwise leave Firebase signed in behind a logged-out signup form.
+        const preAttemptUid = auth.currentUser?.uid ?? null;
+
         let firebaseUser = null;
         let createdAuthUser = false;
         let registeredProfile = null;
@@ -321,7 +344,7 @@ export const AuthProvider = ({ children }) => {
                     console.warn("Could not delete partially registered auth user:", deleteErr);
                     await signOut(auth);
                 }
-            } else if (firebaseUser && auth.currentUser?.uid === firebaseUser.uid) {
+            } else if (auth.currentUser && auth.currentUser.uid !== preAttemptUid) {
                 await signOut(auth);
             }
             throw err;
@@ -377,6 +400,8 @@ export const AuthProvider = ({ children }) => {
             register,
             logout,
             loading,
+            authNotice,
+            clearAuthNotice,
             resetPassword,
             updateSessionProfile,
             changePassword,

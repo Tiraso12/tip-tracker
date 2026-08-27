@@ -388,6 +388,75 @@ test("signing up again with an existing account shows the refusal instead of fla
     });
 });
 
+// A signup that fails BETWEEN a successful sign-in and the checks that follow it
+// must not leave Firebase signed in. Blocking the token-refresh endpoint reproduces
+// flaky venue wifi exactly: accounts:signInWithPassword succeeds, the forced
+// getIdToken refresh does not. The leaked session is invisible on the signup form -
+// it shows up on the next page load, which used to land straight on the dashboard
+// for an account nobody logged into.
+test("a signup that fails mid-flight does not leave Firebase signed in", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+
+    const tokenRefresh = "**/securetoken.googleapis.com/**";
+    await page.route(tokenRefresh, (route) => route.abort());
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill(SERVER_EMAIL);
+    await page.getByLabel("First name").fill("Sam");
+    await page.getByLabel("Last name (optional)").fill("Server");
+    await page.getByLabel("Login handle").fill("sam-offline");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("button", { name: "Create Account" })).toBeEnabled();
+    await expect(accountTrigger(page)).toBeHidden();
+
+    // Connection back: a reload must still find nobody signed in.
+    await page.unroute(tokenRefresh);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Log In" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeHidden();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const mapping = await getDoc(doc(context.firestore(), "usernames/sam-offline"));
+        expect(mapping.exists()).toBe(false);
+    });
+});
+
+// An Auth-only orphan is far likelier to try Log in than Sign up. The sign-in
+// succeeds, the observer finds no profile and signs it straight back out - and
+// because the login form was already on screen, nothing changed at all. It now
+// says why, and names Sign up as the repair.
+test("an Auth-only orphan who logs in is told to finish signing up", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await createAuthUser({
+        email: "orphan-login@example.com",
+        password: PASSWORD,
+        displayName: "Orphan Login",
+    });
+
+    await login(page, "orphan-login@example.com");
+
+    await expect(page.getByText(/no staff profile yet/i)).toBeVisible();
+    await expect(page.getByText(/Use Sign up with the same email and password/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Log In" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeHidden();
+
+    // And the named repair actually works from here.
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill("orphan-login@example.com");
+    await page.getByLabel("First name").fill("Orla");
+    await page.getByLabel("Last name (optional)").fill("Login");
+    await page.getByLabel("Login handle").fill("orla-login");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
+});
+
 test("the badge does not disturb the phone app bar", async ({ page }) => {
     await page.setViewportSize(PHONE_VIEWPORT);
     await seedUsers({ pending: 2 });
