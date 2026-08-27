@@ -9,6 +9,7 @@ import { RunnerGroup } from "./RunnerGroup";
 import { TeamPoolFields } from "./TeamPoolFields";
 
 export function SettleStep({
+    date,
     closeoutGroups,
     activeGroupId,
     onSelectGroup,
@@ -155,6 +156,7 @@ export function SettleStep({
                         <>
                             <TeamPoolFields
                                 team={diningTeam}
+                                date={date}
                                 onPoolChange={onPoolChange}
                                 onToggleContracts={onToggleContracts}
                                 onAddContract={onAddContract}

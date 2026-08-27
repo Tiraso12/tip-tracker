@@ -20,9 +20,39 @@ const normalizeUsername = (username) => username.trim().toLowerCase();
 const normalizeEmail = (email) => email.trim().toLowerCase();
 const EMAIL_EXISTS_MESSAGE = "An account with this email already exists. Log in or reset your password.";
 const HANDLE_EXISTS_MESSAGE = "Login handle already in use.";
+const PASSWORD_MISMATCH_MESSAGE =
+    "An account already uses this email, but that password does not match it. "
+    + "Log in with the correct password, or reset it and sign up again with the new one.";
 
 function isEmailAlreadyInUseError(error) {
     return error?.code === "auth/email-already-in-use";
+}
+
+// "The password typed does not open this email's account." Firebase reports that as
+// auth/invalid-credential once email enumeration protection is on and as the older
+// spellings otherwise, and a never-registered email is indistinguishable from a wrong
+// password by design - all of them answer the same question the same way.
+const CREDENTIAL_MISMATCH_CODES = new Set([
+    "auth/wrong-password",
+    "auth/invalid-credential",
+    "auth/invalid-login-credentials",
+    "auth/user-not-found",
+]);
+
+const TRANSIENT_SIGN_IN_MESSAGES = {
+    "auth/too-many-requests": "Too many attempts. Wait a few minutes, then try again.",
+    "auth/network-request-failed": "Could not reach the server. Check your connection and try again.",
+};
+
+// Registration signs in to prove the person typing owns an email or handle that is
+// already taken. Only a credential failure has a recovery worth naming, and each
+// caller names its own; a rate limit or a dead connection is a failure to ask the
+// question at all, so it surfaces as itself rather than as a claim about the account
+// that sends the captain down a path which cannot work.
+function registrationSignInError(error, credentialMessage) {
+    if (CREDENTIAL_MISMATCH_CODES.has(error?.code)) return new Error(credentialMessage);
+    const transient = TRANSIENT_SIGN_IN_MESSAGES[error?.code];
+    return transient ? new Error(transient) : error;
 }
 
 export const AuthProvider = ({ children }) => {
@@ -178,14 +208,10 @@ export const AuthProvider = ({ children }) => {
     };
 
     const signInRegistrationUser = async (email, password) => {
-        try {
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            const existingUser = userCredential.user;
-            await existingUser.getIdToken(true);
-            return existingUser;
-        } catch {
-            throw new Error(EMAIL_EXISTS_MESSAGE);
-        }
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const existingUser = userCredential.user;
+        await existingUser.getIdToken(true);
+        return existingUser;
     };
 
     const requireAuthOnlyUser = async (existingUser) => {
@@ -198,9 +224,19 @@ export const AuthProvider = ({ children }) => {
         return existingUser;
     };
 
-    const getAuthOnlyUserForRegistration = async (email, password) => (
-        requireAuthOnlyUser(await signInRegistrationUser(email, password))
-    );
+    const getAuthOnlyUserForRegistration = async (email, password) => {
+        let existingUser;
+        try {
+            existingUser = await signInRegistrationUser(email, password);
+        } catch (err) {
+            // The email is taken and this password does not open it. Telling the
+            // captain to "log in" here is a dead end when the account is an Auth-only
+            // orphan - onAuthStateChanged signs that user straight back out - so name
+            // the one sequence that does work: reset, then sign up again.
+            throw registrationSignInError(err, PASSWORD_MISMATCH_MESSAGE);
+        }
+        return requireAuthOnlyUser(existingUser);
+    };
 
     const register = async (email, password, username, firstName, lastName) => {
         const cleanEmail = normalizeEmail(email);
@@ -221,8 +257,11 @@ export const AuthProvider = ({ children }) => {
                 let existingAuthUser;
                 try {
                     existingAuthUser = await signInRegistrationUser(cleanEmail, password);
-                } catch {
-                    throw new Error(HANDLE_EXISTS_MESSAGE);
+                } catch (err) {
+                    // Failing to sign in here proves nothing about the email - it may
+                    // not exist at all. What is certain is that the handle is spoken
+                    // for and this attempt did not prove it is theirs.
+                    throw registrationSignInError(err, HANDLE_EXISTS_MESSAGE);
                 }
                 firebaseUser = await requireAuthOnlyUser(existingAuthUser);
                 if (existingUsername.data()?.uid !== firebaseUser.uid) {

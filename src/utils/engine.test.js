@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateShift } from "./engine.js";
+import { calculateShift, formatContractRate, getContractRate } from "./engine.js";
 import { RUNNER_FLAT_RATE } from "./constants.js";
 import { buildPayoutLedgerEntry, reconcilePayoutLedger } from "./payoutLedger.js";
 import { mapPayoutsForFirebase } from "../components/Admin/shiftEditorUtils.js";
@@ -310,6 +310,35 @@ test("contract sales stay on 26% when no date is passed (undated callers never j
     });
 
     assert.equal(result.derivedValues.contractSales, 1000);
+});
+
+// Every screen that quotes the contract rate labels it with this, so the label and
+// the divisor cannot drift apart. Before this existed, three surfaces carried a
+// literal "27%" and mislabelled every pre-cutoff night the captain reopened.
+test("the contract rate label follows the same shift date the engine divides by", () => {
+    assert.equal(formatContractRate("2026-08-25"), "26%");
+    assert.equal(formatContractRate("2026-08-26"), "27%");
+    assert.equal(formatContractRate("2026-09-01"), "27%");
+    assert.equal(formatContractRate(undefined), "26%");
+
+    for (const date of ["2026-08-25", "2026-08-26", "2026-09-01", undefined]) {
+        const result = calculateShift({
+            teams: [
+                {
+                    teamId: "team-1",
+                    members: [{ uid: "server-1", name: "Server One", role: "server" }],
+                    pools: { sales: 0, tips: 0, cash: 0, gratuity: 0 },
+                    contracts: [{ gratuity: 1000 }],
+                },
+            ],
+            barTeam: { members: [], pools: {} },
+            runners: [],
+            date,
+        });
+
+        assert.equal(formatContractRate(date), `${Math.round(getContractRate(date) * 100)}%`);
+        assert.equal(result.derivedValues.contractSales, r2(1000 / getContractRate(date)));
+    }
 });
 
 test("reconciles rounding to keep distributed totals balanced", () => {

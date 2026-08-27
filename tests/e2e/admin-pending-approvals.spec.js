@@ -311,6 +311,45 @@ test("sign-up can repair an Auth-only orphan into a pending staff card", async (
     });
 });
 
+// Signing up over an Auth-only orphan with the WRONG password used to report "An
+// account with this email already exists. Log in or reset your password." Both
+// suggested actions dead-end: logging in as an orphan is signed straight back out
+// with nothing on screen. The message must name the one sequence that works.
+test("sign-up over an orphan with the wrong password names the reset-then-sign-up recovery", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await createAuthUser({
+        email: "orphan-mismatch@example.com",
+        password: PASSWORD,
+        displayName: "Orphan Mismatch",
+    });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill("orphan-mismatch@example.com");
+    await page.getByLabel("First name").fill("Orla");
+    await page.getByLabel("Last name (optional)").fill("Mismatch");
+    await page.getByLabel("Login handle").fill("orla-mismatch");
+    await page.getByLabel("Password", { exact: true }).fill(`${PASSWORD}-wrong`);
+    await page.getByLabel("Confirm Password").fill(`${PASSWORD}-wrong`);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByText(/that password does not match it/i)).toBeVisible();
+    await expect(page.getByText(/reset it and sign up again/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeHidden();
+
+    // The refused attempt leaves the orphan exactly as it was - no half-written
+    // profile, and the handle it asked for is still free.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === "orphan-mismatch@example.com");
+        expect(profile).toBeUndefined();
+
+        const mapping = await getDoc(doc(db, "usernames/orla-mismatch"));
+        expect(mapping.exists()).toBe(false);
+    });
+});
+
 test("the badge does not disturb the phone app bar", async ({ page }) => {
     await page.setViewportSize(PHONE_VIEWPORT);
     await seedUsers({ pending: 2 });

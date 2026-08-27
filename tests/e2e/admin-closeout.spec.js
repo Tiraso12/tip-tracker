@@ -263,11 +263,12 @@ async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
 
-    const netRevenue = page.getByRole("spinbutton", { name: "Net revenue", exact: true });
-    if (!(await netRevenue.isVisible().catch(() => false))) {
-        await openFirstSettleGroup(page);
-    }
+    // Floor -> Settle on an open shift ALWAYS routes to the who's-left landing
+    // (ShiftEditorPanel `goToStep`), so the group is always opened from there. A
+    // conditional probe here would keep passing if that routing regressed.
+    await openFirstSettleGroup(page);
 
+    const netRevenue = page.getByRole("spinbutton", { name: "Net revenue", exact: true });
     await netRevenue.fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);

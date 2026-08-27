@@ -26,9 +26,17 @@ const sumProp = (arr, prop) => arr.reduce((sum, item) => sum + n(item[prop]), 0)
 const CONTRACT_RATE_CHANGE_DATE = '2026-08-26';
 const CONTRACT_RATE_BEFORE = 0.26;
 const CONTRACT_RATE_AFTER = 0.27;
-function getContractRate(date) {
+export function getContractRate(date) {
     if (!date) return CONTRACT_RATE_BEFORE;
     return date >= CONTRACT_RATE_CHANGE_DATE ? CONTRACT_RATE_AFTER : CONTRACT_RATE_BEFORE;
+}
+
+// Every screen that quotes the contract rate reads it from here, keyed on the same
+// shift date the engine divided by. A literal "27%" in a label silently mislabels
+// every pre-2026-08-26 night the captain reopens - the number beside it was derived
+// at 26%, and nothing on screen would say so.
+export function formatContractRate(date) {
+    return `${Math.round(getContractRate(date) * 100)}%`;
 }
 
 /**

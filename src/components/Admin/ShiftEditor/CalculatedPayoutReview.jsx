@@ -1,5 +1,6 @@
 import { useState } from "react";
 import NegativeNightNotice from "../NegativeNightNotice";
+import { formatContractRate } from "../../../utils/engine";
 import { getExternalFeeTotal } from "../../../utils/payoutLedger";
 import {
     fmtMoney,
@@ -128,12 +129,15 @@ export function CalculatedPayoutReview({
     const feeTransfer = Number(runnersFeeTransfer) || 0;
 
     // Not entered directly - the captain only types a contract's gratuity, so the
-    // engine derives the sales that gratuity implies at the fixed 26% contract rate
-    // (engine.js `contractSales = grtContractTotal / 0.26`). It is already included
-    // inside `diningNetRevenue` (every team's whole `pools.sales`), not additional
-    // money - shown only as a breakout of what's already counted above, and only
-    // when a contract actually put money into it.
+    // engine derives the sales that gratuity implies at the contract rate in force
+    // on the SHIFT's own date (engine.js `contractSales = grtContractTotal /
+    // getContractRate(date)`). It is already included inside `diningNetRevenue`
+    // (every team's whole `pools.sales`), not additional money - shown only as a
+    // breakout of what's already counted above, and only when a contract actually
+    // put money into it. The sub-label reads the rate off that same date so an old
+    // night reopened for an edit is never labelled at today's rate.
     const contractSales = Number(result.derivedValues?.contractSales) || 0;
+    const contractRateLabel = formatContractRate(result.normalizedInputs?.date);
 
     const overallBalance = Number(result.balances?.overallBalance) || 0;
     const balanced = Math.abs(overallBalance) <= 0.05;
@@ -263,7 +267,7 @@ export function CalculatedPayoutReview({
                         {contractSales > 0 ? (
                             <LedgerRow
                                 label="Contract sales"
-                                sub="derived from contract gratuity at 27%, included above"
+                                sub={`derived from contract gratuity at ${contractRateLabel}, included above`}
                                 value={fmtMoney(contractSales)}
                                 testId="totals-contract-sales"
                             />

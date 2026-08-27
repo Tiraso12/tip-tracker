@@ -5,6 +5,7 @@ import { PoolField } from "./PoolField";
 // inside the single entry panel (no card chrome of its own).
 export function TeamPoolFields({
     team,
+    date,
     onPoolChange,
     onToggleContracts,
     onAddContract,
@@ -23,6 +24,7 @@ export function TeamPoolFields({
 
             <ContractsDisclosure
                 team={team}
+                date={date}
                 onToggleContracts={onToggleContracts}
                 onAddContract={onAddContract}
                 onUpdateContract={onUpdateContract}

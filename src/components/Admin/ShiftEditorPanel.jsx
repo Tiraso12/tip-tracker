@@ -917,7 +917,16 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         // list, so bouncing there would strand the admin outside the editor
         // entirely; a closed shift enters Settle directly instead.
         if (step === "floor" && key === "settle" && shiftStatus !== "closed") {
-            await flushPendingDraftSave();
+            // The flush is a server write, and Firestore's promise does not settle
+            // while offline - on venue wifi this tap can wait. Drive the workspace
+            // progress cue so the wait reads as a wait rather than a dead button,
+            // the same way Confirm & Save does.
+            const endPendingAction = beginPendingAction();
+            try {
+                await flushPendingDraftSave();
+            } finally {
+                endPendingAction();
+            }
             onBackToLanding?.();
             return;
         }
@@ -1057,6 +1066,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                 />
             ) : effectiveStep === "settle" ? (
                 <SettleStep
+                    date={date}
                     closeoutGroups={closeoutGroups}
                     activeGroupId={activeGroupId}
                     onSelectGroup={handleSelectGroup}
