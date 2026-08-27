@@ -217,6 +217,13 @@ async function setShiftDate(page, date) {
     }, date);
 }
 
+async function openFirstSettleGroup(page) {
+    const firstGroup = page.getByRole("button", { name: /Team 1.*(Still on tables|Entering|Done)/s });
+    await expect(firstGroup).toBeVisible();
+    await firstGroup.click();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+}
+
 // Walk the saved floor plan through Settle up -> Review -> Confirm & Save, the way
 // a manager settles the night after the merge happened.
 //
@@ -232,6 +239,7 @@ async function settleSavedShift(page, { sales, tips, gratuity, cash }) {
     await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
 
     await rail.getByRole("button", { name: "Settle" }).click();
+    await openFirstSettleGroup(page);
     await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);

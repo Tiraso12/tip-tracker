@@ -234,6 +234,83 @@ test("sign-up stores a work name separately from the login handle", async ({ pag
     await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
 });
 
+test("sign-up stores the pending staff card when the email has capital letters", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+
+    await page.getByLabel("Email").fill("AlexieKBrown@Gmail.com");
+    await page.getByLabel("First name").fill("Alexie");
+    await page.getByLabel("Last name (optional)").fill("Brown");
+    await page.getByLabel("Login handle").fill("alexiebrown");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === "alexiekbrown@gmail.com");
+        expect(profile?.data()).toMatchObject({
+            username: "alexiebrown",
+            firstName: "Alexie",
+            lastName: "Brown",
+            role: "unassigned",
+            status: "pending",
+        });
+
+        const mapping = await getDoc(doc(db, "usernames/alexiebrown"));
+        expect(mapping.data()).toMatchObject({
+            uid: profile.id,
+            username: "alexiebrown",
+            email: "alexiekbrown@gmail.com",
+        });
+    });
+});
+
+test("sign-up can repair an Auth-only orphan into a pending staff card", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await createAuthUser({
+        email: "orphan-signup@example.com",
+        password: PASSWORD,
+        displayName: "Orphan Signup",
+    });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill("orphan-signup@example.com");
+    await page.getByLabel("First name").fill("Orla");
+    await page.getByLabel("Last name (optional)").fill("Pending");
+    await page.getByLabel("Login handle").fill("orla-pending");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === "orphan-signup@example.com");
+        expect(profile?.data()).toMatchObject({
+            username: "orla-pending",
+            firstName: "Orla",
+            lastName: "Pending",
+            role: "unassigned",
+            status: "pending",
+        });
+
+        const mapping = await getDoc(doc(db, "usernames/orla-pending"));
+        expect(mapping.data()).toMatchObject({
+            uid: profile.id,
+            username: "orla-pending",
+            email: "orphan-signup@example.com",
+        });
+    });
+});
+
 test("the badge does not disturb the phone app bar", async ({ page }) => {
     await page.setViewportSize(PHONE_VIEWPORT);
     await seedUsers({ pending: 2 });

@@ -214,6 +214,13 @@ async function closeTeamPicker(page) {
     await expect(page.getByRole("dialog", { name: /Add employees to/i })).toHaveCount(0);
 }
 
+async function openFirstSettleGroup(page) {
+    const firstGroup = page.getByRole("button", { name: /Team 1.*(Still on tables|Entering|Done)/s });
+    await expect(firstGroup).toBeVisible();
+    await firstGroup.click();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+}
+
 test.beforeAll(async () => {
     mkdirSync(SHOTS_DIR, { recursive: true });
     testEnv = await initializeTestEnvironment({
@@ -251,6 +258,7 @@ test("settling a night through the UI leaves the day naming who saved it", async
 
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
+    await openFirstSettleGroup(page);
     await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill("1000");
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("200");
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("100");

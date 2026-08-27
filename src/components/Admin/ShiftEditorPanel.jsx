@@ -726,10 +726,62 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     // Supervisor hit by entering money and marking a brand-new shift's only
     // team done fast enough that the whole-document save hadn't landed yet.
     const pendingDraftSaveRef = useRef({ timeoutId: null, run: null });
+    const saveSetupDraftNowRef = useRef(null);
+
+    const saveSetupDraftNow = useCallback(async () => {
+        if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return;
+        if (!hasAssignedStaff && !hasCloseoutDraftData) return;
+
+        // Setup money autosaves silently - no write, no re-arm, when nothing
+        // has actually changed since the last successful save.
+        const fingerprint = fingerprintShift(teams, barTeam, runners);
+        if (fingerprint === lastSavedFingerprintRef.current) return;
+
+        const wasAlreadySetup = shiftStatus === "setup";
+        pendingDraftSaveRef.current = { timeoutId: null, run: null };
+        try {
+            await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
+                date,
+                teams,
+                barTeam,
+                runners,
+                includeCloseoutDraft: true,
+            }));
+            // Only on the transition into "setup" - once flagged there is nothing
+            // more to mark, and this would otherwise re-write every participant's
+            // profile on every autosave tick while actively editing.
+            if (!wasAlreadySetup) await markUserHistoryFlags("setup");
+
+            setShiftStatus("setup");
+            lastSavedFingerprintRef.current = fingerprint;
+            setDraftStatus("");
+        } catch (e) {
+            console.error("Failed to autosave closeout draft:", e);
+            setDraftStatus("Draft autosave failed.");
+        }
+    }, [
+        barTeam,
+        date,
+        hasAssignedStaff,
+        hasCloseoutDraftData,
+        hasLoadedShift,
+        isSaving,
+        loading,
+        markUserHistoryFlags,
+        removingSetupDay,
+        runners,
+        shiftStatus,
+        teams,
+    ]);
+
+    saveSetupDraftNowRef.current = saveSetupDraftNow;
 
     const flushPendingDraftSave = useCallback(async () => {
         const pending = pendingDraftSaveRef.current;
-        if (pending.timeoutId == null) return;
+        if (pending.timeoutId == null) {
+            await saveSetupDraftNowRef.current?.();
+            return;
+        }
         window.clearTimeout(pending.timeoutId);
         await pending.run();
     }, []);
@@ -790,39 +842,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
-        // Setup money autosaves silently - no write, no re-arm, when nothing
-        // has actually changed since the last successful save (see
-        // `lastSavedFingerprintRef` above).
-        const fingerprint = fingerprintShift(teams, barTeam, runners);
-        if (fingerprint === lastSavedFingerprintRef.current) return undefined;
-
-        const wasAlreadySetup = shiftStatus === "setup";
-        const run = async () => {
-            pendingDraftSaveRef.current = { timeoutId: null, run: null };
-            try {
-                await setDoc(doc(db, "shifts", date), buildShiftSetupDraft({
-                    date,
-                    teams,
-                    barTeam,
-                    runners,
-                    includeCloseoutDraft: true,
-                }));
-                // Only on the transition into "setup" - once flagged there is nothing
-                // more to mark, and this would otherwise re-write every participant's
-                // profile on every autosave tick while actively editing.
-                if (!wasAlreadySetup) await markUserHistoryFlags("setup");
-
-                setShiftStatus("setup");
-                lastSavedFingerprintRef.current = fingerprint;
-                setDraftStatus("");
-            } catch (e) {
-                console.error("Failed to autosave closeout draft:", e);
-                setDraftStatus("Draft autosave failed.");
-            }
-        };
-
-        const timeoutId = window.setTimeout(run, 1000);
-        pendingDraftSaveRef.current = { timeoutId, run };
+        const timeoutId = window.setTimeout(() => saveSetupDraftNow(), 1000);
+        pendingDraftSaveRef.current = { timeoutId, run: saveSetupDraftNow };
 
         return () => {
             // Only this instance's own still-pending timer - a flush (or the
@@ -834,18 +855,14 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
             }
         };
     }, [
-        barTeam,
-        date,
         hasAssignedStaff,
         hasCloseoutDraftData,
         hasLoadedShift,
         isSaving,
         loading,
-        markUserHistoryFlags,
         removingSetupDay,
-        runners,
+        saveSetupDraftNow,
         shiftStatus,
-        teams,
     ]);
 
     // Has the admin actually changed anything since the shift loaded?
@@ -889,7 +906,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     // so there is nothing to unlock or commit first. The only exit that needs
     // confirming is leaving the EDITOR entirely on a dirty closed shift - see
     // confirmLeaveEditor above; switching steps within it never does.
-    const goToStep = (key) => {
+    const goToStep = async (key) => {
         // Leaving Settle up (any direction) flushes rather than abandons a
         // debounce in flight - see flushPendingGroupSave.
         if (step === "settle" && key !== "settle") flushPendingGroupSave();
@@ -900,6 +917,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         // list, so bouncing there would strand the admin outside the editor
         // entirely; a closed shift enters Settle directly instead.
         if (step === "floor" && key === "settle" && shiftStatus !== "closed") {
+            await flushPendingDraftSave();
             onBackToLanding?.();
             return;
         }

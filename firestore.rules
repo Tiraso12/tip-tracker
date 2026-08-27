@@ -242,7 +242,8 @@ service cloud.firestore {
         request.resource.data.username.size() <= 80 &&
         request.resource.data.username.lower() == username &&
         request.resource.data.email is string &&
-        request.resource.data.email == request.auth.token.email &&
+        request.auth.token.email is string &&
+        request.resource.data.email.lower() == request.auth.token.email.lower() &&
         (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
     }
 

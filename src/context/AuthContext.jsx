@@ -17,6 +17,13 @@ import { doc, getDoc, writeBatch } from "firebase/firestore";
 
 const AuthContext = createContext(null);
 const normalizeUsername = (username) => username.trim().toLowerCase();
+const normalizeEmail = (email) => email.trim().toLowerCase();
+const EMAIL_EXISTS_MESSAGE = "An account with this email already exists. Log in or reset your password.";
+const HANDLE_EXISTS_MESSAGE = "Login handle already in use.";
+
+function isEmailAlreadyInUseError(error) {
+    return error?.code === "auth/email-already-in-use";
+}
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -132,8 +139,71 @@ export const AuthProvider = ({ children }) => {
         return await signInWithEmailAndPassword(auth, emailToSignIn, password);
     };
 
+    const buildRegistrationProfile = (firebaseUser, { email, username, firstName, lastName }) => ({
+        uid: firebaseUser.uid,
+        username,
+        firstName,
+        lastName,
+        email,
+        role: "unassigned",
+        status: "pending",
+        createdAt: new Date().toISOString()
+    });
+
+    const writeRegistrationProfile = async (firebaseUser, profile) => {
+        // The profile and login handle must land together. Team -> Pending only
+        // sees users/{uid}, while username login depends on the public mapping.
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'users', firebaseUser.uid), profile);
+        batch.set(doc(db, 'usernames', normalizeUsername(profile.username)), {
+            uid: firebaseUser.uid,
+            username: profile.username,
+            email: profile.email,
+            createdAt: profile.createdAt
+        });
+        await batch.commit();
+    };
+
+    const deletePartiallyRegisteredAuthUser = async (firebaseUser, email, password) => {
+        try {
+            await firebaseUser.getIdToken(true);
+            await firebaseUser.delete();
+        } catch (deleteErr) {
+            if (deleteErr?.code !== "auth/requires-recent-login") throw deleteErr;
+
+            const credential = EmailAuthProvider.credential(email, password);
+            await reauthenticateWithCredential(firebaseUser, credential);
+            await firebaseUser.delete();
+        }
+    };
+
+    const signInRegistrationUser = async (email, password) => {
+        try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const existingUser = userCredential.user;
+            await existingUser.getIdToken(true);
+            return existingUser;
+        } catch {
+            throw new Error(EMAIL_EXISTS_MESSAGE);
+        }
+    };
+
+    const requireAuthOnlyUser = async (existingUser) => {
+        const existingProfile = await getDoc(doc(db, 'users', existingUser.uid));
+        if (existingProfile.exists()) {
+            await signOut(auth);
+            throw new Error(EMAIL_EXISTS_MESSAGE);
+        }
+
+        return existingUser;
+    };
+
+    const getAuthOnlyUserForRegistration = async (email, password) => (
+        requireAuthOnlyUser(await signInRegistrationUser(email, password))
+    );
+
     const register = async (email, password, username, firstName, lastName) => {
-        const cleanEmail = email.trim();
+        const cleanEmail = normalizeEmail(email);
         const cleanUsername = username.trim();
         const cleanFirstName = firstName.trim();
         const cleanLastName = lastName.trim();
@@ -141,42 +211,53 @@ export const AuthProvider = ({ children }) => {
         const usernameRef = doc(db, 'usernames', usernameKey);
 
         let firebaseUser = null;
+        let createdAuthUser = false;
         try {
             registrationInProgressRef.current = true;
             await setPersistence(auth, browserSessionPersistence);
-            const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-            firebaseUser = userCredential.user;
 
-            // Atomically claim the username and create the user doc without a
-            // client-side username read. Firestore rules allow creating the
-            // username mapping, but deny updating it, so an existing username
-            // fails the batch instead of being overwritten.
-            const batch = writeBatch(db);
-            batch.set(doc(db, 'users', firebaseUser.uid), {
-                uid: firebaseUser.uid,
+            const existingUsername = await getDoc(usernameRef);
+            if (existingUsername.exists()) {
+                let existingAuthUser;
+                try {
+                    existingAuthUser = await signInRegistrationUser(cleanEmail, password);
+                } catch {
+                    throw new Error(HANDLE_EXISTS_MESSAGE);
+                }
+                firebaseUser = await requireAuthOnlyUser(existingAuthUser);
+                if (existingUsername.data()?.uid !== firebaseUser.uid) {
+                    await signOut(auth);
+                    throw new Error(HANDLE_EXISTS_MESSAGE);
+                }
+            } else {
+                try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+                    firebaseUser = userCredential.user;
+                    createdAuthUser = true;
+                    await firebaseUser.getIdToken(true);
+                } catch (err) {
+                    if (!isEmailAlreadyInUseError(err)) throw err;
+                    firebaseUser = await getAuthOnlyUserForRegistration(cleanEmail, password);
+                }
+            }
+
+            const canonicalEmail = normalizeEmail(firebaseUser.email || cleanEmail);
+            await writeRegistrationProfile(firebaseUser, buildRegistrationProfile(firebaseUser, {
+                email: canonicalEmail,
                 username: cleanUsername,
                 firstName: cleanFirstName,
                 lastName: cleanLastName,
-                email: cleanEmail,
-                role: "unassigned",
-                status: "pending",
-                createdAt: new Date().toISOString()
-            });
-            batch.set(usernameRef, {
-                uid: firebaseUser.uid,
-                username: cleanUsername,
-                email: cleanEmail,
-                createdAt: new Date().toISOString()
-            });
-            await batch.commit();
+            }));
         } catch (err) {
-            if (firebaseUser) {
+            if (firebaseUser && createdAuthUser) {
                 try {
-                    await firebaseUser.delete();
+                    await deletePartiallyRegisteredAuthUser(firebaseUser, cleanEmail, password);
                 } catch (deleteErr) {
                     console.warn("Could not delete partially registered auth user:", deleteErr);
                     await signOut(auth);
                 }
+            } else if (firebaseUser && auth.currentUser?.uid === firebaseUser.uid) {
+                await signOut(auth);
             }
             throw err;
         } finally {

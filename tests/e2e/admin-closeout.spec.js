@@ -239,6 +239,13 @@ async function closeTeamPicker(page) {
     await expect(page.getByRole("dialog", { name: /Add employees to/i })).toHaveCount(0);
 }
 
+async function openFirstSettleGroup(page) {
+    const firstGroup = page.getByRole("button", { name: /Team 1.*(Still on tables|Entering|Done)/s });
+    await expect(firstGroup).toBeVisible();
+    await firstGroup.click();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+}
+
 // Setup-shift Settle up flow. Floor and money are directly editable and autosave;
 // Review is reached from the day rail because it derives from the live inputs.
 //
@@ -256,7 +263,12 @@ async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
 
-    await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill(sales);
+    const netRevenue = page.getByRole("spinbutton", { name: "Net revenue", exact: true });
+    if (!(await netRevenue.isVisible().catch(() => false))) {
+        await openFirstSettleGroup(page);
+    }
+
+    await netRevenue.fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
@@ -707,7 +719,7 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByRole("dialog", { name: /Add employees to Team 1/i })).toBeVisible();
     });
 
-    test("setup floor plans open directly editable, and the rail moves to editable Settle", async ({ page }) => {
+    test("setup floor plans open directly editable, and the Settle checklist opens editable money", async ({ page }) => {
         const date = "2026-05-27";
         await seedSetupShift(date);
         await login(page);
@@ -722,9 +734,9 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toHaveCount(0);
         await expect(page.getByRole("button", { name: "✓ Done", exact: true })).toHaveCount(0);
 
-        // Advancing to Settle shows editable money fields immediately.
+        // Advancing to Settle shows the checklist; a group row opens editable money.
         await rail.getByRole("button", { name: "Settle" }).click();
-        await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+        await openFirstSettleGroup(page);
         await expect(page.getByRole("spinbutton", { name: "Net revenue", exact: true })).toBeEnabled();
     });
 
@@ -919,7 +931,7 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
 
-        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+        await openFirstSettleGroup(page);
         const sales = page.getByRole("spinbutton", { name: "Net revenue", exact: true });
         await expect(sales).toBeVisible();
         await expect(sales).toBeEnabled();
@@ -942,7 +954,7 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
 
-        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+        await openFirstSettleGroup(page);
         const tips = page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true });
         await tips.fill("500");
 
@@ -1069,7 +1081,6 @@ test.describe("app bar at supported phone widths", () => {
                     };
                 };
                 const appBar = document.querySelector("header.sticky");
-                const dayChips = [...document.querySelectorAll('[aria-label="Select a day this week"] button')];
                 const dayRail = document.querySelector('[aria-label="Day steps"]');
                 const railButtons = [...dayRail.querySelectorAll("button")];
                 // The rail leads with the editor's Back chevron (DayRail.jsx), which is
@@ -1081,8 +1092,6 @@ test.describe("app bar at supported phone widths", () => {
                     viewportWidth,
                     appBar: rectFor(appBar),
                     appBarOverflows: appBar.scrollWidth > appBar.clientWidth + 1,
-                    firstDayChip: rectFor(dayChips[0]),
-                    lastDayChip: rectFor(dayChips[dayChips.length - 1]),
                     dayRail: rectFor(dayRail),
                     firstRailButton: rectFor(railButtons[0]),
                     firstStepButton: {
