@@ -3,6 +3,7 @@ import { Spinner } from "../../ui";
 import { fmtMoney } from "../shiftEditorUtils";
 import { CalculatedPayoutReview } from "./CalculatedPayoutReview";
 import { FixJump } from "./FixJump";
+import { ClosedShiftOverwriteNotice } from "./ClosedShiftOverwriteNotice";
 
 // A locked Settle up once ended in a full-width "Review payouts →" row, itself the
 // successor to a "Calculate Payouts →" primary. Both are gone. Nothing here calculates -
@@ -196,6 +197,7 @@ export function ReviewStep({
         // Review's cards sit a padding layer further in than Settle's and read as
         // a different width for the same reason Floor plan's did.
         <section className="space-y-4 pb-24 max-[560px]:-mx-3">
+            {shiftStatus === "closed" ? <ClosedShiftOverwriteNotice date={date} /> : null}
             {/* Why this shift cannot be saved, above the numbers it is about.
                 Both blocks sit at the top of Review deliberately: a reason
                 below the fold is the same dead end as no reason at all. */}
@@ -237,13 +239,6 @@ export function ReviewStep({
                     onFixFloor={onFixFloor}
                 />
             )}
-
-            {liveReview.ready && shiftStatus === "closed" ? (
-                <p className="flex items-start gap-1.5 text-[11px] leading-snug text-[var(--color-warning)]">
-                    <span aria-hidden="true">⚠</span>
-                    <span>Re-saving overwrites the saved payouts for {date}.</span>
-                </p>
-            ) : null}
 
             {/* Two different audiences for one slot. "Saving…" stays phone-only:
                 the floating primary below already says "Saving shift…" beside a

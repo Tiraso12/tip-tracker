@@ -24,7 +24,7 @@ import { fmtMoney } from "../shiftEditorUtils";
 // editing a field, which silently clears the mark (plan Q9) - the quiet cue
 // for that stays inline in this panel (`MarkDoneCue` below), next to the
 // fields that were actually edited, rather than floating off in the corner.
-export function MarkDoneAction({ group, onMarkDone }) {
+export function MarkDoneAction({ group, onMarkDone, saving = false }) {
     if (group.kind === "runners") {
         return (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--color-accent)] shadow-[0_10px_30px_rgba(15,23,42,0.12)]">
@@ -41,7 +41,7 @@ export function MarkDoneAction({ group, onMarkDone }) {
         <button
             type="button"
             onClick={() => onMarkDone(group.id)}
-            disabled={!canMark || isDone}
+            disabled={!canMark || isDone || saving}
             title={!canMark ? "Enter this group's money before marking it done" : undefined}
             className={
                 "inline-flex items-center gap-2 rounded-full px-7 py-3.5 text-sm font-bold transition-transform active:scale-95 disabled:cursor-not-allowed " +
@@ -55,6 +55,8 @@ export function MarkDoneAction({ group, onMarkDone }) {
                     <span aria-hidden="true">✓</span>
                     Done
                 </>
+            ) : saving ? (
+                "Saving…"
             ) : (
                 "Done"
             )}

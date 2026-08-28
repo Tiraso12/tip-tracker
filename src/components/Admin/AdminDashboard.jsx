@@ -8,7 +8,7 @@ import { SavedByLine } from "./DayPayoutPanel";
 import BarDatePill from "./BarDatePill";
 import DayChipStrip from "./DayChipStrip";
 import AppBar from "../AppBar/AppBar";
-import { TopProgressBar } from "../ui";
+import { Button, TopProgressBar } from "../ui";
 import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
 import { toDateKey, getCurrentWeek, parseDateKey, formatFullDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
@@ -718,7 +718,17 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                     eyebrow: "Shifts",
                     title: formatFullDateKey(selectedDate),
                     savedBy: daySavedByLine,
-                    actions: null,
+                    // Pay out only: Edit lives in this header, not a floating action.
+                    // Floor plan / Settle up / Review keep their own floating actions.
+                    actions: (
+                        <Button
+                            variant="secondary"
+                            onClick={() => enterEditor("floor")}
+                            disabled={removingShift}
+                        >
+                            ✎ Edit shift
+                        </Button>
+                    ),
                     alwaysVisible: true,
                 };
             }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
-// One home for the bottom-right floating actions (✎ Edit, Cancel + ✓ Done,
-// ✓ Confirm & Save Shift). Every screen that floats an action over the day's
-// numbers positions it through here, so the corner geometry cannot drift between
-// the landing and the editor.
+// One home for the bottom-right floating actions (Floor / Settle / Review
+// primaries, ✓ Confirm & Save Shift). Pay out's Edit shift is a header button,
+// not a FAB. Every screen that still floats an action over the day's numbers
+// positions it through here, so the corner geometry cannot drift between the
+// landing and the editor.
 //
 // Why they move at all: a permanently pinned pill parks on top of whatever
 // happens to be under it, and on this app that is money. Measured at 390x844 on

@@ -1,6 +1,5 @@
 import DayPayoutPanel from "./DayPayoutPanel";
 import DayRail from "./DayRail";
-import FloatingActions from "./FloatingActions";
 import { getRailSteps, getLandingStage } from "../../utils/dayFlow";
 import { getPayoutTotal } from "../../utils/payoutLedger";
 import { roleLabel } from "../../utils/roleLabels";
@@ -22,26 +21,6 @@ const plural = (count, one, many) => (count === 1 ? one : many);
 // stores the plain username, but strip a trailing "(Temp)" defensively so chips
 // read "Frankie Lee", not "Frankie Lee (Temp)".
 const cleanName = (name = "") => name.replace(/\s*\((?:temp)\)\s*$/i, "").trim() || name;
-
-// The read-only screens' single floating Edit button, pinned to the bottom-right
-// corner. Shared by the Floor plan and Settle up views (and the closed-shift view)
-// so entering edit feels identical everywhere - one source of truth for the FAB.
-// `FloatingActions` owns the corner and the scroll reveal, so the button never
-// parks on a payout row while you read down the day.
-function EditFab({ onClick, label = "✎ Edit", disabled = false }) {
-    return (
-        <FloatingActions>
-            <button
-                type="button"
-                onClick={onClick}
-                disabled={disabled}
-                className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-7 py-3.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(47,111,79,0.35)] transition-transform active:scale-95 disabled:opacity-60"
-            >
-                {label}
-            </button>
-        </FloatingActions>
-    );
-}
 
 // A group's tri-state dot, matching RailPill's own reading of getGroupCloseState
 // (settleStatus.js): still-on-tables / entering / done. Reused here rather than
@@ -398,8 +377,7 @@ function DayRailLanding({ status, summary, lineup, viewerUid = null, orphanedEnt
             {showLoadingCard ? (
                 <Card className="px-6 py-16 text-center text-sm text-[var(--color-ink-soft)]">Loading day…</Card>
             ) : stage === "closed" ? (
-                <>
-                <div className="space-y-3 pb-24">
+                <div className="space-y-3">
                     <DayPayoutPanel summary={summary} status={status} loading={false} />
                     {onRemoveShift ? (
                         <RemoveDangerZone
@@ -411,10 +389,6 @@ function DayRailLanding({ status, summary, lineup, viewerUid = null, orphanedEnt
                         />
                     ) : null}
                 </div>
-                {/* "Edit shift" is the same floating Edit button as the floor/settle
-                    views, switching the saved shift into edit mode. */}
-                <EditFab onClick={onEditFloor} label="✎ Edit shift" disabled={removingShift} />
-                </>
             ) : stage === "orphaned-payouts" ? (
                 <OrphanedPayouts
                     entries={orphanedEntries}

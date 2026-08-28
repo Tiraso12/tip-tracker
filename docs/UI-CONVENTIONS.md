@@ -94,9 +94,10 @@ top-level destination at every width (Team, and `Shifts` for whoever's home is n
 the day itself the phone still has the Day Rail and, on Shifts plus the Floor step, the
 `DayChipStrip`. The workspace `<aside>` in `AdminDashboard.jsx` is desktop-only (`hidden
 lg:block`) and carries no phone case. Do not add a bottom tab bar or a segmented replacement: the
-floating Edit and Confirm controls already own that corner, and a persistent side-switcher in the
-bar was weighed against this shape and declined (it spends the ~67px of slack at 320px that
-dropping the hamburger bought).
+floating Floor/Settle/Review and Confirm controls already own that corner (Pay out's Edit shift
+is a header button, not a FAB), and a persistent side-switcher in the bar was weighed against
+this shape and declined (it spends the ~67px of slack at 320px that dropping the hamburger
+bought).
 
 ## The Pullenberg kit is the authority
 
@@ -135,10 +136,11 @@ screen matched to the kit:
   (`max-[560px]:`) only. Unscoped, it spreads sparse content across a wide desktop viewport and
   reads as scattered; the kit's own spread mockups assume phone width.
 - One bottom-sheet convention for the whole app: drag handle, rounded top, serif header,
-  scrollable body, footer Done, `z-50` (above the floating action pair's `z-30`, or the sheet
-  renders under it). `PointSplitDisclosure.jsx` and `ContractsDisclosure.jsx` are two independent
-  instances of the same shape - copy that pattern for the next disclosure rather than inventing
-  an inline-expand or a different sheet shape.
+  scrollable body, footer Apply (not Done - only the group-level mark-done action uses that
+  word), `z-50` (above the floating action pair's `z-30`, or the sheet renders under it).
+  `PointSplitDisclosure.jsx` and `ContractsDisclosure.jsx` are two independent instances of the
+  same shape - copy that pattern for the next disclosure rather than inventing an inline-expand
+  or a different sheet shape.
 - A controlled numeric input must distinguish `null`/`undefined` ("untouched, show the default")
   from `""` ("user just cleared it, show blank") - collapsing both to the same default-fallback
   means backspacing to empty snaps straight back to a number and the field can never be retyped.

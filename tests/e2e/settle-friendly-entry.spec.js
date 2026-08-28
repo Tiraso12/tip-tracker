@@ -204,7 +204,7 @@ test.describe("friendly entry into Settle up", () => {
         await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("75");
 
         // Save and Mark Done is a floating action, not a button inside the panel.
-        const floatingDone = page.getByRole("button", { name: "Done" });
+        const floatingDone = page.getByRole("button", { name: "Done", exact: true });
         await expect(floatingDone).toBeVisible();
         await floatingDone.click();
 
@@ -218,6 +218,39 @@ test.describe("friendly entry into Settle up", () => {
 
         // The rest of the day is still counted - Team 1 has nothing entered yet.
         await expect(page.getByText("1 group still open")).toBeVisible();
+    });
+
+    // Captain 2026-08-28: tapping Done after entering setup data marked the group
+    // done but left you on the money form. The stacked point-split "✓ Done" sat
+    // on top of the group-level Done at phone size; that sheet confirm is now
+    // "Apply", and only the group action named Done returns to who's-left.
+    test("point-split Apply is not Done; group Done still returns to who's-left", async ({ page }) => {
+        await page.setViewportSize({ width: 402, height: 682 });
+        await login(page, PEOPLE.captain.email);
+        await setShiftDate(page, TWO_TEAM_DAY);
+
+        await page.getByRole("button", { name: /Team 2/ }).click();
+        await expect(page.getByRole("tab", { name: /Team 2/ })).toHaveAttribute("aria-selected", "true");
+
+        await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill("800");
+        await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("150");
+        await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("75");
+
+        await page.getByRole("button", { name: /Adjust point split/ }).click();
+        const split = page.getByRole("dialog", { name: /point split/i });
+        await expect(split).toBeVisible();
+        await expect(split.getByRole("button", { name: "Apply" })).toBeVisible();
+        await expect(split.getByRole("button", { name: "Done" })).toHaveCount(0);
+
+        await split.getByRole("button", { name: "Apply" }).click();
+        await expect(split).toHaveCount(0);
+        // Apply only closes the sheet - still on the money form.
+        await expect(page.getByRole("tab", { name: /Team 2/ })).toHaveAttribute("aria-selected", "true");
+
+        await page.getByRole("button", { name: "Done", exact: true }).click();
+        await expect(page.getByRole("heading", { name: "Settle up" })).toBeVisible();
+        await expect(page.getByRole("tab", { name: /Team 2/ })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /Team 2/ }).getByText("Done")).toBeVisible();
     });
 
     test("the manager, never on a floor plan, sees the plain checklist with no '· yours' hint", async ({ page }) => {

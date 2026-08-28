@@ -87,6 +87,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     // "done" mark silently cleared by an edit, so SettleStep can show a fading
     // inline notice next to that group's Save and Mark Done button.
     const [unmarkedCueGroupId, setUnmarkedCueGroupId] = useState(null);
+    // In-flight "Save and Mark Done" for one group. The mark is not applied
+    // locally until the write lands - an optimistic ✓ Done on the money form is
+    // what made a slow or failed write look finished while still sitting here.
+    const [markingGroupId, setMarkingGroupId] = useState(null);
+    const markingGroupIdRef = useRef(null);
     const unmarkedCueTimeoutRef = useRef(null);
     const triggerUnmarkedCue = useCallback((groupId) => {
         setUnmarkedCueGroupId(groupId);
@@ -797,44 +802,60 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     // fires once the write actually lands, not optimistically - the caller
     // navigates back to the who's-left landing, and that landing re-reads this
     // same settleGroups collection, so it must not read "done" before Firestore
-    // does. It also awaits `flushPendingDraftSave` alongside its own write - a
+    // does. Flush the whole-document draft first, then stamp the mark: a
     // shift built from scratch this same visit may still have its very first
     // whole-document save (the one that creates `shifts/{date}` and the floor
     // plan on it) sitting on the 1s debounce below; without the flush, marking
     // done navigates away, the panel unmounts, and that pending save is
     // cancelled before it ever lands - the landing then reads no shift at all.
+    // Bar's mark is an updateDoc and cannot create that parent.
     const handleMarkGroupDone = useCallback((groupId) => {
-        if (shiftStatus === "closed") return;
+        if (shiftStatus === "closed" || markingGroupIdRef.current) return;
         const pending = pendingGroupSaveRef.current;
         if (pending.groupId === groupId && pending.timeoutId != null) {
             window.clearTimeout(pending.timeoutId);
             pendingGroupSaveRef.current = { groupId: null, timeoutId: null };
         }
         const now = new Date().toISOString();
-        if (groupId === "bar") {
-            setBarTeam(prev => ({ ...prev, markedDone: true }));
-            Promise.all([
-                flushPendingDraftSave(),
-                updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
-                    pools: barTeam.pools, markedDone: true, now, updatedBy: user?.uid || null,
-                })),
-            ])
-                .then(() => onGroupMarkedDone?.(groupId))
-                .catch(e => console.error("Failed to save Bar's settle draft:", e));
-            return;
-        }
-        const team = teams.find(t => t.teamId === groupId);
-        if (!team) return;
-        setTeams(prev => prev.map(t => (t.teamId === groupId ? { ...t, markedDone: true } : t)));
-        Promise.all([
-            flushPendingDraftSave(),
-            setDoc(doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId), buildTeamGroupDraft({
-                pools: team.pools, contracts: team.contracts, markedDone: true, now, updatedBy: user?.uid || null,
-            })),
-        ])
+        const updatedBy = user?.uid || null;
+        markingGroupIdRef.current = groupId;
+        setMarkingGroupId(groupId);
+
+        // Flush the whole-document draft first so a from-scratch shift exists
+        // before Bar's updateDoc (which cannot create the parent) and before
+        // the landing re-reads the day. Then stamp the mark. Do not apply
+        // markedDone locally first: that painted ✓ Done on this form while a
+        // failed or still-in-flight write left the captain here.
+        const persistMark = async () => {
+            await flushPendingDraftSave();
+            if (groupId === "bar") {
+                await updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
+                    pools: barTeamRef.current.pools,
+                    markedDone: true,
+                    now,
+                    updatedBy,
+                }));
+                return;
+            }
+            const team = teamsRef.current.find(t => t.teamId === groupId);
+            if (!team) throw new Error(`No team ${groupId} to mark done`);
+            await setDoc(doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId), buildTeamGroupDraft({
+                pools: team.pools,
+                contracts: team.contracts,
+                markedDone: true,
+                now,
+                updatedBy,
+            }));
+        };
+
+        persistMark()
             .then(() => onGroupMarkedDone?.(groupId))
-            .catch(e => console.error(`Failed to save the ${groupId} settle draft:`, e));
-    }, [barTeam.pools, date, flushPendingDraftSave, onGroupMarkedDone, shiftStatus, teams, user?.uid]);
+            .catch((e) => {
+                console.error(`Failed to save the ${groupId} settle draft:`, e);
+                markingGroupIdRef.current = null;
+                setMarkingGroupId(null);
+            });
+    }, [date, flushPendingDraftSave, onGroupMarkedDone, shiftStatus, user?.uid]);
 
     useEffect(() => {
         // Stays off for a closed shift: edits there persist only through
@@ -1063,6 +1084,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                     draftStatus={draftStatus}
                     onRemoveSetupDay={shiftStatus === "setup" ? onRemoveSetupDay : undefined}
                     removingSetupDay={removingSetupDay}
+                    date={date}
+                    shiftStatus={shiftStatus}
                 />
             ) : effectiveStep === "settle" ? (
                 <SettleStep
@@ -1074,6 +1097,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                     poolGroupCount={poolGroupCount}
                     closeReadiness={closeReadiness}
                     onMarkGroupDone={handleMarkGroupDone}
+                    markingGroupId={markingGroupId}
                     unmarkedCueGroupId={unmarkedCueGroupId}
                     shiftStatus={shiftStatus}
                     teams={teams}

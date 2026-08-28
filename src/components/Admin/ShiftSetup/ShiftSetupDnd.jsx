@@ -451,6 +451,15 @@ function ShiftSetupDnd({
         setShowTempForm(false);
     }, []);
 
+    useEffect(() => {
+        if (!sheetOpen) return undefined;
+        const onKeyDown = (event) => {
+            if (event.key === "Escape") closeMobilePicker();
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [sheetOpen, closeMobilePicker]);
+
     const handlePoolEmployeeClick = useCallback((emp) => {
         if (!selectedTeamId) return; // no team selected — nothing to do
 

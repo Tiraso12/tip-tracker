@@ -7,6 +7,7 @@ import { PointSplitDisclosure } from "./PointSplitDisclosure";
 import { RailPill } from "./RailPill";
 import { RunnerGroup } from "./RunnerGroup";
 import { TeamPoolFields } from "./TeamPoolFields";
+import { ClosedShiftOverwriteNotice } from "./ClosedShiftOverwriteNotice";
 
 export function SettleStep({
     date,
@@ -17,6 +18,7 @@ export function SettleStep({
     poolGroupCount,
     closeReadiness,
     onMarkGroupDone,
+    markingGroupId = null,
     unmarkedCueGroupId,
     shiftStatus,
     teams,
@@ -49,6 +51,7 @@ export function SettleStep({
            the screen with its own internal scroller - the page scrolls, same as
            desktop always has. */
         <section className="space-y-4 pb-6">
+            {shiftStatus === "closed" ? <ClosedShiftOverwriteNotice date={date} /> : null}
             {/* Team switcher: a compact horizontal strip above one fixed-height entry
                 panel. Tapping a pill focuses that group; the strip scrolls sideways on
                 phone so page height stays constant no matter how large the roster is.
@@ -228,7 +231,11 @@ export function SettleStep({
                 anything and edits persist only through Review -> Confirm & Save. */}
             {activeGroup && shiftStatus !== "closed" ? (
                 <FloatingActions>
-                    <MarkDoneAction group={activeGroup} onMarkDone={onMarkGroupDone} />
+                    <MarkDoneAction
+                        group={activeGroup}
+                        onMarkDone={onMarkGroupDone}
+                        saving={markingGroupId === activeGroup.id}
+                    />
                 </FloatingActions>
             ) : null}
 
