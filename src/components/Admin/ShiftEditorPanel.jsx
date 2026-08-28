@@ -91,6 +91,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     // locally until the write lands - an optimistic ✓ Done on the money form is
     // what made a slow or failed write look finished while still sitting here.
     const [markingGroupId, setMarkingGroupId] = useState(null);
+    const [markFailureGroupId, setMarkFailureGroupId] = useState(null);
     const markingGroupIdRef = useRef(null);
     const unmarkedCueTimeoutRef = useRef(null);
     const triggerUnmarkedCue = useCallback((groupId) => {
@@ -599,6 +600,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         setLoading(true);
         setHasLoadedShift(false);
         setDraftStatus("");
+        setMarkFailureGroupId(null);
         setShiftStatus(null);
         hasLoadedShiftRef.current = false;
 
@@ -733,14 +735,20 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     const pendingDraftSaveRef = useRef({ timeoutId: null, run: null });
     const saveSetupDraftNowRef = useRef(null);
 
+    // Resolves true when `shifts/{date}` is known to hold the current draft -
+    // either this call wrote it, or there was nothing to write. Resolves false
+    // ONLY when a write was attempted and refused. Never rejects: autosave has
+    // background callers (the debounce timer, the unmount flush) with nobody
+    // left to tell, so the one caller that must not proceed on a failed write
+    // (handleMarkGroupDone) reads the flag instead of catching.
     const saveSetupDraftNow = useCallback(async () => {
-        if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return;
-        if (!hasAssignedStaff && !hasCloseoutDraftData) return;
+        if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return true;
+        if (!hasAssignedStaff && !hasCloseoutDraftData) return true;
 
         // Setup money autosaves silently - no write, no re-arm, when nothing
         // has actually changed since the last successful save.
         const fingerprint = fingerprintShift(teams, barTeam, runners);
-        if (fingerprint === lastSavedFingerprintRef.current) return;
+        if (fingerprint === lastSavedFingerprintRef.current) return true;
 
         const wasAlreadySetup = shiftStatus === "setup";
         pendingDraftSaveRef.current = { timeoutId: null, run: null };
@@ -760,13 +768,11 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
             setShiftStatus("setup");
             lastSavedFingerprintRef.current = fingerprint;
             setDraftStatus("");
+            return true;
         } catch (e) {
             console.error("Failed to autosave closeout draft:", e);
             setDraftStatus("Draft autosave failed.");
-            // Rethrow so a caller that flushes before navigating (handleMarkGroupDone)
-            // learns `shifts/{date}` was never written and aborts instead of marking a
-            // group done on a shift that does not exist. Background ticks swallow it.
-            throw e;
+            return false;
         }
     }, [
         barTeam,
@@ -785,19 +791,17 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
 
     saveSetupDraftNowRef.current = saveSetupDraftNow;
 
+    // Carries saveSetupDraftNow's written/refused flag through to the caller.
     const flushPendingDraftSave = useCallback(async () => {
         const pending = pendingDraftSaveRef.current;
         if (pending.timeoutId == null) {
-            await saveSetupDraftNowRef.current?.();
-            return;
+            return (await saveSetupDraftNowRef.current?.()) !== false;
         }
         window.clearTimeout(pending.timeoutId);
-        await pending.run();
+        return (await pending.run()) !== false;
     }, []);
 
-    // Unmount is a background flush with nobody left to tell: the failure is
-    // already logged and shown, so absorb the rejection here.
-    useEffect(() => () => { flushPendingDraftSave().catch(() => {}); }, [flushPendingDraftSave]);
+    useEffect(() => () => flushPendingDraftSave(), [flushPendingDraftSave]);
 
     // "Save and Mark Done": commits the group's current fields right now (not on
     // the trailing debounce) plus the mark itself, in one write - the button's
@@ -826,6 +830,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         const updatedBy = user?.uid || null;
         markingGroupIdRef.current = groupId;
         setMarkingGroupId(groupId);
+        setMarkFailureGroupId(null);
 
         // Flush the whole-document draft first so a from-scratch shift exists
         // before Bar's updateDoc (which cannot create the parent) and before
@@ -833,7 +838,8 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         // markedDone locally first: that painted ✓ Done on this form while a
         // failed or still-in-flight write left the captain here.
         const persistMark = async () => {
-            await flushPendingDraftSave();
+            const shiftDraftSaved = await flushPendingDraftSave();
+            if (!shiftDraftSaved) throw new Error(`Shift ${date} was not saved; refusing to mark ${groupId} done`);
             if (groupId === "bar") {
                 await updateDoc(doc(db, "shifts", date), buildBarGroupPatch({
                     pools: barTeamRef.current.pools,
@@ -859,8 +865,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                 console.error(`Failed to save the ${groupId} settle draft:`, e);
                 // A failed mark used to read as "the button did nothing": the action
                 // flipped from Saving… back to Done with the group still open and no
-                // word anywhere. Say so in the status line Settle already renders.
-                setDraftStatus("Could not mark this group done. Try again.");
+                // word anywhere. Say so - but keyed to the group it is about, since
+                // the shift-wide `draftStatus` slot would follow the captain onto
+                // another team's tab and onto Review reading as that group's failure.
+                setMarkFailureGroupId(groupId);
                 return false;
             })
             .then((persisted) => {
@@ -880,7 +888,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
-        const timeoutId = window.setTimeout(() => { saveSetupDraftNow().catch(() => {}); }, 1000);
+        const timeoutId = window.setTimeout(() => saveSetupDraftNow(), 1000);
         pendingDraftSaveRef.current = { timeoutId, run: saveSetupDraftNow };
 
         return () => {
@@ -1115,6 +1123,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                     closeReadiness={closeReadiness}
                     onMarkGroupDone={handleMarkGroupDone}
                     markingGroupId={markingGroupId}
+                    markFailed={markFailureGroupId != null && markFailureGroupId === activeGroupId}
                     unmarkedCueGroupId={unmarkedCueGroupId}
                     shiftStatus={shiftStatus}
                     teams={teams}

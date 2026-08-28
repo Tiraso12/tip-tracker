@@ -723,6 +723,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                     actions: (
                         <Button
                             variant="secondary"
+                            className="min-h-11 sm:min-h-0"
                             onClick={() => enterEditor("floor")}
                             disabled={removingShift}
                         >

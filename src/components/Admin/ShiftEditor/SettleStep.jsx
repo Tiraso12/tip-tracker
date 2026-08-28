@@ -19,6 +19,7 @@ export function SettleStep({
     closeReadiness,
     onMarkGroupDone,
     markingGroupId = null,
+    markFailed = false,
     unmarkedCueGroupId,
     shiftStatus,
     teams,
@@ -243,9 +244,9 @@ export function SettleStep({
                 draft status inline; a setup shift's money autosaves silently. Settle
                 up floats on the page background (no outer workspace header), so this
                 is the only place that status shows at any width. */}
-            {(saveStatus || draftStatus) ? (
+            {(saveStatus || draftStatus || markFailed) ? (
                 <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
-                    {saveStatus || draftStatus}
+                    {saveStatus || draftStatus || "Could not mark this group done. Try again."}
                 </p>
             ) : null}
         </section>
