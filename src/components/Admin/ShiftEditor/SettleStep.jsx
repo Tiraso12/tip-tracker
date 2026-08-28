@@ -236,6 +236,7 @@ export function SettleStep({
                         group={activeGroup}
                         onMarkDone={onMarkGroupDone}
                         saving={markingGroupId === activeGroup.id}
+                        busy={Boolean(markingGroupId)}
                     />
                 </FloatingActions>
             ) : null}
@@ -246,7 +247,7 @@ export function SettleStep({
                 is the only place that status shows at any width. */}
             {(saveStatus || draftStatus || markFailed) ? (
                 <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
-                    {saveStatus || draftStatus || "Could not mark this group done. Try again."}
+                    {saveStatus || (markFailed ? "Could not mark this group done. Try again." : draftStatus)}
                 </p>
             ) : null}
         </section>
