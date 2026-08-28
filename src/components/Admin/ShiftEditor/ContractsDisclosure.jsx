@@ -1,6 +1,7 @@
+import { formatContractRate } from "../../../utils/engine";
 import { NUMERIC_INPUT } from "./numericInputClass";
 
-function ContractRow({ contract, index, onUpdateContract, onRemoveContract }) {
+function ContractRow({ contract, index, rateLabel, onUpdateContract, onRemoveContract }) {
     return (
         <div className="flex items-center gap-2 border-t border-[var(--color-line)] px-4 py-2.5">
             <span className="w-7 flex-none text-xs font-mono tabular-nums text-[var(--color-ink-muted)]">
@@ -12,7 +13,7 @@ function ContractRow({ contract, index, onUpdateContract, onRemoveContract }) {
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="26% Gratuity Amount"
+                    placeholder={`${rateLabel} Gratuity Amount`}
                     value={contract.gratuity}
                     onChange={(e) => onUpdateContract(index, "gratuity", e.target.value)}
                     className={NUMERIC_INPUT + " !pl-6"}
@@ -39,8 +40,11 @@ function ContractRow({ contract, index, onUpdateContract, onRemoveContract }) {
 // state is still the team's own `_showContracts` flag (transient, UI-only, excluded
 // from the change fingerprint) - the sheet just renders from it instead of an inline
 // block, so no state plumbing changed.
-export function ContractsDisclosure({ team, onToggleContracts, onAddContract, onUpdateContract, onRemoveContract }) {
+export function ContractsDisclosure({ team, date, onToggleContracts, onAddContract, onUpdateContract, onRemoveContract }) {
     const isOpen = Boolean(team._showContracts);
+    // The rate this shift's contracts are actually divided by - the engine keys it on
+    // the shift date, so an old night reopened for an edit must not prompt for today's.
+    const rateLabel = formatContractRate(date);
     const contracts = team.contracts ?? [];
     const close = () => onToggleContracts(team.teamId);
 
@@ -105,6 +109,7 @@ export function ContractsDisclosure({ team, onToggleContracts, onAddContract, on
                                     key={index}
                                     contract={contract}
                                     index={index}
+                                    rateLabel={rateLabel}
                                     onUpdateContract={(i, field, value) => onUpdateContract(team.teamId, i, field, value)}
                                     onRemoveContract={(i) => onRemoveContract(team.teamId, i)}
                                 />
@@ -116,7 +121,7 @@ export function ContractsDisclosure({ team, onToggleContracts, onAddContract, on
                                 onClick={close}
                                 className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-sm font-semibold text-white transition-transform active:scale-95"
                             >
-                                ✓ Done
+                                Apply
                             </button>
                         </div>
                     </div>

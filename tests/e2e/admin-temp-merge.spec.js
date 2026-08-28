@@ -217,21 +217,36 @@ async function setShiftDate(page, date) {
     }, date);
 }
 
+async function openFirstSettleGroup(page) {
+    const firstGroup = page.getByRole("button", { name: /Team 1.*(Still on tables|Entering|Done)/s });
+    await expect(firstGroup).toBeVisible();
+    await firstGroup.click();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+}
+
 // Walk the saved floor plan through Settle up -> Review -> Confirm & Save, the way
 // a manager settles the night after the merge happened.
+//
+// Direction A: a saved-but-unsettled day with an existing floor plan lands on
+// the who's-left checklist, not an auto-redirect into the floor editor - Floor
+// plan is one rail tap away. Confirm & Save also stays locked until the one
+// dining team here is marked done (no Bar members on this fixture, so nothing
+// else is gated); Save and Mark Done returns to the checklist, whose footer
+// then offers the direct handoff into Review.
 async function settleSavedShift(page, { sales, tips, gratuity, cash }) {
-    // A saved-but-unsettled day opens directly into the editable floor editor; the
-    // rail's Settle pill opens directly editable money fields.
+    const rail = page.getByRole("navigation", { name: "Day steps" });
+    await rail.getByRole("button", { name: "Floor" }).click();
     await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
 
-    const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
+    await openFirstSettleGroup(page);
+    await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
+    await page.getByRole("button", { name: "Done" }).click();
 
-    await rail.getByRole("button", { name: "Review" }).click();
+    await page.getByRole("button", { name: "All groups closed - Review →" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
 }
 

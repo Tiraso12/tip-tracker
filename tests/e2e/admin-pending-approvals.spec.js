@@ -234,6 +234,229 @@ test("sign-up stores a work name separately from the login handle", async ({ pag
     await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
 });
 
+test("sign-up stores the pending staff card when the email has capital letters", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+
+    await page.getByLabel("Email").fill("AlexieKBrown@Gmail.com");
+    await page.getByLabel("First name").fill("Alexie");
+    await page.getByLabel("Last name (optional)").fill("Brown");
+    await page.getByLabel("Login handle").fill("alexiebrown");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === "alexiekbrown@gmail.com");
+        expect(profile?.data()).toMatchObject({
+            username: "alexiebrown",
+            firstName: "Alexie",
+            lastName: "Brown",
+            role: "unassigned",
+            status: "pending",
+        });
+
+        const mapping = await getDoc(doc(db, "usernames/alexiebrown"));
+        expect(mapping.data()).toMatchObject({
+            uid: profile.id,
+            username: "alexiebrown",
+            email: "alexiekbrown@gmail.com",
+        });
+    });
+});
+
+test("sign-up can repair an Auth-only orphan into a pending staff card", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await createAuthUser({
+        email: "orphan-signup@example.com",
+        password: PASSWORD,
+        displayName: "Orphan Signup",
+    });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill("orphan-signup@example.com");
+    await page.getByLabel("First name").fill("Orla");
+    await page.getByLabel("Last name (optional)").fill("Pending");
+    await page.getByLabel("Login handle").fill("orla-pending");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === "orphan-signup@example.com");
+        expect(profile?.data()).toMatchObject({
+            username: "orla-pending",
+            firstName: "Orla",
+            lastName: "Pending",
+            role: "unassigned",
+            status: "pending",
+        });
+
+        const mapping = await getDoc(doc(db, "usernames/orla-pending"));
+        expect(mapping.data()).toMatchObject({
+            uid: profile.id,
+            username: "orla-pending",
+            email: "orphan-signup@example.com",
+        });
+    });
+});
+
+// Signing up over an Auth-only orphan with the WRONG password used to report "An
+// account with this email already exists. Log in or reset your password." Both
+// suggested actions dead-end: logging in as an orphan is signed straight back out
+// with nothing on screen. The message must name the one sequence that works.
+test("sign-up over an orphan with the wrong password names the reset-then-sign-up recovery", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await createAuthUser({
+        email: "orphan-mismatch@example.com",
+        password: PASSWORD,
+        displayName: "Orphan Mismatch",
+    });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill("orphan-mismatch@example.com");
+    await page.getByLabel("First name").fill("Orla");
+    await page.getByLabel("Last name (optional)").fill("Mismatch");
+    await page.getByLabel("Login handle").fill("orla-mismatch");
+    await page.getByLabel("Password", { exact: true }).fill(`${PASSWORD}-wrong`);
+    await page.getByLabel("Confirm Password").fill(`${PASSWORD}-wrong`);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByText(/that password does not match it/i)).toBeVisible();
+    await expect(page.getByText(/reset it and sign up again/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeHidden();
+
+    // The refused attempt leaves the orphan exactly as it was - no half-written
+    // profile, and the handle it asked for is still free.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === "orphan-mismatch@example.com");
+        expect(profile).toBeUndefined();
+
+        const mapping = await getDoc(doc(db, "usernames/orla-mismatch"));
+        expect(mapping.exists()).toBe(false);
+    });
+});
+
+// The "I forgot I already have an account" retry: a fully registered, active person
+// signs up again with their real email, the right password, and a free handle.
+// register() signs in to check, finds a profile, and refuses. The refusal has to
+// reach the screen - it used to be swallowed, because the interim sign-in rendered
+// the dashboard and unmounted the very form the message is set on, leaving a blank
+// signup form with no explanation.
+test("signing up again with an existing account shows the refusal instead of flashing the app", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill(SERVER_EMAIL);
+    await page.getByLabel("First name").fill("Sam");
+    await page.getByLabel("Last name (optional)").fill("Server");
+    await page.getByLabel("Login handle").fill("sam-again");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByText(/An account with this email already exists/i)).toBeVisible();
+    // Still on the signup form, signed out - not the dashboard and not the pending screen.
+    await expect(page.getByRole("button", { name: "Create Account" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeHidden();
+
+    // The refused attempt claimed nothing: the handle is still free and the real
+    // account keeps the profile it already had.
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const db = context.firestore();
+        const mapping = await getDoc(doc(db, "usernames/sam-again"));
+        expect(mapping.exists()).toBe(false);
+
+        const users = await getDocs(collection(db, "users"));
+        const profile = users.docs.find((userDoc) => userDoc.data().email === SERVER_EMAIL);
+        expect(profile?.data()).toMatchObject({ username: "Sam Server", role: "server", status: "active" });
+    });
+});
+
+// A signup that fails BETWEEN a successful sign-in and the checks that follow it
+// must not leave Firebase signed in. Blocking the token-refresh endpoint reproduces
+// flaky venue wifi exactly: accounts:signInWithPassword succeeds, the forced
+// getIdToken refresh does not. The leaked session is invisible on the signup form -
+// it shows up on the next page load, which used to land straight on the dashboard
+// for an account nobody logged into.
+test("a signup that fails mid-flight does not leave Firebase signed in", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+
+    const tokenRefresh = "**/securetoken.googleapis.com/**";
+    await page.route(tokenRefresh, (route) => route.abort());
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill(SERVER_EMAIL);
+    await page.getByLabel("First name").fill("Sam");
+    await page.getByLabel("Last name (optional)").fill("Server");
+    await page.getByLabel("Login handle").fill("sam-offline");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("button", { name: "Create Account" })).toBeEnabled();
+    await expect(accountTrigger(page)).toBeHidden();
+
+    // Connection back: a reload must still find nobody signed in.
+    await page.unroute(tokenRefresh);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Log In" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeHidden();
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+        const mapping = await getDoc(doc(context.firestore(), "usernames/sam-offline"));
+        expect(mapping.exists()).toBe(false);
+    });
+});
+
+// An Auth-only orphan is far likelier to try Log in than Sign up. The sign-in
+// succeeds, the observer finds no profile and signs it straight back out - and
+// because the login form was already on screen, nothing changed at all. It now
+// says why, and names Sign up as the repair.
+test("an Auth-only orphan who logs in is told to finish signing up", async ({ page }) => {
+    await seedUsers({ pending: 0 });
+    await createAuthUser({
+        email: "orphan-login@example.com",
+        password: PASSWORD,
+        displayName: "Orphan Login",
+    });
+
+    await login(page, "orphan-login@example.com");
+
+    await expect(page.getByText(/no staff profile yet/i)).toBeVisible();
+    await expect(page.getByText(/Use Sign up with the same email and password/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Log In" })).toBeVisible();
+    await expect(accountTrigger(page)).toBeHidden();
+
+    // And the named repair actually works from here.
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await page.getByLabel("Email").fill("orphan-login@example.com");
+    await page.getByLabel("First name").fill("Orla");
+    await page.getByLabel("Last name (optional)").fill("Login");
+    await page.getByLabel("Login handle").fill("orla-login");
+    await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+    await page.getByLabel("Confirm Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Create Account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Account Pending" })).toBeVisible();
+});
+
 test("the badge does not disturb the phone app bar", async ({ page }) => {
     await page.setViewportSize(PHONE_VIEWPORT);
     await seedUsers({ pending: 2 });

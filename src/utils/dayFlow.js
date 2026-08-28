@@ -89,9 +89,9 @@ export function getRailSteps({
     const reviewDone = closed;
 
     // On the closed-day landing every pill is "done"; the day is finished and the
-    // review lives in the payout panel below (with its own "Edit shift" action),
-    // so the identical checks must all read as inert rather than have one silently
-    // navigate. In the editor the steps stay reachable as before.
+    // review lives in the payout panel below (Edit shift is a header action on
+    // Pay out), so the identical checks must all read as inert rather than have
+    // one silently navigate. In the editor the steps stay reachable as before.
     const closedLanding = closed && !inEditor;
 
     const stateFor = (key, done) => (focus === key ? "active" : done ? "done" : "pending");

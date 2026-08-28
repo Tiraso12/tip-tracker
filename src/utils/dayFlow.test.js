@@ -161,8 +161,8 @@ test("editing a closed shift can open Review directly", () => {
     assert.equal(steps.find((s) => s.key === "review").clickable, true);
 });
 
-// The closed-day landing stays inert: its pills are status, not navigation - the
-// payout panel below has its own "Edit shift" action.
+// The closed-day landing stays inert: its pills are status, not navigation - Pay
+// out's header has the "Edit shift" action.
 test("the closed-day landing rail keeps Review unclickable", () => {
     const steps = getRailSteps({ shiftStatus: "closed" });
 

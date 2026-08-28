@@ -1,4 +1,5 @@
 import ShiftSetupDnd from "../ShiftSetup/ShiftSetupDnd";
+import { ClosedShiftOverwriteNotice } from "./ClosedShiftOverwriteNotice";
 
 // A setup-stage day is what a wrong-date tap + floor touch + autosave leaves
 // behind. This is not the closed-day danger zone: no payouts, lighter copy,
@@ -31,8 +32,11 @@ export function FloorStep({
     setBarTeam,
     runners,
     setRunners,
+    draftStatus,
     onRemoveSetupDay,
     removingSetupDay = false,
+    date,
+    shiftStatus,
 }) {
     return (
         // Directly editable, no lock/unlock and no floating Cancel/Done - same for a
@@ -40,6 +44,11 @@ export function FloorStep({
         // top-level "✎ Edit shift" gate (autosave stays off; Review's "Confirm & Save
         // Shift" is the one commit action, see ShiftEditorPanel.jsx).
         <div>
+            {shiftStatus === "closed" ? (
+                <div className="mb-3">
+                    <ClosedShiftOverwriteNotice date={date} />
+                </div>
+            ) : null}
             <ShiftSetupDnd
                 allEmployees={allEmployees}
                 teams={teams} setTeams={setTeams}
@@ -47,6 +56,11 @@ export function FloorStep({
                 runners={runners} setRunners={setRunners}
                 readOnly={false}
             />
+            {draftStatus ? (
+                <p aria-live="polite" aria-atomic="true" className="mt-3 text-xs text-[var(--color-ink-soft)]">
+                    {draftStatus}
+                </p>
+            ) : null}
             {onRemoveSetupDay ? (
                 <RemoveEmptySetupDay onRemove={onRemoveSetupDay} removing={removingSetupDay} />
             ) : null}

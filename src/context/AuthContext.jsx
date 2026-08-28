@@ -17,16 +17,85 @@ import { doc, getDoc, writeBatch } from "firebase/firestore";
 
 const AuthContext = createContext(null);
 const normalizeUsername = (username) => username.trim().toLowerCase();
+const normalizeEmail = (email) => email.trim().toLowerCase();
+const EMAIL_EXISTS_MESSAGE = "An account with this email already exists. Log in or reset your password.";
+const HANDLE_EXISTS_MESSAGE = "Login handle already in use.";
+// Signed in, but no staff profile behind it - a signup that only got as far as
+// creating the Auth account, or a profile an admin deleted. The observer signs that
+// session straight back out, which on the login form changes nothing on screen, so
+// it has to say why and name the one action that repairs it.
+const AUTH_ONLY_ACCOUNT_MESSAGE =
+    "This email has a sign in but no staff profile yet. "
+    + "Use Sign up with the same email and password to finish setting it up.";
+const PASSWORD_MISMATCH_MESSAGE =
+    "An account already uses this email, but that password does not match it. "
+    + "Log in with the correct password, or reset it and sign up again with the new one.";
+
+function isEmailAlreadyInUseError(error) {
+    return error?.code === "auth/email-already-in-use";
+}
+
+// "The password typed does not open this email's account." Firebase reports that as
+// auth/invalid-credential once email enumeration protection is on and as the older
+// spellings otherwise, and a never-registered email is indistinguishable from a wrong
+// password by design - all of them answer the same question the same way.
+const CREDENTIAL_MISMATCH_CODES = new Set([
+    "auth/wrong-password",
+    "auth/invalid-credential",
+    "auth/invalid-login-credentials",
+    "auth/user-not-found",
+]);
+
+const TRANSIENT_SIGN_IN_MESSAGES = {
+    "auth/too-many-requests": "Too many attempts. Wait a few minutes, then try again.",
+    "auth/network-request-failed": "Could not reach the server. Check your connection and try again.",
+};
+
+// Registration signs in to prove the person typing owns an email or handle that is
+// already taken. Only a credential failure has a recovery worth naming, and each
+// caller names its own; a rate limit or a dead connection is a failure to ask the
+// question at all, so it surfaces as itself rather than as a claim about the account
+// that sends the captain down a path which cannot work.
+function registrationSignInError(error, credentialMessage) {
+    if (CREDENTIAL_MISMATCH_CODES.has(error?.code)) return new Error(credentialMessage);
+    const transient = TRANSIENT_SIGN_IN_MESSAGES[error?.code];
+    return transient ? new Error(transient) : error;
+}
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    // Why the last auth event ended signed out, for a screen that cannot infer it.
+    const [authNotice, setAuthNotice] = useState("");
     const registrationInProgressRef = useRef(false);
+    const authEventSeqRef = useRef(0);
 
     useEffect(() => {
         let unsubscribe;
 
         unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            // Every auth event is stamped, and only the newest one is allowed to
+            // commit state. `register` signs in mid-attempt and signs straight back
+            // out when the answer is no, so two invocations of this callback are in
+            // flight at once: without the stamp the older one finishes its profile
+            // reads AFTER the sign-out has landed and calls setUser anyway, leaving
+            // the app rendering a signed-in user whose auth.currentUser is already
+            // null - every Firestore read then fails permission-denied until a reload.
+            const seq = ++authEventSeqRef.current;
+            const isCurrentAuthEvent = () => authEventSeqRef.current === seq;
+
+            // A registration attempt owns the user state for its whole span. It signs
+            // in only to prove the person typing owns an email or handle that is
+            // already taken, and signs out again on refusal. Mapping that interim
+            // sign-in here would render the dashboard for an account that already
+            // exists and unmount the very form the refusal has to be reported on, so
+            // the message would never reach the screen. `register` sets the user
+            // itself, once the profile write has actually landed.
+            if (firebaseUser && registrationInProgressRef.current) {
+                if (isCurrentAuthEvent()) setLoading(false);
+                return;
+            }
+
             if (firebaseUser) {
                 // Profile state is the authorization source of truth. Missing
                 // or unreadable state must not become an active employee.
@@ -51,15 +120,19 @@ export const AuthProvider = ({ children }) => {
                         lastName = profile.lastName || "";
                         createdAt = profile.createdAt || null;
                         isSupervisor = profile.isSupervisor === true;
-                    } else if (registrationInProgressRef.current) {
-                        role = "unassigned";
-                        status = "pending";
                     } else {
                         // User was deleted from Firestore by an Admin
                         console.warn("User document not found. Auto-logging out.");
+                        // Recorded before the sign-out, not after: signing out is
+                        // itself the next auth event, so by the time it resolves this
+                        // invocation is no longer the current one and may commit
+                        // nothing. The null event it raises owns clearing the user.
+                        if (isCurrentAuthEvent()) setAuthNotice(AUTH_ONLY_ACCOUNT_MESSAGE);
                         await signOut(auth);
-                        setUser(null);
-                        setLoading(false);
+                        if (isCurrentAuthEvent()) {
+                            setUser(null);
+                            setLoading(false);
+                        }
                         return;
                     }
                 } catch (e) {
@@ -94,8 +167,10 @@ export const AuthProvider = ({ children }) => {
                     managerUid,
                     createdAt,
                 };
+                if (!isCurrentAuthEvent()) return;
                 setUser(mappedUser);
             } else {
+                if (!isCurrentAuthEvent()) return;
                 setUser(null);
             }
             setLoading(false);
@@ -113,6 +188,8 @@ export const AuthProvider = ({ children }) => {
             console.error("Logout failed", error);
         }
     };
+
+    const clearAuthNotice = () => setAuthNotice("");
 
     const login = async (identifier, password, rememberMe = false) => {
         const trimmedIdentifier = identifier.trim();
@@ -132,51 +209,156 @@ export const AuthProvider = ({ children }) => {
         return await signInWithEmailAndPassword(auth, emailToSignIn, password);
     };
 
+    const buildRegistrationProfile = (firebaseUser, { email, username, firstName, lastName }) => ({
+        uid: firebaseUser.uid,
+        username,
+        firstName,
+        lastName,
+        email,
+        role: "unassigned",
+        status: "pending",
+        createdAt: new Date().toISOString()
+    });
+
+    const writeRegistrationProfile = async (firebaseUser, profile) => {
+        // The profile and login handle must land together. Team -> Pending only
+        // sees users/{uid}, while username login depends on the public mapping.
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'users', firebaseUser.uid), profile);
+        batch.set(doc(db, 'usernames', normalizeUsername(profile.username)), {
+            uid: firebaseUser.uid,
+            username: profile.username,
+            email: profile.email,
+            createdAt: profile.createdAt
+        });
+        await batch.commit();
+    };
+
+    const deletePartiallyRegisteredAuthUser = async (firebaseUser, email, password) => {
+        // Rolling back the Auth account is what stops a failed sign-up from leaving
+        // the orphan this whole path exists to repair. Firebase refuses a delete on
+        // a stale session, so refresh the token first and re-prove the password if
+        // it still objects - the credential is right here, and giving up would keep
+        // the email permanently unusable to its own owner.
+        try {
+            await firebaseUser.getIdToken(true);
+            await firebaseUser.delete();
+        } catch (deleteErr) {
+            if (deleteErr?.code !== "auth/requires-recent-login") throw deleteErr;
+
+            const credential = EmailAuthProvider.credential(email, password);
+            await reauthenticateWithCredential(firebaseUser, credential);
+            await firebaseUser.delete();
+        }
+    };
+
+    const signInRegistrationUser = async (email, password) => {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const existingUser = userCredential.user;
+        await existingUser.getIdToken(true);
+        return existingUser;
+    };
+
+    const requireAuthOnlyUser = async (existingUser) => {
+        const existingProfile = await getDoc(doc(db, 'users', existingUser.uid));
+        if (existingProfile.exists()) {
+            await signOut(auth);
+            throw new Error(EMAIL_EXISTS_MESSAGE);
+        }
+
+        return existingUser;
+    };
+
+    // An Auth account with no `users/{uid}` behind it is an orphan: a sign-up that
+    // died between creating the login and writing the profile, or a profile an admin
+    // deleted. Its email is taken, so a fresh sign-up cannot have it, and logging in
+    // is a dead end - the observer signs a profile-less session straight back out.
+    // Signing up again with the same email and password is therefore the repair, and
+    // the sign-in below is how this proves the person typing owns that email before
+    // writing them a profile. A session that DOES have a profile is refused here, so
+    // nothing can ever be written over a real account.
+    const getAuthOnlyUserForRegistration = async (email, password) => {
+        let existingUser;
+        try {
+            existingUser = await signInRegistrationUser(email, password);
+        } catch (err) {
+            // The email is taken and this password does not open it. Telling the
+            // captain to "log in" here is a dead end when the account is an Auth-only
+            // orphan - onAuthStateChanged signs that user straight back out - so name
+            // the one sequence that does work: reset, then sign up again.
+            throw registrationSignInError(err, PASSWORD_MISMATCH_MESSAGE);
+        }
+        return requireAuthOnlyUser(existingUser);
+    };
+
     const register = async (email, password, username, firstName, lastName) => {
-        const cleanEmail = email.trim();
+        const cleanEmail = normalizeEmail(email);
         const cleanUsername = username.trim();
         const cleanFirstName = firstName.trim();
         const cleanLastName = lastName.trim();
         const usernameKey = normalizeUsername(cleanUsername);
         const usernameRef = doc(db, 'usernames', usernameKey);
 
+        // The session as it stood BEFORE this attempt. Cleanup keys on the session
+        // itself rather than on `firebaseUser`, which is only assigned once a sign-in
+        // helper has fully returned: a failure between a successful sign-in and that
+        // assignment (a forced token refresh timing out, the profile read throwing)
+        // would otherwise leave Firebase signed in behind a logged-out signup form.
+        const preAttemptUid = auth.currentUser?.uid ?? null;
+
         let firebaseUser = null;
+        let createdAuthUser = false;
+        let registeredProfile = null;
         try {
             registrationInProgressRef.current = true;
             await setPersistence(auth, browserSessionPersistence);
-            const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-            firebaseUser = userCredential.user;
 
-            // Atomically claim the username and create the user doc without a
-            // client-side username read. Firestore rules allow creating the
-            // username mapping, but deny updating it, so an existing username
-            // fails the batch instead of being overwritten.
-            const batch = writeBatch(db);
-            batch.set(doc(db, 'users', firebaseUser.uid), {
-                uid: firebaseUser.uid,
+            const existingUsername = await getDoc(usernameRef);
+            if (existingUsername.exists()) {
+                let existingAuthUser;
+                try {
+                    existingAuthUser = await signInRegistrationUser(cleanEmail, password);
+                } catch (err) {
+                    // Failing to sign in here proves nothing about the email - it may
+                    // not exist at all. What is certain is that the handle is spoken
+                    // for and this attempt did not prove it is theirs.
+                    throw registrationSignInError(err, HANDLE_EXISTS_MESSAGE);
+                }
+                firebaseUser = await requireAuthOnlyUser(existingAuthUser);
+                if (existingUsername.data()?.uid !== firebaseUser.uid) {
+                    await signOut(auth);
+                    throw new Error(HANDLE_EXISTS_MESSAGE);
+                }
+            } else {
+                try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+                    firebaseUser = userCredential.user;
+                    createdAuthUser = true;
+                    await firebaseUser.getIdToken(true);
+                } catch (err) {
+                    if (!isEmailAlreadyInUseError(err)) throw err;
+                    firebaseUser = await getAuthOnlyUserForRegistration(cleanEmail, password);
+                }
+            }
+
+            const canonicalEmail = normalizeEmail(firebaseUser.email || cleanEmail);
+            registeredProfile = buildRegistrationProfile(firebaseUser, {
+                email: canonicalEmail,
                 username: cleanUsername,
                 firstName: cleanFirstName,
                 lastName: cleanLastName,
-                email: cleanEmail,
-                role: "unassigned",
-                status: "pending",
-                createdAt: new Date().toISOString()
             });
-            batch.set(usernameRef, {
-                uid: firebaseUser.uid,
-                username: cleanUsername,
-                email: cleanEmail,
-                createdAt: new Date().toISOString()
-            });
-            await batch.commit();
+            await writeRegistrationProfile(firebaseUser, registeredProfile);
         } catch (err) {
-            if (firebaseUser) {
+            if (firebaseUser && createdAuthUser) {
                 try {
-                    await firebaseUser.delete();
+                    await deletePartiallyRegisteredAuthUser(firebaseUser, cleanEmail, password);
                 } catch (deleteErr) {
                     console.warn("Could not delete partially registered auth user:", deleteErr);
                     await signOut(auth);
                 }
+            } else if (auth.currentUser && auth.currentUser.uid !== preAttemptUid) {
+                await signOut(auth);
             }
             throw err;
         } finally {
@@ -184,17 +366,24 @@ export const AuthProvider = ({ children }) => {
         }
 
         // A self-registered account is pending with no title and no switch - the
-        // same safe defaults firestore.rules enforces on the create.
-        setUser(prev => ({
-            ...prev,
-            username: cleanUsername,
-            firstName: cleanFirstName,
-            lastName: cleanLastName,
-            role: "unassigned",
-            status: "pending",
-            isSupervisor: false,
+        // same safe defaults firestore.rules enforces on the create. Built whole
+        // from the profile that was just written rather than merged onto whatever
+        // the auth observer happened to leave behind: the observer stays out of a
+        // registration attempt entirely, so there is no earlier state to merge onto
+        // and PendingApproval needs the name and email this carries.
+        setUser({
+            uid: registeredProfile.uid,
+            username: registeredProfile.username,
+            firstName: registeredProfile.firstName,
+            lastName: registeredProfile.lastName,
+            email: registeredProfile.email,
             emailVerified: true,
-        }));
+            role: registeredProfile.role,
+            status: registeredProfile.status,
+            isSupervisor: false,
+            managerUid: null,
+            createdAt: registeredProfile.createdAt,
+        });
         return firebaseUser;
     };
 
@@ -224,6 +413,8 @@ export const AuthProvider = ({ children }) => {
             register,
             logout,
             loading,
+            authNotice,
+            clearAuthNotice,
             resetPassword,
             updateSessionProfile,
             changePassword,

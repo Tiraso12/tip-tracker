@@ -214,6 +214,13 @@ async function closeTeamPicker(page) {
     await expect(page.getByRole("dialog", { name: /Add employees to/i })).toHaveCount(0);
 }
 
+async function openFirstSettleGroup(page) {
+    const firstGroup = page.getByRole("button", { name: /Team 1.*(Still on tables|Entering|Done)/s });
+    await expect(firstGroup).toBeVisible();
+    await firstGroup.click();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+}
+
 test.beforeAll(async () => {
     mkdirSync(SHOTS_DIR, { recursive: true });
     testEnv = await initializeTestEnvironment({
@@ -251,11 +258,16 @@ test("settling a night through the UI leaves the day naming who saved it", async
 
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill("1000");
+    await openFirstSettleGroup(page);
+    await page.getByRole("spinbutton", { name: "Net revenue", exact: true }).fill("1000");
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill("200");
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill("100");
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill("50");
-    await rail.getByRole("button", { name: "Review" }).click();
+    // Confirm & Save stays locked until Team 1 (the only gated group here, no
+    // Bar members) is marked done; Save and Mark Done returns to the who's-left
+    // landing, whose footer then hands off straight into Review.
+    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "All groups closed - Review →" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
 
     // Back on the day, with the money - and now with the attribution.
@@ -333,7 +345,10 @@ test("older nights state only what was recorded, with nothing warning-toned abou
 
     // A floor plan that was never settled has no money and no saved-by line -
     // the shift doc carries both fields, but there is no settled day to caption.
+    // Direction A: this setup day with an existing floor plan lands on the
+    // who's-left checklist, not an auto-redirect into the floor editor.
     await setShiftDate(page, FLOOR_ONLY_DAY);
+    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Floor" }).click();
     await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
     await expect(panelHeader(page)).toHaveCount(0);
     await expect(page.getByText(/^Saved by /)).toHaveCount(0);

@@ -187,6 +187,16 @@ test("handle mapping is bound to its owner, path, and verified Auth email", asyn
     await assertFails(updateDoc(doc(db, "usernames/other one"), { email: "employeeUid@example.com" }));
 });
 
+test("handle mapping accepts the Auth email regardless of case", async () => {
+    const db = authedDb("newUserUid", "alexiekbrown@gmail.com");
+
+    await assertSucceeds(setDoc(doc(db, "usernames/alexiebrown"), {
+        uid: "newUserUid",
+        username: "alexiebrown",
+        email: "AlexieKBrown@Gmail.com",
+    }));
+});
+
 test("handle release and claim is atomic, including collision failure", async () => {
     const db = authedDb("employeeUid");
     const rename = writeBatch(db);

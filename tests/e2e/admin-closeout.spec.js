@@ -110,8 +110,10 @@ async function seedCloseoutData() {
 }
 
 // Seed an already closed & paid-out shift so tests can exercise the reopen flow
-// without re-running a full closeout.
-async function seedClosedShift(date) {
+// without re-running a full closeout. `withSummary: false` is the shape a
+// pre-`summary` or externally-written closed day has: closed on its status and
+// payout ledger alone, with no `summary` field on the shift doc.
+async function seedClosedShift(date, { withSummary = true } = {}) {
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
 
@@ -128,7 +130,7 @@ async function seedClosedShift(date) {
             }],
             barTeam: { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } },
             runners: [],
-            summary: { balances: { overallBalance: 0 } },
+            ...(withSummary ? { summary: { balances: { overallBalance: 0 } } } : {}),
             firstClosedAt: "2026-05-20T12:00:00.000Z",
         });
         await setDoc(doc(db, "payouts", date), { date, ledgerVersion: 1 });
@@ -239,18 +241,57 @@ async function closeTeamPicker(page) {
     await expect(page.getByRole("dialog", { name: /Add employees to/i })).toHaveCount(0);
 }
 
+async function openFirstSettleGroup(page) {
+    const firstGroup = page.getByRole("button", { name: /Team 1.*(Still on tables|Entering|Done)/s });
+    await expect(firstGroup).toBeVisible();
+    await firstGroup.click();
+    await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
+}
+
 // Setup-shift Settle up flow. Floor and money are directly editable and autosave;
 // Review is reached from the day rail because it derives from the live inputs.
+//
+// Parallel Settle up's close gate (Direction A, 2026-08-23 lock): Confirm & Save
+// stays locked until every assigned dining team and Bar are marked done, so this
+// helper's callers all assign a single dining team (no Bar members) and need
+// Save and Mark Done, floated bottom-right, before Review offers an enabled
+// Confirm & Save Shift. Friendly entry (Path 3, 2026-08-24 lock): Save and Mark
+// Done itself returns to the who's-left landing rather than staying in Settle
+// up - with the only gated group now done, its footer swaps to a direct
+// "All groups closed - Review ->" handoff, which this helper follows instead
+// of the day rail's own Review step (that rail no longer exists on screen once
+// the mark-done write lands).
 async function settleMoneyAndReview(page, { sales, tips, gratuity, cash }) {
     const rail = page.getByRole("navigation", { name: "Day steps" });
     await rail.getByRole("button", { name: "Settle" }).click();
 
-    await page.getByRole("spinbutton", { name: "Sales", exact: true }).fill(sales);
+    // Floor -> Settle on an open shift ALWAYS routes to the who's-left landing
+    // (ShiftEditorPanel `goToStep`), so the group is always opened from there. A
+    // conditional probe here would keep passing if that routing regressed.
+    await openFirstSettleGroup(page);
+
+    const netRevenue = page.getByRole("spinbutton", { name: "Net revenue", exact: true });
+    await netRevenue.fill(sales);
     await page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true }).fill(tips);
     await page.getByRole("spinbutton", { name: "Gratuity", exact: true }).fill(gratuity);
     await page.getByRole("spinbutton", { name: "Cash", exact: true }).fill(cash);
+    // Wait for the whole-shift roster autosave to land before marking done: the
+    // landing this returns to re-reads the shift doc, and racing that read
+    // against an in-flight first autosave (blank day -> "setup") can catch it
+    // before the floor plan just assigned is on the doc at all. Autosave is
+    // silent on screen (no "Draft saved." hint), so poll the shift doc itself
+    // for the money that was just typed rather than any on-screen cue.
+    let savedSales;
+    await expect.poll(async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const shiftDoc = await getDoc(doc(context.firestore(), `shifts/${SHIFT_DATE}`));
+            savedSales = shiftDoc.data()?.teams?.[0]?.pools?.sales;
+        });
+        return savedSales;
+    }).toBe(sales);
+    await page.getByRole("button", { name: "Done", exact: true }).click();
 
-    await rail.getByRole("button", { name: "Review" }).click();
+    await page.getByRole("button", { name: "All groups closed - Review →" }).click();
     await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
 }
 
@@ -506,7 +547,7 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
     await expectSettledLanding(page);
 
-    // Reopen the settled shift via the floating "Edit shift" -> the SAME new in-place
+    // Reopen the settled shift via the header "Edit shift" -> the SAME new in-place
     // editor (no old view-only / "Edit roster" gate). The floor is directly editable.
     await page.getByRole("button", { name: "Edit shift" }).click();
     await expect(page.getByRole("button", { name: /Add employees to Bar Team/i })).toBeVisible();
@@ -519,7 +560,12 @@ test("editing a closed shift's roster preserves payouts and cleans up the remove
     await expect(page.getByRole("button", { name: "Save Team Setup" })).toHaveCount(0);
 
     // Closed shift roster edits go straight through Review without an old lock step.
+    // Floor -> Settle on a closed shift must stay in the editor (this rail tap used
+    // to bounce back to the Pay out landing, same as the who's-left landing does for
+    // an open shift - but a closed shift has no who's-left list to land on).
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+    await expect(page.getByRole("navigation", { name: "Day steps" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit shift" })).toHaveCount(0);
     await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Confirm & Save Shift" }).click();
     await expectSettledLanding(page);
@@ -570,8 +616,12 @@ test("an accidental setup day can be removed from the floor plan", async ({ page
 
     await setShiftDate(page, date);
 
-    // Setup days skip into the floor editor. The discard lives there, not on
-    // the closed-day danger zone, and its confirm is the lighter copy.
+    // Direction A's who's-left checklist is the landing for a setup day with an
+    // existing floor plan (no more auto-redirect into the floor editor) - reach
+    // the floor editor through its own Day Rail step, same as the checklist's
+    // own rail. The discard lives there, not on the closed-day danger zone, and
+    // its confirm is the lighter copy.
+    await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Floor plan" }).click();
     await expect(page.getByRole("button", { name: "Remove this day" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Remove this shift" })).toHaveCount(0);
 
@@ -672,26 +722,54 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByRole("dialog", { name: /Add employees to Team 1/i })).toBeVisible();
     });
 
-    test("setup floor plans open directly editable, and the rail moves to editable Settle", async ({ page }) => {
+    // Edit shift is now the settled day's ONLY way back into the editor (the
+    // floating EditFab is gone), and a day reads as closed from its status and
+    // payout ledger, not from a `summary` field. A closed shift written without
+    // one must therefore still be correctable, or the day is stranded.
+    test("a closed shift with no summary still offers Edit shift", async ({ page }) => {
+        const date = "2026-05-19";
+        await seedClosedShift(date, { withSummary: false });
+        await login(page);
+        await setShiftDate(page, date);
+
+        await expect(page.getByTestId("settled-day-header").getByRole("button", { name: "Edit shift" })).toBeVisible();
+        await page.getByRole("button", { name: "Edit shift" }).click();
+
+        // Straight into the in-place editor, with the closed-shift cue already up.
+        await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
+        await expect(page.getByText(/Re-saving overwrites the saved payouts/i)).toBeVisible();
+    });
+
+    test("Escape closes the Add-employees picker", async ({ page }) => {
+        const date = "2026-05-21";
+        await login(page);
+        await setShiftDate(page, date);
+        await openEditor(page);
+
+        await openTeamPicker(page, "Team 1");
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog", { name: /Add employees to Team 1/i })).toHaveCount(0);
+    });
+
+    test("setup floor plans open directly editable, and the Settle checklist opens editable money", async ({ page }) => {
         const date = "2026-05-27";
         await seedSetupShift(date);
         await login(page);
         await setShiftDate(page, date);
 
-        // A saved setup shift opens straight into the editable floor plan.
+        // Direction A: a setup shift with an existing floor plan lands on the
+        // who's-left checklist, not an auto-redirect into the floor editor -
+        // Floor plan is one rail tap away from there, same as Settle and Review.
+        const rail = page.getByRole("navigation", { name: "Day steps" });
+        await rail.getByRole("button", { name: "Floor" }).click();
         await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
         await expect(page.getByRole("button", { name: "✎ Edit", exact: true })).toHaveCount(0);
         await expect(page.getByRole("button", { name: "✓ Done", exact: true })).toHaveCount(0);
-        const rail = page.getByRole("navigation", { name: "Day steps" });
 
-        // Tapping Floor keeps the same directly editable floor step.
-        await rail.getByRole("button", { name: "Floor" }).click();
-        await expect(page.getByRole("button", { name: "Add restaurant team" })).toBeVisible();
-
-        // Advancing to Settle shows editable money fields immediately.
+        // Advancing to Settle shows the checklist; a group row opens editable money.
         await rail.getByRole("button", { name: "Settle" }).click();
-        await expect(page.getByRole("tab", { name: /Team 1/ })).toBeVisible();
-        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toBeEnabled();
+        await openFirstSettleGroup(page);
+        await expect(page.getByRole("spinbutton", { name: "Net revenue", exact: true })).toBeEnabled();
     });
 
     test("the day-step rail is Floor -> Settle -> Review with no Pay out step", async ({ page }) => {
@@ -707,14 +785,15 @@ test.describe("mobile floor polish", () => {
         await expect(rail.getByRole("button", { name: /Pay out/i })).toHaveCount(0);
     });
 
-    test("settled shift: rail hidden, floating Edit shift opens the new in-place editor, and saving shows the overwrite confirmation", async ({ page }) => {
+    test("settled shift: rail hidden, header Edit shift opens the new in-place editor, and saving shows the overwrite confirmation", async ({ page }) => {
         const date = "2026-05-28";
         await seedClosedShift(date);
         await login(page);
         await setShiftDate(page, date);
 
-        // Settled landing: the step rail is hidden; editing is a floating button.
+        // Settled landing: the step rail is hidden; editing is a header button.
         await expect(page.getByRole("navigation", { name: "Day steps" })).toHaveCount(0);
+        await expect(page.getByTestId("settled-day-header").getByRole("button", { name: "Edit shift" })).toBeVisible();
         await page.getByRole("button", { name: "Edit shift" }).click();
 
         // The SAME new in-place editor - not the old view-only + "Edit roster" screen.
@@ -722,12 +801,18 @@ test.describe("mobile floor polish", () => {
         await expect(page.getByText("The roster is view-only.")).toHaveCount(0);
         await expect(page.getByRole("button", { name: "Add restaurant team" })).toBeVisible();
 
+        // Closed-shift cue is on Floor plan from the moment the editor opens.
+        await expect(page.getByText(/Re-saving overwrites the saved payouts/i)).toBeVisible();
+
         // The team card is directly editable: tap opens the assign sheet; add a member.
         await openTeamPicker(page, "Team 1");
         await assignFromPool(page, "Back One");
         await closeTeamPicker(page);
 
-        // The overwrite warning appears on Review before anything is written.
+        // Same cue on Settle up, not only on Review.
+        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+        await expect(page.getByText(/Re-saving overwrites the saved payouts/i)).toBeVisible();
+
         await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Review" }).click();
         await expect(page.getByText(/Re-saving overwrites the saved payouts/i)).toBeVisible();
         await expect(page.getByRole("button", { name: "Confirm & Save Shift" })).toBeVisible();
@@ -739,6 +824,9 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
 
+        // Direction A: reach the floor editor from the who's-left checklist's
+        // own Day Rail rather than an auto-redirect.
+        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Floor" }).click();
         await openTeamPicker(page, "Team 1");
         await assignFromPool(page, "Back One");
         await closeTeamPicker(page);
@@ -882,12 +970,12 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
 
-        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
-        const sales = page.getByRole("spinbutton", { name: "Sales", exact: true });
+        await openFirstSettleGroup(page);
+        const sales = page.getByRole("spinbutton", { name: "Net revenue", exact: true });
         await expect(sales).toBeVisible();
         await expect(sales).toBeEnabled();
         await sales.fill("500");
-        await expect(page.getByRole("spinbutton", { name: "Sales", exact: true })).toHaveValue("500");
+        await expect(page.getByRole("spinbutton", { name: "Net revenue", exact: true })).toHaveValue("500");
 
         await expect.poll(async () => {
             let value = "";
@@ -905,7 +993,7 @@ test.describe("mobile floor polish", () => {
         await login(page);
         await setShiftDate(page, date);
 
-        await page.getByRole("navigation", { name: "Day steps" }).getByRole("button", { name: "Settle" }).click();
+        await openFirstSettleGroup(page);
         const tips = page.getByRole("spinbutton", { name: "Tips (CTP)", exact: true });
         await tips.fill("500");
 
@@ -1032,19 +1120,22 @@ test.describe("app bar at supported phone widths", () => {
                     };
                 };
                 const appBar = document.querySelector("header.sticky");
-                const dayChips = [...document.querySelectorAll('[aria-label="Select a day this week"] button')];
                 const dayRail = document.querySelector('[aria-label="Day steps"]');
                 const railButtons = [...dayRail.querySelectorAll("button")];
+                // The rail leads with the editor's Back chevron (DayRail.jsx), which is
+                // an icon-only control - the step trail this asserts on starts after it.
+                const stepButtons = railButtons.filter(
+                    (button) => button.getAttribute("aria-label") !== "Back",
+                );
                 return {
                     viewportWidth,
                     appBar: rectFor(appBar),
                     appBarOverflows: appBar.scrollWidth > appBar.clientWidth + 1,
-                    firstDayChip: rectFor(dayChips[0]),
-                    lastDayChip: rectFor(dayChips[dayChips.length - 1]),
                     dayRail: rectFor(dayRail),
-                    firstRailButton: {
-                        ...rectFor(railButtons[0]),
-                        text: railButtons[0].innerText,
+                    firstRailButton: rectFor(railButtons[0]),
+                    firstStepButton: {
+                        ...rectFor(stepButtons[0]),
+                        text: stepButtons[0].innerText,
                     },
                     controls: [...appBar.querySelectorAll("button")].map((button) => ({
                         label: button.getAttribute("aria-label"),
@@ -1056,12 +1147,11 @@ test.describe("app bar at supported phone widths", () => {
 
             expect(chrome.appBar.right).toBe(viewport.width);
             expect(chrome.appBarOverflows).toBe(false);
-            expect(chrome.firstDayChip.left).toBeGreaterThanOrEqual(0);
-            expect(chrome.lastDayChip.right).toBeLessThanOrEqual(viewport.width);
             expect(chrome.dayRail.left).toBeGreaterThanOrEqual(0);
             expect(chrome.dayRail.right).toBeLessThanOrEqual(viewport.width);
             expect(chrome.firstRailButton.left).toBeGreaterThanOrEqual(0);
-            expect(chrome.firstRailButton.text).toBe("Floor plan");
+            expect(chrome.firstStepButton.left).toBeGreaterThanOrEqual(0);
+            expect(chrome.firstStepButton.text).toBe("Floor plan");
 
             const stepControl = /^(Previous|Next) (day|week)$/;
             const dateControl = /^Shift date:/;

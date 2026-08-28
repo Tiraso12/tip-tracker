@@ -233,6 +233,13 @@ service cloud.firestore {
         (!("isSupervisor" in request.resource.data) || request.resource.data.isSupervisor is bool);
     }
 
+    // The email is compared case-insensitively on purpose. Sign-up canonicalises
+    // the address to lower case so the profile and the mapping carry one spelling
+    // of it, while the Auth token carries it however the account was created - so
+    // an exact match would refuse the handle claim of anyone who typed a capital
+    // letter. Lowering both sides still binds the mapping to the signed-in
+    // account's own address; it only stops caring how that address was typed.
+    // `tests/rules/profile-self-service.test.js` pins it.
     function validUsernameMapping(username) {
       return request.resource.data.keys().hasOnly(["uid", "username", "email", "createdAt"]) &&
         request.resource.data.keys().hasAll(["uid", "username", "email"]) &&
@@ -242,7 +249,8 @@ service cloud.firestore {
         request.resource.data.username.size() <= 80 &&
         request.resource.data.username.lower() == username &&
         request.resource.data.email is string &&
-        request.resource.data.email == request.auth.token.email &&
+        request.auth.token.email is string &&
+        request.resource.data.email.lower() == request.auth.token.email.lower() &&
         (!("createdAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.createdAt));
     }
 
@@ -312,6 +320,22 @@ service cloud.firestore {
         (!("lastTempStaffMergeAt" in request.resource.data) || isStringOrTimestamp(request.resource.data.lastTempStaffMergeAt)) &&
         (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string) &&
         (!("operationId" in request.resource.data) || request.resource.data.operationId == null || request.resource.data.operationId is string);
+    }
+
+    // Parallel Settle up (2026-08-23 lock): a dining team's live scoped draft,
+    // one doc per team under shifts/{shiftId}/settleGroups/{teamId} - see
+    // src/utils/settleGroupPersistence.js for why this exists (Firestore has no
+    // dotted-path update into one element of the `teams` array). Bar needs no
+    // doc here: its scoped write is a dotted-path update straight onto
+    // barTeam.pools/markedDone on the shift doc itself, covered by validShift.
+    function validSettleGroup() {
+      return request.resource.data.keys().hasOnly(["pools", "contracts", "markedDone", "updatedAt", "updatedBy"]) &&
+        request.resource.data.keys().hasAll(["pools", "markedDone", "updatedAt"]) &&
+        request.resource.data.pools is map &&
+        (!("contracts" in request.resource.data) || request.resource.data.contracts is list) &&
+        request.resource.data.markedDone is bool &&
+        isStringOrTimestamp(request.resource.data.updatedAt) &&
+        (!("updatedBy" in request.resource.data) || request.resource.data.updatedBy == null || request.resource.data.updatedBy is string);
     }
 
     function validPayoutMeta(shiftDate) {
@@ -538,6 +562,18 @@ service cloud.firestore {
         (hasCaptainAccess() || isSelfServiceShiftNameRestamp());
       allow delete: if hasManagerAccess() ||
         (hasCaptainAccess() && resource.data.status == "setup");
+
+      // Parallel Settle up's per-team drafts (see validSettleGroup above).
+      // Captain tier only - the same tier that already reads/writes the shift
+      // itself at Settle up - and deletable at captain tier too, matching
+      // payouts/{date}/entries below: cleanup rides along with a setup-day
+      // discard or a settled-day removal (closeoutPersistence.js), both of
+      // which are themselves gated on the parent shift's own delete rule.
+      match /settleGroups/{groupId} {
+        allow read: if hasCaptainAccess();
+        allow create, update: if hasCaptainAccess() && validSettleGroup();
+        allow delete: if hasCaptainAccess();
+      }
     }
 
     // Canonical payout ledger. Employees can read only their own exact entry doc.

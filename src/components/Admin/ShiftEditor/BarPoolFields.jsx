@@ -30,7 +30,7 @@ export function BarPoolFields({ barTeam, onBarPoolChange, onBarFoodSalesChange }
 
     return (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-            <PoolField label="Bar Sales" value={pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
+            <PoolField label="Net revenue" value={pools.sales} onChange={(value) => onBarPoolChange("sales", value)} />
             <PoolField label="Tips (CTP)" value={pools.tips} onChange={(value) => onBarPoolChange("tips", value)} />
             <PoolField label="Gratuity" value={pools.gratuity} onChange={(value) => onBarPoolChange("gratuity", value)} />
             <PoolField label="Covers" money={false} value={pools.covers} onChange={(value) => onBarPoolChange("covers", value)} />

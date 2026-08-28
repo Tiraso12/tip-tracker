@@ -5,6 +5,7 @@
 // deleted because it was the entry point that went away, not the layouts, which
 // are the expensive part: re-wiring one is a button, not a rewrite.
 
+import { formatContractRate } from './engine';
 import { ASSIGNABLE_ROLES, rolePluralLabel, roleShortLabel } from './roleLabels';
 
 const PRIMARY_COLOR = [27, 94, 63]; // #1b5e3f - pine accent (matches --color-accent)
@@ -173,7 +174,7 @@ export const generateShiftReport = async (date, summary) => {
 
     if (summary.normalizedInputs?.contract26Gratuity > 0) {
         doc.setTextColor(...PRIMARY_COLOR);
-        doc.text(`Contract Shift (26% Grat: ${currency(summary.normalizedInputs.contract26Gratuity)})`, 40, 160);
+        doc.text(`Contract Shift (${formatContractRate(summary.normalizedInputs?.date || date)} Grat: ${currency(summary.normalizedInputs.contract26Gratuity)})`, 40, 160);
     }
 
     // 4. Employee Payouts Table

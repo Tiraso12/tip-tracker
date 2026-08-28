@@ -28,10 +28,16 @@ import { getNextStep } from "../../utils/dayFlow";
 // Review there is no next step, so the button disappears rather than going
 // inert. Kept outside the breadcrumbs' own overflow-x-auto scroller so it
 // can't be scrolled out of reach on a narrow phone.
-function DayRail({ steps, onStepClick, className = "" }) {
+//
+// Optional `onBack` is the editor's way out to this day's landing (who's-left
+// list). It lives here, leading the trail, because a lone chevron on its own
+// row above the rail read as leftover chrome, the page header that could host
+// it is hidden on a phone, and the app bar's home control jumps to TODAY not
+// this date. A hairline keeps it from reading as "previous step" opposite Next.
+function DayRail({ steps, onStepClick, onBack, className = "", hideNext = false }) {
     const activeKey = steps.find((step) => step.state === "active")?.key ?? null;
     const nextStep = activeKey ? steps.find((step) => step.key === getNextStep(activeKey)) : null;
-    const canAdvance = Boolean(nextStep?.clickable);
+    const canAdvance = !hideNext && Boolean(nextStep?.clickable);
 
     return (
         <nav
@@ -41,6 +47,21 @@ function DayRail({ steps, onStepClick, className = "" }) {
                 + className
             }
         >
+            {onBack ? (
+                <>
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        aria-label="Back"
+                        className="inline-flex flex-none min-h-[32px] min-w-[32px] items-center justify-center -ml-1.5 text-[var(--color-ink-soft)] transition-colors hover:text-[var(--color-ink)]"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="15 6 9 12 15 18" />
+                        </svg>
+                    </button>
+                    <span aria-hidden="true" className="h-3 w-px flex-none bg-[var(--color-line)]" />
+                </>
+            ) : null}
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {steps.map((step, i) => {
                     const clickable = step.clickable;

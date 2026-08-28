@@ -58,6 +58,26 @@ and had to be corrected on 2026-08-12. Two allocations look like deductions and 
   figure has nothing to disagree with and stays quiet rather than being marked for having been
   typed under the old model.
 
+## The contract gratuity rate is fixed, not per-contract, and it stepped once
+
+Contract sales are inferred from the gratuity actually charged (`grtContractTotal / rate` in
+`engine.js` §1, `getContractRate`), never entered directly - so the rate has to be right without
+anyone typing it. It was a flat 26% until the restaurant raised it to **27% for shifts dated
+2026-08-26 onward**; a night already paid at 26% stays 26% forever, so the cutoff is keyed on the
+**shift's own date**, never the clock when someone opens the editor or re-saves it. There is no
+per-contract rate field and no 26/27 picker in the UI - one date-keyed constant in `engine.js` is
+the only place the rate lives. `ShiftEditorPanel.jsx` passes its `date` prop (the night being
+viewed, not today) into `calculateShift` for exactly this reason; a call that omits `date`
+(undated tests, any leftover caller) stays on 26% rather than silently jumping to 27%.
+`src/utils/engine.test.js` pins both sides of the cutoff.
+
+**A percentage on screen is quoted, never typed.** Every place that says the rate out loud - the
+contract gratuity field's placeholder, Review's "Contract sales" sub-label, the shift PDF - reads
+it from `formatContractRate(date)` in `engine.js`, keyed on the same shift date the engine
+divided by. A literal `27%` in a label is a second home for the number: it would silently
+mislabel every pre-cutoff night the captain reopens, beside an amount that was derived at 26%,
+with nothing on screen to say so.
+
 ## A negative CTP is correct
 
 **Never add a guard, a clamp or a floor.** In the captain's own words: the bar's fees are paid
@@ -94,13 +114,38 @@ unchanged to the cent.
 
 ## The Confirm & Save gate
 
-**Exactly one thing blocks Confirm & Save: the shift must balance to within five cents.**
+**The write itself blocks on exactly one thing: the shift must balance to within five cents.**
 Everything else on Review is a warning. `saveClosedShiftAtomically` re-runs
 `reconcilePayoutLedger` and throws before building the batch, so Review must never offer a save
 the write path would refuse - `describeShiftBalance` (`src/utils/shiftBalance.js`) mirrors that
 check, disables the button and says which pool the money is stranded in, reading the engine's
 own `balances.poolBalances` (whose entries sum exactly to `overallBalance`) rather than
-re-deriving anything. Keep the two in step.
+re-deriving anything. Keep the two in step. The button itself carries one more, UI-only gate on
+top of this - see "Parallel Settle up's close gate" below - but the atomic write is otherwise
+unchanged: it is still one commit, still gated only on balance.
+
+### Parallel Settle up's close gate
+
+Since 2026-08-23 (Direction A, locked with the captain), the Confirm & Save button is also
+disabled until every assigned dining team and Bar are marked done on Settle up
+(`summarizeCloseReadiness`, `src/utils/settleStatus.js`) - this is checked in
+`ShiftEditorPanel.jsx`'s `closeGateBlocked`, entirely separate from `saveBlocked`'s balance check
+above, and only while the shift is still unsettled (`shiftStatus !== "closed"`; a later correction
+re-save asks only that the shift balances, same as always). Runners is excluded from this gate by
+construction - it defaults done and is never read by `summarizeCloseReadiness`.
+
+Money entered during this unsettled phase writes to a live per-group scoped location rather than
+the whole shift document, so two Supervisors settling different groups at once cannot overwrite
+each other - see `src/utils/settleGroupPersistence.js` for the mechanism and why a dining team
+needs a `shifts/{date}/settleGroups/{teamId}` doc of its own (Bar does not: it's a single map
+field, so its scoped write is a plain dotted-path update).
+
+**One accepted, deliberate risk, not a bug to "fix" without checking back with the captain
+first**: if two Supervisors are ever on the exact SAME group at the same moment, whichever
+scoped write lands last is kept silently - no lock, no warning. Chosen over locking or blocking,
+for simplicity, when the plan was scoped (`data/tip-tracker-parallel-settle-plan/report.md`,
+Q5). It is a narrower race than the whole-document one this feature replaces: it only bites on
+the exact same group, never on two different groups.
 
 `describeSaveFailure` (`src/utils/saveFailure.js`) covers the other end - a save that WAS
 attempted and refused - and its fallback branch must keep carrying the raw error text; the
@@ -142,6 +187,6 @@ captain has had that shape removed twice. The component decides neither who may 
 **Receipt-photo / OCR prefill for Settle is a future feature, not now.** The captain parked it
 on 2026-08-17 - do not build any OCR, photo upload, or Settle prefill. Research lives at the
 firstmate home (`data/tip-tracker-receipt-ocr-scout/report.md`,
-`data/receipt-ocr-lab-on-device-research/report.md`). Contracts are REO 26%/27% of the
-guest-check Gratuity, not a server-sales line - keep that distinction in mind if this is picked
-back up.
+`data/receipt-ocr-lab-on-device-research/report.md`). Contracts are 27% of the guest-check
+Gratuity as of 2026-08-26; older paid nights used 26%. Not a server-sales line - keep that
+distinction in mind if this is picked back up.

@@ -133,7 +133,7 @@ export function PointSplitDisclosure({ title, members, defaultPoints = 0, emptyM
                                 onClick={() => setIsOpen(false)}
                                 className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-sm font-semibold text-white transition-transform active:scale-95"
                             >
-                                ✓ Done
+                                Apply
                             </button>
                         </div>
                     </div>

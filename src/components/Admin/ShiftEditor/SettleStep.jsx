@@ -1,19 +1,27 @@
+import FloatingActions from "../FloatingActions";
 import ScrollRail from "../ScrollRail";
 import { fmtMoney } from "../shiftEditorUtils";
 import { BarPoolFields } from "./BarPoolFields";
-import { CloseoutEntryPanel } from "./CloseoutEntryPanel";
+import { CloseoutEntryPanel, MarkDoneAction } from "./CloseoutEntryPanel";
 import { PointSplitDisclosure } from "./PointSplitDisclosure";
 import { RailPill } from "./RailPill";
 import { RunnerGroup } from "./RunnerGroup";
 import { TeamPoolFields } from "./TeamPoolFields";
+import { ClosedShiftOverwriteNotice } from "./ClosedShiftOverwriteNotice";
 
 export function SettleStep({
+    date,
     closeoutGroups,
     activeGroupId,
     onSelectGroup,
     poolSummary,
-    poolGroupSummary,
-    groupStatusSummary,
+    poolGroupCount,
+    closeReadiness,
+    onMarkGroupDone,
+    markingGroupId = null,
+    markFailed = false,
+    unmarkedCueGroupId,
+    shiftStatus,
     teams,
     barTeam,
     runners,
@@ -44,6 +52,7 @@ export function SettleStep({
            the screen with its own internal scroller - the page scrolls, same as
            desktop always has. */
         <section className="space-y-4 pb-6">
+            {shiftStatus === "closed" ? <ClosedShiftOverwriteNotice date={date} /> : null}
             {/* Team switcher: a compact horizontal strip above one fixed-height entry
                 panel. Tapping a pill focuses that group; the strip scrolls sideways on
                 phone so page height stays constant no matter how large the roster is.
@@ -66,28 +75,28 @@ export function SettleStep({
             <div className="flex items-center justify-between gap-3 max-[560px]:order-2">
                 <span className="inline-flex items-baseline gap-2">
                     <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--color-ink-muted)]">
-                        {poolGroupSummary.total} {poolGroupSummary.total === 1 ? "group" : "groups"} · Pool
+                        {poolGroupCount} {poolGroupCount === 1 ? "group" : "groups"} · Pool
                     </span>
                     <strong className="font-mono tabular-nums text-sm text-[var(--color-ink)]">
                         {fmtMoney(poolSummary.payoutPool)}
                     </strong>
                 </span>
-                {/* Phone: the per-tab dots already carry this. Each tab shows its
-                    own group's state in its own colour, right next to the name you
-                    would tap to fix it, so a rolled-up count of the same fact was
-                    the screen saying it twice - once vaguely. Desktop keeps the
-                    roll-up: there the switcher can hold more groups than the eye
-                    counts dots for. */}
-                {groupStatusSummary.total > 0 ? (
-                    groupStatusSummary.needsMoney > 0 ? (
+                {/* Direction A's own gate note (2026-08-23 lock): close-readiness, not
+                    money-in - "N groups still open" until every dining team and Bar
+                    are marked done (Runners excluded). Confirm & Save lives on
+                    Review, not here; this line is Settle up's only status cue.
+                    Phone: the per-tab dots already carry this per-group, so the
+                    rolled-up line stays desktop-only, same as before. */}
+                {shiftStatus !== "closed" && closeReadiness.total > 0 ? (
+                    closeReadiness.stillOpen > 0 ? (
                         <span className="max-[560px]:hidden inline-flex items-center gap-1.5 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)]">
                             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
-                            {groupStatusSummary.needsMoney} still need money
+                            {closeReadiness.stillOpen} {closeReadiness.stillOpen === 1 ? "group" : "groups"} still open
                         </span>
                     ) : (
                         <span className="max-[560px]:hidden inline-flex items-center gap-1.5 rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-accent)]">
                             <span aria-hidden="true">✓</span>
-                            All groups funded
+                            Every dining team and Bar are done
                         </span>
                     )
                 ) : null}
@@ -141,11 +150,17 @@ export function SettleStep({
                 sitting a second layer of padding further in. */}
             <div className="m-0 min-w-0 max-[560px]:!mt-3 max-[560px]:-mx-3">
             {activeGroup && (activeGroup.kind !== "dining" || diningTeam) ? (
-                <CloseoutEntryPanel key={activeGroup.id} group={activeGroup}>
+                <CloseoutEntryPanel
+                    key={activeGroup.id}
+                    group={activeGroup}
+                    showUnmarkedCue={unmarkedCueGroupId === activeGroup.id}
+                    hideMarkControl={shiftStatus === "closed"}
+                >
                     {activeGroup.kind === "dining" ? (
                         <>
                             <TeamPoolFields
                                 team={diningTeam}
+                                date={date}
                                 onPoolChange={onPoolChange}
                                 onToggleContracts={onToggleContracts}
                                 onAddContract={onAddContract}
@@ -209,13 +224,30 @@ export function SettleStep({
             )}
             </div>
 
+            {/* Save and Mark Done, floated (captain's friendly-entry round-two note,
+                2026-08-24): the same app-wide FloatingActions corner as the Floor/
+                Review screens' primary action, tracking whichever group is active.
+                Hidden on a closed shift, matching CloseoutEntryPanel's own
+                `hideMarkControl` gate - a closed shift's done-state no longer gates
+                anything and edits persist only through Review -> Confirm & Save. */}
+            {activeGroup && shiftStatus !== "closed" ? (
+                <FloatingActions>
+                    <MarkDoneAction
+                        group={activeGroup}
+                        onMarkDone={onMarkGroupDone}
+                        saving={markingGroupId === activeGroup.id}
+                        busy={Boolean(markingGroupId)}
+                    />
+                </FloatingActions>
+            ) : null}
+
             {/* A closed shift disables draft autosave, so surface the live save/
                 draft status inline; a setup shift's money autosaves silently. Settle
                 up floats on the page background (no outer workspace header), so this
                 is the only place that status shows at any width. */}
-            {(saveStatus || draftStatus) ? (
+            {(saveStatus || draftStatus || markFailed) ? (
                 <p aria-live="polite" aria-atomic="true" className="text-xs text-[var(--color-ink-soft)]">
-                    {saveStatus || draftStatus}
+                    {saveStatus || (markFailed ? "Could not mark this group done. Try again." : draftStatus)}
                 </p>
             ) : null}
         </section>

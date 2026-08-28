@@ -8,7 +8,7 @@ import { SavedByLine } from "./DayPayoutPanel";
 import BarDatePill from "./BarDatePill";
 import DayChipStrip from "./DayChipStrip";
 import AppBar from "../AppBar/AppBar";
-import { TopProgressBar } from "../ui";
+import { Button, TopProgressBar } from "../ui";
 import { PendingActionsContext, usePendingActionsState } from "../../context/PendingActionsContext";
 import { toDateKey, getCurrentWeek, parseDateKey, formatFullDateKey } from "../../utils/dateUtils";
 import { getLandingStage, ORPHANED_PAYOUTS_STATUS } from "../../utils/dayFlow";
@@ -16,6 +16,8 @@ import { attachLedgerPayoutsToSummary, fetchPayoutEntriesForDate } from "../../u
 import { removeShiftAtomically, removeSetupShiftAtomically } from "../../utils/closeoutPersistence";
 import { applyOpenShiftMemberNames } from "../../utils/accountProfilePersistence";
 import { fullNameFor } from "../../utils/userNames";
+import { applyTeamGroupPatch, SETTLE_GROUP_COLLECTION } from "../../utils/settleGroupPersistence";
+import { loadPlace, savePlace } from "../../utils/placeMemory";
 
 const TeamManagement = lazy(() => import("./TeamManagement"));
 const ShiftEditorPanel = lazy(() => import("./ShiftEditorPanel"));
@@ -119,8 +121,20 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     const [employeesLoaded, setEmployeesLoaded] = useState(false);
     const [employeesLoading, setEmployeesLoading] = useState(false);
     const [employeesLoadError, setEmployeesLoadError] = useState("");
-    const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
-    const [activeTab, setActiveTab] = useState("shifts"); // "shifts" | "users" | "editor"
+    // Restoring "where the day was left" on mount (a reload, or coming back
+    // from Pay/Account): read once, structurally validated by placeMemory.js.
+    // A tab this viewer can no longer reach (Team, if roster access changed)
+    // falls back to Shifts rather than rendering a screen with nothing on it.
+    // Money is never in this note - only the tab, the date, and the step.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const restoredPlace = useMemo(() => loadPlace(user?.uid || null), []);
+    const restoredWorkspace = restoredPlace?.surface === "workspace" ? restoredPlace.workspace : null;
+    const [selectedDate, setSelectedDate] = useState(() => restoredWorkspace?.date || toDateKey(new Date()));
+    const [activeTab, setActiveTab] = useState(() => {
+        const tab = restoredWorkspace?.tab;
+        if (tab === "users" && !canReadRoster(user)) return "shifts";
+        return tab || "shifts";
+    }); // "shifts" | "users" | "editor"
     const [daySummary, setDaySummary] = useState(null);
     const [dayLineup, setDayLineup] = useState(null);
     const [dayShiftStatus, setDayShiftStatus] = useState(null);
@@ -152,8 +166,13 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // usually the same one or two people, so this keeps it to one read each.
     const saverNameCacheRef = useRef(new Map());
     const [removingShift, setRemovingShift] = useState(false);
-    // Which day-step the shift editor opens on when entered from a landing CTA.
-    const [editorStep, setEditorStep] = useState("floor");
+    // Which day-step the shift editor opens on when entered from a landing CTA
+    // - or, on a fresh mount, restored from where the editor was left.
+    const [editorStep, setEditorStep] = useState(() => restoredWorkspace?.editorStep || "floor");
+    // Which Settle up group the tab strip preselects when the landing's
+    // who's-left checklist is tapped directly into a group - null defers to
+    // ShiftEditorPanel's own default (the first dining team).
+    const [editorActiveGroupId, setEditorActiveGroupId] = useState(() => restoredWorkspace?.settleGroupId ?? null);
     // Set only by a completed Confirm & Save, so the confirmation lands on the day
     // it belongs to instead of on the editor the admin is leaving.
     const [shiftSaved, setShiftSaved] = useState(false);
@@ -216,6 +235,29 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         }
     }, [employeesLoaded]);
 
+    // A mount restored straight onto Editor or Team needs the same employee
+    // list a normal tap into either would have fetched via setActiveTabWithData
+    // - only relevant once, right after the initial (possibly restored) tab is
+    // known.
+    useEffect(() => {
+        if (activeTab === "editor" || activeTab === "users") {
+            loadEmployeesIfNeeded();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Keeps the "place" note (placeMemory.js) current with whatever the
+    // workspace is actually showing, so a reload comes back here. This is the
+    // ONLY writer for surface "workspace" - App.jsx owns "pay"/"account" - so
+    // the two never race on the same localStorage entry. No money fields.
+    useEffect(() => {
+        if (!user?.uid) return;
+        savePlace(user.uid, {
+            surface: "workspace",
+            workspace: { tab: activeTab, date: selectedDate, editorStep, settleGroupId: editorActiveGroupId },
+        });
+    }, [user?.uid, activeTab, selectedDate, editorStep, editorActiveGroupId]);
+
     // The day is no longer blanked before a refetch: a refetch of the date already
     // on screen (after a save, after backing out of the editor) holds its content
     // while the progress bar carries the wait. `dayDataDate` is what keeps that
@@ -233,15 +275,40 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             if (fetchId !== dayFetchIdRef.current) return;
             if (shiftDoc.exists()) {
                 const d = applyOpenShiftMemberNames(shiftDoc.data());
+                const status = d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup");
+                let lineupTeams = Array.isArray(d.teams) ? d.teams : [];
+                // The who's-left checklist (Direction A, 2026-08-23 lock) needs each
+                // dining team's money/markedDone, which lives in the settleGroups
+                // subcollection during setup - see settleGroupPersistence.js for why.
+                // Only fetched while there's an actual gate to describe; a closed
+                // shift's teams[].pools already carry the final saved numbers.
+                if (status !== "closed") {
+                    try {
+                        const settleGroupsSnapshot = await getDocs(collection(db, "shifts", date, SETTLE_GROUP_COLLECTION));
+                        settleGroupsSnapshot.forEach((groupDoc) => {
+                            if (groupDoc.id === "bar") return; // Bar's markedDone lives on barTeam itself.
+                            const data = groupDoc.data();
+                            lineupTeams = applyTeamGroupPatch(lineupTeams, groupDoc.id, {
+                                pools: data.pools || {},
+                                contracts: data.contracts || [],
+                                markedDone: Boolean(data.markedDone),
+                            });
+                        });
+                    } catch (e) {
+                        // The checklist is a convenience read - a failed fetch here must
+                        // not block the day's own money/lineup, which already loaded.
+                        console.error("Failed to load settle group drafts:", e);
+                    }
+                }
                 setDaySummary(attachLedgerPayoutsToSummary(d.summary || null, payoutEntries));
                 // Lift the saved floor plan (already returned here) so the setup
                 // landing can confirm the lineup team-by-team without another fetch.
                 setDayLineup({
-                    teams: Array.isArray(d.teams) ? d.teams : [],
+                    teams: lineupTeams,
                     barTeam: d.barTeam || { members: [] },
                     runners: Array.isArray(d.runners) ? d.runners : [],
                 });
-                setDayShiftStatus(d.status || (d.summary || d.firstClosedAt || payoutEntries.length > 0 || d.payouts ? "closed" : "setup"));
+                setDayShiftStatus(status);
                 setDayOrphanedEntries([]);
                 setDaySavedBy({ uid: d.updatedBy || null, at: d.updatedAt || null });
             } else {
@@ -371,6 +438,18 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         setWeekStatusTick((n) => n + 1);
     };
 
+    // Friendly entry (Path 3, decision 3): "Save and Mark Done" returns to the
+    // who's-left landing rather than staying on the group just closed out, so the
+    // captain immediately sees which groups are still open. Only one group's
+    // money was committed here - not the whole shift - so this deliberately does
+    // NOT touch `shiftSaved`/the "Saved. Payouts for this date are recorded."
+    // banner, which is reserved for a full Confirm & Save.
+    const handleGroupMarkedDone = useCallback(() => {
+        setActiveTab("shifts");
+        fetchDayPayouts(selectedDate);
+        setWeekStatusTick((n) => n + 1);
+    }, [selectedDate, fetchDayPayouts]);
+
     // Hard-delete a settled shift for the selected date. This permanently removes
     // the shift and everyone's payouts for that date from all dashboards (the
     // employee cards clear live because they subscribe to the ledger), and cannot
@@ -473,10 +552,14 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         }
     }, [loadEmployeesIfNeeded]);
 
-    // Enter the day flow (the shift editor) focused on a specific step. The Day
-    // Rail landing CTAs route through here.
-    const enterEditor = useCallback((initialStep = "floor") => {
+    // Enter the day flow (the shift editor) focused on a specific step, and
+    // optionally a specific Settle up group - the landing's who's-left
+    // checklist jumps straight into a tapped group's tab (open or already
+    // done, so a mistake can still be corrected) rather than always landing
+    // on the first dining team.
+    const enterEditor = useCallback((initialStep = "floor", groupId = null) => {
         setEditorStep(["settle", "review"].includes(initialStep) ? initialStep : "floor");
+        setEditorActiveGroupId(groupId);
         setActiveTabWithData("editor");
     }, [setActiveTabWithData]);
 
@@ -531,18 +614,6 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
         if (needsRefresh) fetchDayPayouts(today);
     }, [confirmLeaveEditor, activeTab, selectedDate, setActiveTabWithData, fetchDayPayouts]);
 
-    // Decided direction: the day-chip strip stays usable while the floor editor
-    // is open (Floor step only - Settle/Review keep the date locked, same as
-    // `BarDatePill`, because those steps carry half-typed money a date swap
-    // could orphan). Exits the editor back to Shifts for the new date; the
-    // normal `stage === "settle"` handling there (`SkipToFloorPlan`) picks the
-    // new day back up, including re-entering its own floor editor if it is
-    // also unsettled - so flipping through a run of open days chains cleanly.
-    const selectDateFromFloorEditor = useCallback((nextDate) => {
-        if (!confirmLeaveEditor()) return;
-        setSelectedDate(nextDate);
-        setActiveTabWithData("shifts");
-    }, [confirmLeaveEditor, setActiveTabWithData]);
 
     // HOME MEANS THE VIEWER'S OWN HOME, and the two tiers here do not share one.
     // The manager runs the restaurant and is not paid from the pool, so home is
@@ -628,7 +699,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
     // lives once in the app-bar Bar Date pill, so there is no date band here.
     const SHIFTS_STAGE_TITLE = {
         "build-floor": "Set up the floor",
-        settle: "Confirm the floor",
+        settle: "Settle up",
         closed: "Pay out",
         "orphaned-payouts": "Leftover payouts",
     };
@@ -641,13 +712,27 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             // desktop-only stage title) and sitting above the day-chip strip, not
             // buried in the payout card below it. Gated on `dayDataIsCurrent` for
             // the same reason every other read of `daySummary` is: a date change
-            // must never show the previous day's title for one frame.
-            if (stage === "closed" && dayDataIsCurrent && daySummary) {
+            // must never show the previous day's title for one frame. Deliberately
+            // NOT gated on `daySummary`: a day is closed on its status/payouts, and
+            // a closed shift written without a `summary` field would otherwise lose
+            // Edit shift - this header is now the only way back into the editor.
+            if (stage === "closed" && dayDataIsCurrent) {
                 return {
                     eyebrow: "Shifts",
                     title: formatFullDateKey(selectedDate),
                     savedBy: daySavedByLine,
-                    actions: null,
+                    // Pay out only: Edit lives in this header, not a floating action.
+                    // Floor plan / Settle up / Review keep their own floating actions.
+                    actions: (
+                        <Button
+                            variant="secondary"
+                            className="min-h-11 sm:min-h-0"
+                            onClick={() => enterEditor("floor")}
+                            disabled={removingShift}
+                        >
+                            ✎ Edit shift
+                        </Button>
+                    ),
                     alwaysVisible: true,
                 };
             }
@@ -659,8 +744,11 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             };
         }
         if (activeTab === "editor") {
-            // The Day Rail names the active step, so the editor needs no eyebrow,
-            // step labels, or Back action here - the workspace nav handles exit.
+            // The Day Rail names the active step, so the editor needs no eyebrow or
+            // step labels here. This header block itself is hidden on a phone
+            // (`hidden sm:flex` below), so its own `actions` slot is not where the
+            // editor's exit lives - DayRail's optional `onBack` leads the trail
+            // instead, visible at every width.
             return {
                 eyebrow: null,
                 title: "Edit shift",
@@ -832,23 +920,24 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                         </header>
 
                         {/* Kit's week-at-a-glance day chips (WorkspaceScreen.jsx's
-                            `DayChip` row), shown on Shifts and - decided over the
-                            original always-hidden-in-the-editor behavior - during the
-                            floor editor's Floor step too, so a run of open days can be
-                            flipped through without Cancel first. Settle/Review keep the
-                            strip hidden and `BarDatePill` read-only, same as always:
+                            `DayChip` row), shown only on the Shifts day-picker landing.
+                            Settle/Review keep the strip hidden and `BarDatePill` read-only:
                             those steps carry half-typed money a date swap could orphan.
                             Team has no date, so it does not render there. Visible at
                             every width, like the kit's own `compact` mode keeps it -
-                            unlike the eyebrow/h1 above, not hidden on a phone. */}
-                        {activeTab === "shifts" || (activeTab === "editor" && editorStep === "floor") ? (
+                            unlike the eyebrow/h1 above, not hidden on a phone.
+
+                            The settle landing (who's-left checklist) hides chips too - it
+                            shows when a floor exists but unsettled, and belongs to Settle
+                            up (not day-picking). */}
+                        {activeTab === "shifts" && getLandingStage(dayShiftStatus) !== "settle" ? (
                             <div className="mb-3 sm:mb-6">
                                 <DayChipStrip
                                     days={weekDays}
                                     statuses={weekStatuses}
                                     selectedDate={selectedDate}
                                     todayKey={todayKey}
-                                    onSelect={activeTab === "editor" ? selectDateFromFloorEditor : setSelectedDate}
+                                    onSelect={setSelectedDate}
                                 />
                             </div>
                         ) : null}
@@ -857,6 +946,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                             <DayRailLanding
                                 summary={dayDataIsCurrent ? daySummary : null}
                                 lineup={dayDataIsCurrent ? dayLineup : null}
+                                viewerUid={user?.uid || null}
                                 status={dayDataIsCurrent ? dayShiftStatus : null}
                                 orphanedEntries={dayDataIsCurrent ? dayOrphanedEntries : []}
                                 loading={dayLoading || !dayDataIsCurrent}
@@ -865,6 +955,7 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                 onContinueSettle={() => enterEditor("settle")}
                                 onOpenReview={() => enterEditor("review")}
                                 onEditFloor={() => enterEditor("floor")}
+                                onOpenGroup={(groupId) => enterEditor("settle", groupId)}
                                 onRemoveShift={canRemoveDay ? handleRemoveShift : undefined}
                                 removingShift={removingShift}
                             />
@@ -879,7 +970,10 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
                                         date={selectedDate}
                                         allEmployees={floorPlanPool}
                                         onClose={handleEditorClose}
+                                        onGroupMarkedDone={handleGroupMarkedDone}
+                                        onBackToLanding={() => handleNavItemClick("shifts")}
                                         initialStep={editorStep}
+                                        initialActiveGroupId={editorActiveGroupId}
                                         onRegisterLeaveGuard={registerEditorLeaveGuard}
                                         onRemoveSetupDay={canDiscardSetupDay ? handleRemoveSetupDay : undefined}
                                         removingSetupDay={removingShift}

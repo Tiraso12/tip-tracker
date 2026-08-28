@@ -28,21 +28,25 @@ export const RailPill = memo(function RailPill({ group, selected, onSelect }) {
                 rail above it, and the leftover height (still fully tappable) falls
                 below the text instead of padding it out on both sides. */}
             <span className="inline-flex items-center gap-2">
+                {/* Direction A's tri-state dot (2026-08-23 lock): still on tables /
+                    entering / done - close-readiness, not merely "is money in".
+                    Runners is always "done" (never gated); dining/Bar read
+                    `markedDone` via getGroupCloseState (settleStatus.js). */}
                 <span
                     className={
                         "h-[6px] w-[6px] rounded-full flex-none " +
-                        (group.status === "funded"
+                        (group.status === "done"
                             ? "bg-[var(--color-success)]"
-                            : group.status === "sales-only"
+                            : group.status === "entering"
                                 ? "bg-[var(--color-warning)]"
                                 : "bg-[var(--color-line-strong)]")
                     }
                     title={
-                        group.status === "funded"
-                            ? "Money in"
-                            : group.status === "sales-only"
-                                ? "Sales entered - tip pool still $0"
-                                : "No money entered yet"
+                        group.status === "done"
+                            ? (group.kind === "runners" ? "Always marked done" : "Marked done")
+                            : group.status === "entering"
+                                ? "Money entered - not yet marked done"
+                                : "Still on tables"
                     }
                     aria-hidden="true"
                 />

@@ -11,6 +11,7 @@ import {
     reconcilePayoutLedger,
 } from "./payoutLedger.js";
 import { getHistoryFlagUpdate, getShiftParticipantUids } from "./userHistoryFlags.js";
+import { SETTLE_GROUP_COLLECTION } from "./settleGroupPersistence.js";
 
 const timestamp = (now) => now || new Date().toISOString();
 
@@ -32,11 +33,21 @@ export const firestoreCloseoutRefs = {
     payoutEntry: (db, date, uid) => payoutLedgerEntryRef(db, date, uid),
     user: (db, uid) => doc(db, "users", uid),
     auditEvent: (db, operationId) => doc(db, "auditEvents", operationId),
+    settleGroup: (db, date, groupId) => doc(db, "shifts", date, SETTLE_GROUP_COLLECTION, groupId),
 };
 
 function getDocData(snapshot) {
     if (!snapshot?.exists?.()) return null;
     return snapshot.data();
+}
+
+// Every settleGroups/{groupId} doc a shift could have: one per dining team plus
+// Bar. Enumerated from the shift's own teams array rather than a `list()` read,
+// so a removal batch never needs a second round trip - and it means a
+// never-created group (nobody opened its tab yet) just deletes a doc that was
+// never there, which Firestore already treats as a no-op.
+function settleGroupIdsFor(shift) {
+    return [...(shift?.teams || []).map((team) => team.teamId).filter(Boolean), "bar"];
 }
 
 function buildCloseoutAuditEvent({
@@ -208,10 +219,18 @@ export async function removeShiftAtomically({
     operationId = createRemovalOperationId(date),
     refs = firestoreCloseoutRefs,
     batchFactory = writeBatch,
+    readShift = async () => getDocData(await getDoc(refs.shift(db, date))),
     readPayoutEntries = async () => fetchPayoutEntriesForDate(db, date),
 }) {
     const removedAt = timestamp(now);
     const shiftRef = refs.shift(db, date);
+    const loadedShift = await readShift(shiftRef);
+    // `readShift` may return either a raw Firestore snapshot (the real caller
+    // and this file's own default) or already-unwrapped data (tests) - accept
+    // both, matching removeSetupShiftAtomically's same normalization below.
+    const existingShift = loadedShift && typeof loadedShift.exists === "function"
+        ? getDocData(loadedShift)
+        : loadedShift;
     const previousPayoutEntries = await readPayoutEntries();
     const removedPayoutUids = previousPayoutEntries
         .map((entry) => entry.uid)
@@ -224,6 +243,13 @@ export async function removeShiftAtomically({
     batch.delete(refs.payoutMeta(db, date));
     removedPayoutUids.forEach((uid) => {
         batch.delete(refs.payoutEntry(db, date, uid));
+    });
+    // Otherwise a date removed and later rebuilt from scratch would resurrect
+    // a stale mark/pool from the deleted day the moment a new group's tab is
+    // opened - the live subscription has no way to tell "never written" apart
+    // from "written by the day this doc actually belonged to".
+    settleGroupIdsFor(existingShift).forEach((groupId) => {
+        batch.delete(refs.settleGroup(db, date, groupId));
     });
 
     batch.set(refs.auditEvent(db, operationId), buildRemovalAuditEvent({
@@ -296,6 +322,12 @@ export async function removeSetupShiftAtomically({
     const batch = batchFactory(db);
 
     batch.delete(refs.shift(db, date));
+    // Same resurrection hazard removeShiftAtomically guards against: an accidental
+    // setup day discarded and later rebuilt for the same date must not inherit a
+    // stale mark/pool from the discarded one.
+    settleGroupIdsFor(shift).forEach((groupId) => {
+        batch.delete(refs.settleGroup(db, date, groupId));
+    });
     batch.set(refs.auditEvent(db, operationId), buildSetupRemovalAuditEvent({
         date,
         operationId,

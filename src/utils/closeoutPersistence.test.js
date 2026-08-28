@@ -11,6 +11,7 @@ const fakeRefs = {
     payoutEntry: (_db, date, uid) => ref(`payouts/${date}/entries/${uid}`),
     user: (_db, uid) => ref(`users/${uid}`),
     auditEvent: (_db, operationId) => ref(`auditEvents/${operationId}`),
+    settleGroup: (_db, date, groupId) => ref(`shifts/${date}/settleGroups/${groupId}`),
 };
 
 function clone(value) {
@@ -379,6 +380,44 @@ test("removeSetupShiftAtomically deletes the setup shift and writes a setup_shif
     assert.equal(audit.actorUid, "supervisorUid");
     assert.deepEqual(audit.removedPayoutUids, []);
     assert.equal(audit.previousPayoutCount, 0);
+});
+
+// Parallel Settle up's resurrection hazard: a discarded/removed day's live
+// per-group drafts (settleGroups/{teamId|bar}) must not survive to haunt a
+// later shift rebuilt on the same date - see closeoutPersistence.js's
+// settleGroupIdsFor.
+test("removeSetupShiftAtomically also deletes every dining team's and Bar's settleGroups draft", async () => {
+    const store = new FakeStore({
+        "shifts/2026-05-29": {
+            status: "setup",
+            teams: [{ teamId: "team-1", members: [] }, { teamId: "team-2", members: [] }],
+        },
+        "shifts/2026-05-29/settleGroups/team-1": { pools: { tips: "100" }, markedDone: true },
+        "shifts/2026-05-29/settleGroups/team-2": { pools: {}, markedDone: false },
+        "shifts/2026-05-29/settleGroups/bar": { pools: { tips: "50" }, markedDone: true },
+    });
+
+    await removeSetupWithFakeStore(store);
+
+    assert.equal(store.has("shifts/2026-05-29/settleGroups/team-1"), false);
+    assert.equal(store.has("shifts/2026-05-29/settleGroups/team-2"), false);
+    assert.equal(store.has("shifts/2026-05-29/settleGroups/bar"), false);
+});
+
+test("removeShiftAtomically also deletes every dining team's and Bar's settleGroups draft", async () => {
+    const store = new FakeStore({
+        "shifts/2026-05-29": {
+            status: "closed",
+            teams: [{ teamId: "team-1", members: [] }],
+        },
+        "shifts/2026-05-29/settleGroups/team-1": { pools: { tips: "300" }, markedDone: true },
+        "shifts/2026-05-29/settleGroups/bar": { pools: {}, markedDone: false },
+    });
+
+    await removeWithFakeStore(store);
+
+    assert.equal(store.has("shifts/2026-05-29/settleGroups/team-1"), false);
+    assert.equal(store.has("shifts/2026-05-29/settleGroups/bar"), false);
 });
 
 test("removeSetupShiftAtomically refuses a closed shift and leaves it untouched", async () => {

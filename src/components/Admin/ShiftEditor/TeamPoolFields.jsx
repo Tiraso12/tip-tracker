@@ -5,6 +5,7 @@ import { PoolField } from "./PoolField";
 // inside the single entry panel (no card chrome of its own).
 export function TeamPoolFields({
     team,
+    date,
     onPoolChange,
     onToggleContracts,
     onAddContract,
@@ -14,7 +15,7 @@ export function TeamPoolFields({
     return (
         <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                <PoolField label="Sales" value={team.pools.sales} onChange={(value) => onPoolChange(team.teamId, "sales", value)} />
+                <PoolField label="Net revenue" value={team.pools.sales} onChange={(value) => onPoolChange(team.teamId, "sales", value)} />
                 <PoolField label="Tips (CTP)" value={team.pools.tips} onChange={(value) => onPoolChange(team.teamId, "tips", value)} />
                 <PoolField label="Gratuity" value={team.pools.gratuity} onChange={(value) => onPoolChange(team.teamId, "gratuity", value)} />
                 <PoolField label="Cash" value={team.pools.cash} onChange={(value) => onPoolChange(team.teamId, "cash", value)} />
@@ -23,6 +24,7 @@ export function TeamPoolFields({
 
             <ContractsDisclosure
                 team={team}
+                date={date}
                 onToggleContracts={onToggleContracts}
                 onAddContract={onAddContract}
                 onUpdateContract={onUpdateContract}
