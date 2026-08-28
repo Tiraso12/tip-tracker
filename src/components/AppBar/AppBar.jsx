@@ -13,7 +13,7 @@ import AccountSheet from "../Account/AccountSheet";
 // as a full 44x44 target, the day (or the week) and the account avatar at the
 // right. px-3 below sm because at 320px those three only clear the viewport with
 // the tighter inset. z-40 so the account sheet, which opens out of this bar as a
-// bottom sheet, lands above the floating z-30 Edit/Cancel/Done controls.
+// bottom sheet, lands above the floating z-30 Done / Confirm & Save controls.
 //
 // HOME MEANS THE VIEWER'S OWN HOME, and that is not the same place for everyone:
 // a captain is paid from the pool, so home is their pay; the manager is not, so

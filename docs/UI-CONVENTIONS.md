@@ -30,7 +30,7 @@ discards an in-progress edit to a closed shift, whose changes never persist unti
 ## Stacking order
 
 Admin chrome stacking order, stated once so it is not rediscovered: app bar `z-40` > floating
-Edit/Confirm FABs `z-30` > sticky Day Rail `z-10`. The bar has to outrank the FABs because the
+Done/Confirm FABs `z-30` > sticky Day Rail `z-10`. The bar has to outrank the FABs because the
 account sheet opens out of it as a bottom sheet, landing exactly where they float. `sticky top-14
 z-10` under the app bar is the app's one shape for a control that must stay reachable down a long
 page - the Day Rail and the Team person view's "Team roster" back control both use it. Reach for
@@ -94,10 +94,10 @@ top-level destination at every width (Team, and `Shifts` for whoever's home is n
 the day itself the phone still has the Day Rail and, on Shifts plus the Floor step, the
 `DayChipStrip`. The workspace `<aside>` in `AdminDashboard.jsx` is desktop-only (`hidden
 lg:block`) and carries no phone case. Do not add a bottom tab bar or a segmented replacement: the
-floating Floor/Settle/Review and Confirm controls already own that corner (Pay out's Edit shift
-is a header button, not a FAB), and a persistent side-switcher in the bar was weighed against
-this shape and declined (it spends the ~67px of slack at 320px that dropping the hamburger
-bought).
+floating controls already own that corner - Settle up's group Done and Review's Confirm & Save,
+the only two `FloatingActions` callers left (Pay out's Edit shift is a header button, not a FAB) -
+and a persistent side-switcher in the bar was weighed against this shape and declined (it spends
+the ~67px of slack at 320px that dropping the hamburger bought).
 
 ## The Pullenberg kit is the authority
 
@@ -152,9 +152,13 @@ screen matched to the kit:
 - That autosave is **silent when it succeeds** - there is no "Draft saved." confirmation on any
   step, by the captain's own call, because the hint sat on screen looking like unfinished work.
   Only failure speaks: "Draft autosave failed." shows on Floor plan, Settle up and Review alike
-  and stays up until a later write lands. So never wait on an on-screen cue to know a draft
-  persisted - read the `shifts/{date}` doc (that is what `settleMoneyAndReview` in
-  `tests/e2e/admin-closeout.spec.js` polls). `ShiftEditorPanel.jsx`'s `lastSavedFingerprintRef`
+  and stays up until a later write lands. Settle up's one status line is shared with the group
+  mark: a refused "Save and Mark Done" shows "Could not mark this group done. Try again." there
+  in preference to the autosave line, because it is the specific answer to the tap the captain
+  just made, and it is scoped to that group (it does not follow them to another tab) and cleared
+  by the next roster or money edit, which makes the claim stale. So never wait on an on-screen
+  cue to know a draft persisted - read the `shifts/{date}` doc (that is what
+  `settleMoneyAndReview` in `tests/e2e/admin-closeout.spec.js` polls). `ShiftEditorPanel.jsx`'s `lastSavedFingerprintRef`
   carries why the write is gated at all.
 
 ### Shell and payout screen rebuilds

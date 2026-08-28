@@ -110,8 +110,10 @@ async function seedCloseoutData() {
 }
 
 // Seed an already closed & paid-out shift so tests can exercise the reopen flow
-// without re-running a full closeout.
-async function seedClosedShift(date) {
+// without re-running a full closeout. `withSummary: false` is the shape a
+// pre-`summary` or externally-written closed day has: closed on its status and
+// payout ledger alone, with no `summary` field on the shift doc.
+async function seedClosedShift(date, { withSummary = true } = {}) {
     await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();
 
@@ -128,7 +130,7 @@ async function seedClosedShift(date) {
             }],
             barTeam: { members: [], pools: { sales: "", tips: "", gratuity: "", covers: "" } },
             runners: [],
-            summary: { balances: { overallBalance: 0 } },
+            ...(withSummary ? { summary: { balances: { overallBalance: 0 } } } : {}),
             firstClosedAt: "2026-05-20T12:00:00.000Z",
         });
         await setDoc(doc(db, "payouts", date), { date, ledgerVersion: 1 });
@@ -718,6 +720,24 @@ test.describe("mobile floor polish", () => {
         // silently deselected and the sheet stayed closed (it took a second tap).
         await page.getByRole("button", { name: /Add employees to Team 1/i }).click();
         await expect(page.getByRole("dialog", { name: /Add employees to Team 1/i })).toBeVisible();
+    });
+
+    // Edit shift is now the settled day's ONLY way back into the editor (the
+    // floating EditFab is gone), and a day reads as closed from its status and
+    // payout ledger, not from a `summary` field. A closed shift written without
+    // one must therefore still be correctable, or the day is stranded.
+    test("a closed shift with no summary still offers Edit shift", async ({ page }) => {
+        const date = "2026-05-19";
+        await seedClosedShift(date, { withSummary: false });
+        await login(page);
+        await setShiftDate(page, date);
+
+        await expect(page.getByTestId("settled-day-header").getByRole("button", { name: "Edit shift" })).toBeVisible();
+        await page.getByRole("button", { name: "Edit shift" }).click();
+
+        // Straight into the in-place editor, with the closed-shift cue already up.
+        await expect(page.getByRole("button", { name: /Add employees to Team 1/i })).toBeVisible();
+        await expect(page.getByText(/Re-saving overwrites the saved payouts/i)).toBeVisible();
     });
 
     test("Escape closes the Add-employees picker", async ({ page }) => {
