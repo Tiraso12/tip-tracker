@@ -712,8 +712,11 @@ function AdminDashboard({ onGoToMyPay, onOpenAccount }) {
             // desktop-only stage title) and sitting above the day-chip strip, not
             // buried in the payout card below it. Gated on `dayDataIsCurrent` for
             // the same reason every other read of `daySummary` is: a date change
-            // must never show the previous day's title for one frame.
-            if (stage === "closed" && dayDataIsCurrent && daySummary) {
+            // must never show the previous day's title for one frame. Deliberately
+            // NOT gated on `daySummary`: a day is closed on its status/payouts, and
+            // a closed shift written without a `summary` field would otherwise lose
+            // Edit shift - this header is now the only way back into the editor.
+            if (stage === "closed" && dayDataIsCurrent) {
                 return {
                     eyebrow: "Shifts",
                     title: formatFullDateKey(selectedDate),

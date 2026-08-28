@@ -737,7 +737,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
 
     // Resolves true when `shifts/{date}` is known to hold the current draft -
     // either this call wrote it, or there was nothing to write. Resolves false
-    // ONLY when a write was attempted and refused. Never rejects: autosave has
+    // ONLY when that shift-doc write was attempted and refused. Never rejects: autosave has
     // background callers (the debounce timer, the unmount flush) with nobody
     // left to tell, so the one caller that must not proceed on a failed write
     // (handleMarkGroupDone) reads the flag instead of catching.
@@ -760,20 +760,30 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
                 runners,
                 includeCloseoutDraft: true,
             }));
-            // Only on the transition into "setup" - once flagged there is nothing
-            // more to mark, and this would otherwise re-write every participant's
-            // profile on every autosave tick while actively editing.
-            if (!wasAlreadySetup) await markUserHistoryFlags("setup");
-
-            setShiftStatus("setup");
-            lastSavedFingerprintRef.current = fingerprint;
-            setDraftStatus("");
-            return true;
         } catch (e) {
             console.error("Failed to autosave closeout draft:", e);
             setDraftStatus("Draft autosave failed.");
             return false;
         }
+
+        setShiftStatus("setup");
+        lastSavedFingerprintRef.current = fingerprint;
+        setDraftStatus("");
+
+        // Only on the transition into "setup" - once flagged there is nothing
+        // more to mark, and this would otherwise re-write every participant's
+        // profile on every autosave tick while actively editing. These are
+        // per-participant profile writes, not the shift's own: one refused
+        // participant says nothing about whether `shifts/{date}` holds the
+        // draft, so it must not turn this call's answer into "not saved".
+        if (!wasAlreadySetup) {
+            try {
+                await markUserHistoryFlags("setup");
+            } catch (e) {
+                console.error("Failed to flag shift participants' history:", e);
+            }
+        }
+        return true;
     }, [
         barTeam,
         date,
