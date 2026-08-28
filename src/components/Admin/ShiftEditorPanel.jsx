@@ -351,9 +351,13 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
     const closeGateBlocked = shiftStatus !== "closed" && !closeReadiness.ready;
 
     // A failure describes the shift as it was when it was refused. Any edit to the
-    // roster or the money makes that description stale, so it goes.
+    // roster or the money makes that description stale, so it goes. A refused
+    // "Save and Mark Done" is the same kind of claim about the same inputs, so it
+    // ages out here too - otherwise it keeps shadowing whatever the current state
+    // of the shift actually is in Settle up's one status line.
     useEffect(() => {
         setSaveFailure(null);
+        setMarkFailureGroupId(null);
     }, [teams, barTeam, runners]);
 
     const hasAssignedStaff = useMemo(() => (
