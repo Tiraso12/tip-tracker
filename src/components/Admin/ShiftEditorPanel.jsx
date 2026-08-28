@@ -763,6 +763,10 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         } catch (e) {
             console.error("Failed to autosave closeout draft:", e);
             setDraftStatus("Draft autosave failed.");
+            // Rethrow so a caller that flushes before navigating (handleMarkGroupDone)
+            // learns `shifts/{date}` was never written and aborts instead of marking a
+            // group done on a shift that does not exist. Background ticks swallow it.
+            throw e;
         }
     }, [
         barTeam,
@@ -791,7 +795,9 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         await pending.run();
     }, []);
 
-    useEffect(() => () => flushPendingDraftSave(), [flushPendingDraftSave]);
+    // Unmount is a background flush with nobody left to tell: the failure is
+    // already logged and shown, so absorb the rejection here.
+    useEffect(() => () => { flushPendingDraftSave().catch(() => {}); }, [flushPendingDraftSave]);
 
     // "Save and Mark Done": commits the group's current fields right now (not on
     // the trailing debounce) plus the mark itself, in one write - the button's
@@ -849,11 +855,22 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         };
 
         persistMark()
-            .then(() => onGroupMarkedDone?.(groupId))
             .catch((e) => {
                 console.error(`Failed to save the ${groupId} settle draft:`, e);
+                // A failed mark used to read as "the button did nothing": the action
+                // flipped from Saving… back to Done with the group still open and no
+                // word anywhere. Say so in the status line Settle already renders.
+                setDraftStatus("Could not mark this group done. Try again.");
+                return false;
+            })
+            .then((persisted) => {
+                // Release the in-flight guard on BOTH paths: navigating away usually
+                // unmounts this panel, but `onGroupMarkedDone` is optional, and a
+                // caller that keeps the editor mounted would otherwise leave the ref
+                // stuck and every later Done tap a silent no-op.
                 markingGroupIdRef.current = null;
                 setMarkingGroupId(null);
+                if (persisted !== false) onGroupMarkedDone?.(groupId);
             });
     }, [date, flushPendingDraftSave, onGroupMarkedDone, shiftStatus, user?.uid]);
 
@@ -863,7 +880,7 @@ function ShiftEditorPanel({ date, allEmployees, onClose, onGroupMarkedDone, onBa
         if (!hasLoadedShift || loading || isSaving || removingSetupDay || shiftStatus === "closed") return undefined;
         if (!hasAssignedStaff && !hasCloseoutDraftData) return undefined;
 
-        const timeoutId = window.setTimeout(() => saveSetupDraftNow(), 1000);
+        const timeoutId = window.setTimeout(() => { saveSetupDraftNow().catch(() => {}); }, 1000);
         pendingDraftSaveRef.current = { timeoutId, run: saveSetupDraftNow };
 
         return () => {
