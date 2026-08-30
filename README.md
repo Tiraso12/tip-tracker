@@ -6,6 +6,16 @@ A payout `total` is CTP (charged tip) + GRT (gratuity). Cash is always paid and 
 
 **Live app:** https://tip-tracker-44de1.web.app
 
+<p align="center">
+  <img src="docs/images/floor.png" alt="Tip Tracker floor plan" width="900" />
+</p>
+<p align="center">
+  <img src="docs/images/settle.png" alt="Tip Tracker settle up" width="900" />
+  &nbsp;
+  <img src="docs/images/payout.png" alt="Tip Tracker payout" width="900" />
+</p>
+
+
 ---
 
 ## The Problem It Solves
@@ -135,4 +145,4 @@ The engine (`src/utils/engine.js`) is a pure function: it takes a normalized shi
 
 ---
 
-Built by Gonzalo Tiraso
+Built by Gonzalo Rodriguez Ostos
